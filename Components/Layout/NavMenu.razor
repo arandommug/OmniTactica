@@ -1,0 +1,119 @@
+﻿@using Microsoft.Maui.Devices;
+
+<div class="navMenu">
+
+    @if (MenuOpen)
+    {
+        <div class="mobileBackdrop" @onclick="CloseMenu"></div>
+    }
+
+    <!-- MOBILE DRAWER -->
+    <div class="mobileDrawer @(MenuOpen ? "open" : "")"
+         @ontouchstart="TouchStart"
+         @ontouchend="TouchEnd">
+
+        <!-- HANDLE -->
+        <div class="drawerHandle" @onclick="ToggleMenu">
+            <span class="left"></span>
+            <span class="right"></span>
+
+            <div class="drawerArrows @(MenuOpen ? "open" : "")">
+                <i class="fa fa-chevron-up"></i>
+                <i class="fa fa-chevron-up"></i>
+            </div>
+        </div>
+
+        <div class="drawerContent">
+
+            <NavLink class="btn btn-outline-primary" href="/" @onclick="CloseMenu">
+                <i class="fa fa-magnifying-glass me-2"></i>Browse
+            </NavLink>
+
+            <NavLink class="btn btn-outline-primary" href="/mathhammer" @onclick="CloseMenu">
+                <i class="fa fa-fist-raised me-2"></i>Versus
+            </NavLink>
+
+            <NavLink class="btn btn-outline-primary" href="/settings" @onclick="CloseMenu">
+                <i class="fa fa-cog me-2"></i>Settings
+            </NavLink>
+
+        </div>
+
+    </div>
+
+    <!-- DESKTOP SIDEBAR -->
+    <div class="desktopNav card bg-secondary-subtle">
+
+        <div class="card-header">
+            <h1 class="text-primary">Omni Tactica</h1>
+        </div>
+
+        <div class="card-body">
+
+            <NavLink class="btn btn-outline-primary w-100 mb-2" href="/">
+                <i class="fa fa-magnifying-glass me-2"></i>Browse
+            </NavLink>
+
+            <NavLink class="btn btn-outline-primary w-100 mb-2" href="/mathhammer">
+                <i class="fa fa-fist-raised me-2"></i>Versus
+            </NavLink>
+
+        </div>
+
+        <div class="card-footer">
+            <NavLink class="btn btn-outline-primary w-100" href="/settings">
+                <i class="fa fa-cog me-2"></i>Settings
+            </NavLink>
+        </div>
+
+    </div>
+
+</div>
+
+@code {
+    bool MenuOpen;
+
+    double touchStartY;
+
+    async Task ToggleMenu()
+    {
+        MenuOpen = !MenuOpen;
+
+        try
+        {
+            HapticFeedback.Default.Perform(HapticFeedbackType.Click);
+        }
+        catch
+        {
+            // haptics not supported (Windows etc)
+        }
+    }
+
+    async Task CloseMenu()
+    {
+        MenuOpen = false;
+
+        try
+        {
+            HapticFeedback.Default.Perform(HapticFeedbackType.Click);
+        }
+        catch { }
+    }
+
+    void TouchStart(TouchEventArgs e)
+    {
+        touchStartY = e.Touches[0].ClientY;
+    }
+
+    void TouchEnd(TouchEventArgs e)
+    {
+        var delta = touchStartY - e.ChangedTouches[0].ClientY;
+
+        if (delta > 40)
+            MenuOpen = true;
+
+        if (delta < -40)
+            MenuOpen = false;
+    }
+
+}

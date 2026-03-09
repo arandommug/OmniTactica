@@ -1,0 +1,212 @@
+/* =========================
+   NAV CONTAINER
+========================= */
+
+.navMenu {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 1000;
+}
+
+/* =========================
+   DESKTOP SIDEBAR
+========================= */
+
+.desktopNav {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    width: var(--app-sidebar-width);
+    display: flex;
+    flex-direction: column;
+}
+
+.desktopNav .card-body {
+    overflow-y: auto;
+}
+
+/* =========================
+   MOBILE DRAWER CARD
+========================= */
+
+.mobileDrawer {
+    position: fixed;
+    left: 16px;
+    right: 16px;
+    bottom: calc(12px + 10px);
+    background: var(--bs-body-bg);
+    border: 1px solid var(--bs-border-color);
+    border-radius: var(--bs-border-radius-xl);
+    box-shadow: var(--bs-box-shadow);
+    padding: .5rem;
+    padding-bottom: calc(.5rem + env(safe-area-inset-bottom));
+    transition: height .25s ease;
+    overflow: hidden;
+    height: 44px;
+    z-index: 1000;
+}
+
+.mobileDrawer.open {
+    height: auto;
+    max-height: 40vh;
+}
+
+/* =========================
+   HANDLE
+========================= */
+
+/* =========================
+   HANDLE
+========================= */
+
+.drawerHandle {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 34px;
+    cursor: pointer;
+    border-radius: var(--bs-border-radius);
+    transition: background .15s ease;
+}
+
+/* hover feedback (desktop) */
+
+.drawerHandle:hover {
+    background: rgba(255,255,255,.05);
+}
+
+/* =========================
+    GRIP BAR
+========================= */
+
+.drawerHandle::before {
+    content: "";
+    width: 34px;
+    height: 4px;
+    border-radius: 4px;
+    background: var(--bs-secondary-color);
+    margin-bottom: 4px;
+    opacity: .6;
+}
+
+/* =========================
+    CHEVRONS
+========================= */
+
+.drawerHandle i {
+    font-size: .85rem;
+    color: var(--bs-primary);
+    line-height: .7rem;
+}
+
+.drawerHandle i:first-child {
+    margin-bottom: -3px;
+}
+
+.drawerArrows {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    transition: transform .25s ease;
+}
+
+/* rotate when open */
+
+.drawerArrows.open {
+    transform: rotate(180deg);
+}
+
+/* =========================
+    BOLTS
+========================= */
+
+.drawerHandle::after {
+    content: "";
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    height: 0;
+}
+
+/* bolt circles */
+
+.drawerHandle span {
+    position: absolute;
+    top: 50%;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--bs-border-color);
+    transform: translateY(-50%);
+}
+
+.drawerHandle span.left {
+    left: 8px;
+}
+
+.drawerHandle span.right {
+    right: 8px;
+}
+
+/* =========================
+   DRAWER CONTENT
+========================= */
+
+.drawerContent {
+    margin-top: .5rem;
+    display: flex;
+    flex-direction: column;
+    gap: .5rem;
+    opacity: 0;
+    transition: opacity .2s ease;
+}
+
+.mobileDrawer.open .drawerContent {
+    opacity: 1;
+}
+
+/* =========================
+   BACKDROP
+========================= */
+
+.mobileBackdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.35);
+    z-index: 999;
+}
+
+/* =========================
+   MOBILE BUTTON WIDTH
+========================= */
+
+.mobileDrawer a {
+    width: 100%;
+}
+
+/* =========================
+   RESPONSIVE
+========================= */
+
+@media (max-width:640px) {
+    .desktopNav {
+        display: none;
+    }
+
+    .navMenu {
+        width: 100%;
+        height: auto;
+        top: auto;
+    }
+}
+
+@media (min-width:641px) {
+    .mobileDrawer,
+    .mobileBackdrop {
+        display: none;
+    }
+}

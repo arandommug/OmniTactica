@@ -1,0 +1,424 @@
+﻿@page "/settings"
+@using ListBuilder.AppCode.Data.Database
+@using ListBuilder.AppCode.Data.Import
+@using Microsoft.Maui.Storage
+@using Microsoft.Data.Sqlite
+@using System.IO
+
+@inject WahaSQLiteService DB
+
+<h3>Data Management</h3>
+
+<div class="mb-3 container">
+    <div class="btn-group">
+        <button class="btn btn-primary" @onclick="RebuildAsync" disabled="@isLoading">
+            @if (DB.DatabaseExists)
+            {
+                <text>Fetch & Rebuild Database</text>
+            }
+            else
+            {
+                <text>Download & Build Database</text>
+            }
+        </button>
+        <button class="btn btn-warning" @onclick="PatchAsync" disabled="@(isLoading || !File.Exists(GetDbPath()))">
+            Patch DB
+        </button>
+    </div>
+
+    @if (isLoading)
+    {
+        <span class="ms-3 align-middle">
+            <div class="spinner-border spinner-border-sm text-dark" aria-hidden="true"></div> Working...
+        </span>
+    }
+
+    <div class="mt-3">
+        <div><strong>Status:</strong></div>
+        <div class="card bg-dark text-light border-secondary mt-2">
+            <div class="card-body p-3">
+                <div class="log font-monospace small">
+                    @if (logs.Count == 0)
+                    {
+                        <span class="text-muted">No activity yet.</span>
+                    }
+                    else
+                    {
+                        @foreach (var logLine in logs)
+                        {
+                            <div>@logLine</div>
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Rest of your existing UI (tables + records viewer) unchanged -->
+<div class="row">
+    <div class="col-md-4">
+        <h5>Tables</h5>
+        @if (schema == null || schema.Count == 0)
+        {
+            <div class="text-muted">No tables available.</div>
+        }
+        else
+        {
+            <div class="d-flex flex-wrap">
+                @foreach (var t in schema)
+                {
+                    <div class="card m-1" style="width: 100%; cursor:pointer;" @onclick="() => SelectTable(t.Name)">
+                        <div class="card-body">
+                            <h6 class="card-title">@t.Name</h6>
+                            <p class="card-text"><small class="text-muted">@t.Columns.Count columns</small></p>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+
+    <div class="col-md-8">
+        <h5>Records @if (!string.IsNullOrEmpty(selectedTable)) {
+            <span class="text-muted">for @selectedTable</span>
+        }
+    </h5>
+
+    @if (!string.IsNullOrEmpty(selectedTable))
+    {
+        <div class="mb-2">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <button class="btn btn-sm btn-secondary me-1" @onclick="PrevPage" disabled="@(!HasPrev)">Prev</button>
+                    <button class="btn btn-sm btn-secondary" @onclick="NextPage" disabled="@(!HasNext)">Next</button>
+                </div>
+                <div>Page @currentPage of @totalPages (@pageSize rows/page)</div>
+            </div>
+        </div>
+
+        @if (isLoadingRecords)
+        {
+            <div><div class="spinner" aria-hidden="true"></div> Loading records...</div>
+        }
+        else if (records == null || records.Count == 0)
+        {
+            <div class="text-muted">No records to show.</div>
+        }
+        else
+        {
+            <div class="row">
+                @foreach (var rec in PagedRecords)
+                {
+                    <div class="col-md-6">
+                        <div class="card mb-2">
+                            <div class="card-body">
+                                @foreach (var kv in rec)
+                                {
+                                    <div><strong>@kv.Key</strong>: @kv.Value</div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    }
+    else
+    {
+        <div class="text-muted">Select a table to view records.</div>
+    }
+</div>
+</div>
+
+@code {
+    private bool isLoading;
+    private List<string> logs = new();
+    private List<TableSchema> schema = new();
+    private string? selectedTable;
+    private List<Dictionary<string, object?>> records = new();
+    private bool isLoadingRecords;
+
+    // Pagination
+    private int currentPage = 1;
+    private int pageSize = 10;
+    private int totalPages = 1;
+
+    private IEnumerable<Dictionary<string, object?>> PagedRecords => records.Skip((currentPage - 1) * pageSize).Take(pageSize);
+    private bool HasPrev => currentPage > 1;
+    private bool HasNext => currentPage < totalPages;
+
+    private void AddLog(string message)
+    {
+        logs.Add($"{DateTime.Now:HH:mm:ss} - {message}");
+        if (logs.Count > 200) logs.RemoveRange(0, logs.Count - 200);
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private string GetDbPath() => WahaDataImporter.GetDatabasePath();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var dbPath = GetDbPath();
+        if (File.Exists(dbPath))
+        {
+            AddLog("Database found on startup, reading schema...");
+            await ReadSchemaAsync(dbPath);
+        }
+    }
+
+    private async Task RebuildAsync()
+    {
+        if (isLoading) return;
+
+        isLoading = true;
+
+        logs.Clear();
+        records.Clear();
+        schema.Clear();
+        selectedTable = null;
+
+        StateHasChanged();
+
+        // Let UI release any readers
+        await Task.Delay(200);
+
+        var dbExists = File.Exists(GetDbPath());
+        if (dbExists)
+        {
+            AddLog("Existing database found - starting rebuild...");
+        }
+        else
+        {
+            AddLog("No existing database - starting fresh build...");
+        }
+
+        try
+        {
+            var ok = await WahaDataImporter.RebuildDatabaseAsync(AddLog);
+
+            if (ok)
+            {
+                AddLog(dbExists ? "✓ Database rebuilt successfully!" : "✓ Database built successfully!");
+
+                var dbPath = GetDbPath();
+                if (File.Exists(dbPath))
+                {
+                    await ReadSchemaAsync(dbPath);
+                }
+            }
+            else
+            {
+                AddLog("✗ Database operation failed.");
+            }
+        }
+        catch (Exception ex)
+        {
+            AddLog($"✗ Error: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task PatchAsync()
+    {
+        if (isLoading) return;
+
+        isLoading = true;
+
+        AddLog("Starting DB patch...");
+
+        var dbPath = GetDbPath();
+        if (!File.Exists(dbPath))
+        {
+            AddLog("Database not found - cannot patch.");
+            isLoading = false;
+            StateHasChanged();
+            return;
+        }
+
+        try
+        {
+            AddLog("Clearing connection pool...");
+            SqliteConnection.ClearAllPools();
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            await Task.Delay(100);
+
+            AddLog("Opening write-enabled connection for patching...");
+
+            await using var connection = DB.CreateWriteConnection();
+            await connection.OpenAsync();
+
+            await using var transaction = connection.BeginTransaction();
+
+            AddLog("Applying patches...");
+            await WahaDataPatcher.ApplyPatchesAsync(connection, transaction, AddLog);
+
+            transaction.Commit();
+            AddLog("Patch applied successfully. Changes committed.");
+
+            // Refresh UI
+            await ReadSchemaAsync(dbPath);
+            if (!string.IsNullOrEmpty(selectedTable))
+                await LoadRecordsAsync();
+        }
+        catch (Exception ex)
+        {
+            AddLog($"Patch error: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    // Read schema with read-only/shared connection and busy timeout; retry on transient locks.
+    private async Task ReadSchemaAsync(string dbPath)
+    {
+        AddLog("Reading schema from: " + dbPath);
+
+        var tables = new List<TableSchema>();
+
+        int attempts = 0;
+        const int maxAttempts = 8;
+        while (attempts < maxAttempts)
+        {
+            attempts++;
+            try
+            {
+                await using var conn = DB.CreateConnection();
+                await conn.OpenAsync();
+
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText = "PRAGMA busy_timeout = 5000;";
+                    await cmd.ExecuteNonQueryAsync();
+                }
+
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name;";
+                    await using var reader = await cmd.ExecuteReaderAsync();
+                    while (await reader.ReadAsync())
+                    {
+                        tables.Add(new TableSchema { Name = reader.GetString(0), Columns = new List<string>() });
+                    }
+                }
+
+                foreach (var t in tables)
+                {
+                    using var cmd = conn.CreateCommand();
+                    cmd.CommandText = $"PRAGMA table_info(\"{t.Name}\");";
+                    await using var reader = await cmd.ExecuteReaderAsync();
+                    while (await reader.ReadAsync())
+                    {
+                        var colName = reader.GetString(1);
+                        var colType = reader.IsDBNull(2) ? "" : reader.GetString(2);
+                        t.Columns.Add(string.IsNullOrEmpty(colType) ? colName : $"{colName} ({colType})");
+                    }
+                }
+
+                schema = tables;
+                AddLog($"Schema read: {schema.Count} tables.");
+                StateHasChanged();
+                return;
+            }
+            catch (Exception ex) when (ex is IOException || ex is SqliteException)
+            {
+                AddLog($"Attempt {attempts}: DB locked or unavailable: {ex.Message}");
+                await Task.Delay(250 * attempts);
+                continue;
+            }
+        }
+
+        AddLog("Failed to read schema after multiple attempts.");
+    }
+
+    private class TableSchema
+    {
+        public string Name { get; set; } = string.Empty;
+        public List<string> Columns { get; set; } = new();
+    }
+
+    private async Task SelectTable(string tableName)
+    {
+        if (isLoading) return;
+        selectedTable = tableName;
+        currentPage = 1;
+        await LoadRecordsAsync();
+    }
+
+    private async Task LoadRecordsAsync()
+    {
+        if (string.IsNullOrEmpty(selectedTable))
+            return;
+
+        isLoadingRecords = true;
+
+        try
+        {
+            await using var conn = DB.CreateConnection();
+            await conn.OpenAsync();
+
+            int offset = (currentPage - 1) * pageSize;
+
+            using var countCmd = conn.CreateCommand();
+            countCmd.CommandText = $"SELECT COUNT(*) FROM \"{selectedTable}\"";
+
+            var total = Convert.ToInt32(await countCmd.ExecuteScalarAsync());
+
+            totalPages = Math.Max(1, (int)Math.Ceiling(total / (double)pageSize));
+
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $"SELECT * FROM \"{selectedTable}\" LIMIT {pageSize} OFFSET {offset}";
+
+            await using var reader = await cmd.ExecuteReaderAsync();
+
+            records.Clear();
+
+            while (await reader.ReadAsync())
+            {
+                var dict = new Dictionary<string, object?>();
+
+                for (int i = 0; i < reader.FieldCount; i++)
+                {
+                    dict[reader.GetName(i)] = reader.IsDBNull(i) ? null : reader.GetValue(i);
+                }
+
+                records.Add(dict);
+            }
+        }
+        catch (Exception ex)
+        {
+            AddLog("Failed loading records: " + ex.Message);
+        }
+        finally
+        {
+            isLoadingRecords = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task PrevPage()
+    {
+        if (!HasPrev)
+            return;
+
+        currentPage--;
+        await LoadRecordsAsync();
+    }
+
+    private async Task NextPage()
+    {
+        if (!HasNext)
+            return;
+
+        currentPage++;
+        await LoadRecordsAsync();
+    }
+}

@@ -1,0 +1,530 @@
+@page "/faction/{FactionId}"
+@using ListBuilder.AppCode.Data.Database
+@using ListBuilder.AppCode.Data.Import
+@using ListBuilder.AppCode.Services
+@using ListBuilder.AppCode.Models.Core
+@using ListBuilder.AppCode.Models.Rules
+
+@inject WahaSQLiteService DB
+@inject WahaDataService Data
+
+<div class="p-2">
+    <div class="card bg-secondary-subtle">
+        <div class="card-header d-flex align-items-center">
+            <NavLink class="btn btn-dark btn-sm w-auto" href="/">
+                <i class="fa fa-chevron-left" aria-hidden="true"></i>
+            </NavLink>
+
+            <h1 class="text-primary m-0 ms-3">@faction?.Name</h1>
+
+            <NavLink class="btn btn-outline-primary ms-auto" href="/">
+                Units<i class="fa fa-chevron-right ms-2" aria-hidden="true"></i>
+            </NavLink>
+        </div>
+        <div class="card-body">
+            @if (loading)
+            {
+                <div class="d-flex align-items-center">
+                    <div class="spinner-border text-primary me-2" role="status" aria-hidden="true"></div>
+                    <div>Loading faction data...</div>
+                </div>
+            }
+            else if (faction == null)
+            {
+                <div class="alert alert-danger">Faction not found.</div>
+            }
+            else
+            {
+                <!-- Keyword Filter Button -->
+                <div class="mb-3">
+                    <button class="btn btn-primary" @onclick="OpenKeywordModal">
+                        <i class="fa fa-filter me-2"></i>Filter by Keywords
+                        @if (selectedKeywords.Count > 0)
+                        {
+                            <span class="badge bg-light text-dark ms-2">@selectedKeywords.Count selected</span>
+                        }
+                    </button>
+
+                    @if (selectedKeywords.Count > 0)
+                    {
+                        <button class="btn btn-outline-secondary ms-2" @onclick="ClearKeywordFilter">
+                            <i class="fa fa-times me-1"></i>Clear Filter
+                        </button>
+                        <div class="mt-2">
+                            <span class="badge bg-secondary me-1">@(useAndLogic ? "AND" : "OR") Logic</span>
+                            @foreach (var kw in selectedKeywords)
+                            {
+                                <span class="badge bg-primary me-1">@kw</span>
+                            }
+                        </div>
+                    }
+                </div>
+
+                <!-- Army Abilities Section -->
+                <div class="h4 text-primary">Army Abilities</div>
+                @if (faction.Abilities.Count == 0)
+                {
+                    <div class="text-muted mb-3">No army abilities available @(selectedKeywords.Count > 0 ? "matching the selected keywords" : "").</div>
+                }
+                else
+                {
+                    <div class="accordion mb-4">
+                    @foreach (var a in faction.Abilities)
+                    {
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#ability-@(a.Id)" aria-expanded="false" aria-controls="ability-@(a.Id)">
+                                    @a.Name
+                                </button>
+                            </h2>
+                            <div id="ability-@(a.Id)" class="accordion-collapse collapse">
+                                <div class="accordion-body rule-content">
+                                    @((MarkupString)WahaDataImporter.CleanHtml(a.Description))                                
+                                </div>
+                            </div>
+                        </div>
+                    }
+                    </div>
+                }
+
+                <hr />
+
+                <!-- Detachments Section -->
+                <div class="h4 text-primary">Detachments</div>
+                @if (detachments.Count == 0)
+                {
+                    <div class="text-muted">No detachments available @(selectedKeywords.Count > 0 ? "matching the selected keywords" : "for this faction").</div>
+                }
+                else
+                {
+                    <div class="mb-3">
+                        <label for="detachmentSelect" class="form-label">Select a Detachment</label>
+                        <select id="detachmentSelect" class="form-select" @bind="selectedDetachmentId" @bind:after="OnDetachmentChanged">
+                            <option value="0">-- Choose Detachment --</option>
+                            @foreach (var d in detachments)
+                            {
+                                <option value="@d.Id">@d.Name</option>
+                            }
+                        </select>
+                    </div>
+
+                    @if (loadingDetachment)
+                    {
+                        <div class="d-flex align-items-center">
+                            <div class="spinner-border text-primary me-2" role="status" aria-hidden="true"></div>
+                            <div>Loading detachment details...</div>
+                        </div>
+                    }
+                    else if (selectedDetachment != null)
+                    {
+                        <!-- Detachment Details -->
+                        <div class="card mb-3">
+                            <div class="card-header bg-primary text-white">
+                                <h5 class="mb-0">@selectedDetachment.Name</h5>
+                            </div>
+                            <div class="card-body">
+                                @if (!string.IsNullOrEmpty(selectedDetachment.Legend))
+                                {
+                                    <div class="mb-3">
+                                        <h6 class="text-secondary">Description</h6>
+                                        <div class="rule-content">
+                                            @((MarkupString)WahaDataImporter.CleanHtml(selectedDetachment.Legend))
+                                        </div>
+                                    </div>
+                                }
+
+                                @if (!string.IsNullOrEmpty(selectedDetachment.Type))
+                                {
+                                    <div class="mb-2">
+                                        <strong>Type:</strong> @selectedDetachment.Type
+                                    </div>
+                                }
+                            </div>
+                        </div>
+
+                        <!-- Detachment Abilities -->
+                        @if (selectedDetachment.Abilities.Count > 0)
+                        {
+                            <div class="mb-4">
+                                <h5 class="text-primary">Detachment Abilities</h5>
+                                <div class="accordion">
+                                @foreach (var ability in selectedDetachment.Abilities)
+                                {
+                                    <div class="accordion-item">
+                                        <h2 class="accordion-header">
+                                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#det-ability-@(ability.Id)" aria-expanded="false">
+                                                @ability.Name
+                                            </button>
+                                        </h2>
+                                        <div id="det-ability-@(ability.Id)" class="accordion-collapse collapse">
+                                            <div class="accordion-body rule-content">
+                                                @if (!string.IsNullOrEmpty(ability.Legend))
+                                                {
+                                                    <div class="text-muted mb-2"><small>@ability.Legend</small></div>
+                                                }
+                                                @((MarkupString)WahaDataImporter.CleanHtml(ability.Description))
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                                </div>
+                            </div>
+                        }
+
+                        <!-- Stratagems -->
+                        @if (selectedDetachment.Stratagems.Count > 0)
+                        {
+                            <div class="mb-4">
+                                <h5 class="text-primary">Stratagems</h5>
+                                <div class="accordion">
+                                @foreach (var strat in selectedDetachment.Stratagems)
+                                {
+                                    <div class="accordion-item">
+                                        <h2 class="accordion-header">
+                                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#strat-@(strat.Id)" aria-expanded="false">
+                                                @strat.Name
+                                                @if (!string.IsNullOrEmpty(strat.CpCost))
+                                                {
+                                                    <span class="badge bg-warning text-dark ms-2">@strat.CpCost CP</span>
+                                                }
+                                            </button>
+                                        </h2>
+                                        <div id="strat-@(strat.Id)" class="accordion-collapse collapse">
+                                            <div class="accordion-body rule-content">
+                                                <div class="mb-2">
+                                                    @if (!string.IsNullOrEmpty(strat.Type))
+                                                    {
+                                                        <span class="badge bg-secondary me-1">@strat.Type</span>
+                                                    }
+                                                    @if (!string.IsNullOrEmpty(strat.Phase))
+                                                    {
+                                                        <span class="badge bg-info me-1">@strat.Phase</span>
+                                                    }
+                                                </div>
+                                                @if (!string.IsNullOrEmpty(strat.Legend))
+                                                {
+                                                    <div class="text-muted mb-2"><small>@strat.Legend</small></div>
+                                                }
+                                                @((MarkupString)WahaDataImporter.CleanHtml(strat.Description))
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                                </div>
+                            </div>
+                        }
+
+                        <!-- Enhancements -->
+                        @if (selectedDetachment.Enhancements.Count > 0)
+                        {
+                            <div class="mb-4">
+                                <h5 class="text-primary">Enhancements</h5>
+                                <div class="accordion">
+                                @foreach (var enhancement in selectedDetachment.Enhancements)
+                                {
+                                    <div class="accordion-item">
+                                        <h2 class="accordion-header">
+                                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#enh-@(enhancement.Id)" aria-expanded="false">
+                                                @enhancement.Name
+                                                <span class="badge bg-success text-white ms-2">@enhancement.Cost pts</span>
+                                            </button>
+                                        </h2>
+                                        <div id="enh-@(enhancement.Id)" class="accordion-collapse collapse">
+                                            <div class="accordion-body rule-content">
+                                                @if (!string.IsNullOrEmpty(enhancement.Legend))
+                                                {
+                                                    <div class="text-muted mb-2"><small>@enhancement.Legend</small></div>
+                                                }
+                                                @((MarkupString)WahaDataImporter.CleanHtml(enhancement.Description))
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                                </div>
+                            </div>
+                        }
+                    }
+                }
+            }
+        </div>
+    </div>
+</div>
+
+<!-- Keyword Filter Modal -->
+@if (showKeywordModal)
+{
+    <div class="modal show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content" style="max-height: 90vh; display: flex; flex-direction: column;">
+                <!-- Fixed Header -->
+                <div class="modal-header">
+                    <h5 class="modal-title">Filter by Keywords</h5>
+                    <button type="button" class="btn-close" @onclick="CloseKeywordModal"></button>
+                </div>
+
+                <!-- Scrollable Body with Keywords Only -->
+                <div class="modal-body" style="overflow-y: auto; flex: 1 1 auto;">
+                    <div class="mb-2">
+                        <strong>Select Keywords (@tempSelectedKeywords.Count selected):</strong>
+                    </div>
+
+                    @if (loadingKeywords)
+                    {
+                        <div class="text-center py-3">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading keywords...</span>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <!-- Common Keywords (used by multiple datasheets) -->
+                        @if (commonKeywords.Count > 0)
+                        {
+                            <div class="mb-3">
+                                <small class="text-muted d-block mb-2">
+                                    <i class="fa fa-star me-1"></i>Common Keywords (@commonKeywords.Count)
+                                </small>
+                                <div class="d-flex flex-wrap gap-2">
+                                    @foreach (var keyword in commonKeywords)
+                                    {
+                                        var isSelected = tempSelectedKeywords.Contains(keyword);
+                                        <button class="btn @(isSelected ? "btn-primary" : "btn-outline-secondary") btn-sm"
+                                                @onclick="@(() => ToggleKeyword(keyword))">
+                                            @keyword
+                                            @if (isSelected)
+                                            {
+                                                <i class="fa fa-check ms-1"></i>
+                                            }
+                                        </button>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        <!-- Unique Keywords (used by only one datasheet) - Collapsible -->
+                        @if (uniqueKeywords.Count > 0)
+                        {
+                            <div>
+                                <button class="btn btn-link btn-sm p-0 text-decoration-none" @onclick="ToggleUniqueKeywords">
+                                    <i class="fa @(showUniqueKeywords ? "fa-chevron-down" : "fa-chevron-right") me-1"></i>
+                                    Unique Keywords (@uniqueKeywords.Count)
+                                    <small class="text-muted ms-1">(used by single unit)</small>
+                                </button>
+
+                                @if (showUniqueKeywords)
+                                {
+                                    <div class="d-flex flex-wrap gap-2 mt-2">
+                                        @foreach (var keyword in uniqueKeywords)
+                                        {
+                                            var isSelected = tempSelectedKeywords.Contains(keyword);
+                                            <button class="btn @(isSelected ? "btn-primary" : "btn-outline-secondary") btn-sm"
+                                                    @onclick="@(() => ToggleKeyword(keyword))">
+                                                @keyword
+                                                @if (isSelected)
+                                                {
+                                                    <i class="fa fa-check ms-1"></i>
+                                                }
+                                            </button>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        @if (commonKeywords.Count == 0 && uniqueKeywords.Count == 0)
+                        {
+                            <div class="text-muted text-center py-3">
+                                <i class="fa fa-info-circle me-1"></i>No keywords found for this faction
+                            </div>
+                        }
+                    }
+                </div>
+
+                <!-- Fixed Footer with Toggle and Buttons -->
+                <div class="modal-footer" style="flex-shrink: 0; flex-direction: column; align-items: stretch; gap: 0.5rem;">
+                    <!-- AND/OR Toggle -->
+                    <div class="w-100">
+                        <label class="form-label mb-1"><small>Filter Logic:</small></label>
+                        <div class="btn-group w-100" role="group">
+                            <input type="radio" class="btn-check" name="logicToggle" id="orLogic" checked="@(!tempUseAndLogic)" @onchange="@(() => tempUseAndLogic = false)" />
+                            <label class="btn btn-outline-primary btn-sm" for="orLogic">
+                                OR
+                                <small class="d-none d-md-inline">(Any)</small>
+                            </label>
+
+                            <input type="radio" class="btn-check" name="logicToggle" id="andLogic" checked="@tempUseAndLogic" @onchange="@(() => tempUseAndLogic = true)" />
+                            <label class="btn btn-outline-primary btn-sm" for="andLogic">
+                                AND
+                                <small class="d-none d-md-inline">(All)</small>
+                            </label>
+                        </div>
+                        <small class="text-muted d-block mt-1">
+                            @if (tempUseAndLogic)
+                            {
+                                <text>Match <strong>all</strong> selected keywords</text>
+                            }
+                            else
+                            {
+                                <text>Match <strong>any</strong> selected keyword</text>
+                            }
+                        </small>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="d-flex gap-2 w-100">
+                        <button type="button" class="btn btn-secondary flex-fill" @onclick="CloseKeywordModal">
+                            Cancel
+                        </button>
+                        <button type="button" class="btn btn-outline-warning flex-fill" @onclick="ClearTempSelection">
+                            Clear
+                        </button>
+                        <button type="button" class="btn btn-primary flex-fill" @onclick="ApplyKeywordFilter">
+                            Apply
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public string FactionId { get; set; } = string.Empty;
+
+    private Faction? faction;
+    private List<Detachment> detachments = new();
+    private Detachment? selectedDetachment;
+    private int selectedDetachmentId = 0;
+    private bool loading = true;
+    private bool loadingDetachment = false;
+
+    // Keyword filtering
+    private List<string> selectedKeywords = new();
+    private bool useAndLogic = false;
+
+    // Keyword modal
+    private bool showKeywordModal = false;
+    private bool loadingKeywords = false;
+    private List<string> availableKeywords = new();
+    private List<string> commonKeywords = new();
+    private List<string> uniqueKeywords = new();
+    private bool showUniqueKeywords = false;
+    private List<string> tempSelectedKeywords = new();
+    private bool tempUseAndLogic = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!DB.DatabaseExists)
+        {
+            loading = false;
+            return;
+        }
+
+        await LoadFactionDataAsync();
+        loading = false;
+    }
+
+    private async Task LoadFactionDataAsync()
+    {
+        var overview = await Data.GetFactionOverviewAsync(FactionId, selectedKeywords.Count > 0 ? selectedKeywords : null, useAndLogic);
+        if (overview != null)
+        {
+            faction = overview.Faction;
+            detachments = overview.Detachments;
+        }
+
+        // Clear selected detachment when filtering changes
+        selectedDetachment = null;
+        selectedDetachmentId = 0;
+    }
+
+    private async Task OpenKeywordModal()
+    {
+        showKeywordModal = true;
+        loadingKeywords = true;
+        showUniqueKeywords = false; // Reset collapse state
+        tempSelectedKeywords = new List<string>(selectedKeywords);
+        tempUseAndLogic = useAndLogic;
+        StateHasChanged();
+
+        // Load keywords grouped by frequency
+        var grouped = await Data.GetFactionKeywordsGroupedAsync(FactionId);
+        commonKeywords = grouped.CommonKeywords;
+        uniqueKeywords = grouped.UniqueKeywords;
+        availableKeywords = commonKeywords.Concat(uniqueKeywords).ToList();
+
+        loadingKeywords = false;
+        StateHasChanged();
+    }
+
+    private void ToggleUniqueKeywords()
+    {
+        showUniqueKeywords = !showUniqueKeywords;
+    }
+
+    private void CloseKeywordModal()
+    {
+        showKeywordModal = false;
+    }
+
+    private void ToggleKeyword(string keyword)
+    {
+        if (tempSelectedKeywords.Contains(keyword))
+            tempSelectedKeywords.Remove(keyword);
+        else
+            tempSelectedKeywords.Add(keyword);
+    }
+
+    private void ClearTempSelection()
+    {
+        tempSelectedKeywords.Clear();
+    }
+
+    private async Task ApplyKeywordFilter()
+    {
+        selectedKeywords = new List<string>(tempSelectedKeywords);
+        useAndLogic = tempUseAndLogic;
+        showKeywordModal = false;
+
+        loading = true;
+        StateHasChanged();
+
+        await LoadFactionDataAsync();
+
+        loading = false;
+        StateHasChanged();
+    }
+
+    private async Task ClearKeywordFilter()
+    {
+        selectedKeywords.Clear();
+        useAndLogic = false;
+
+        loading = true;
+        StateHasChanged();
+
+        await LoadFactionDataAsync();
+
+        loading = false;
+        StateHasChanged();
+    }
+
+    private async Task OnDetachmentChanged()
+    {
+        if (selectedDetachmentId == 0)
+        {
+            selectedDetachment = null;
+            return;
+        }
+
+        loadingDetachment = true;
+        StateHasChanged();
+
+        selectedDetachment = await Data.GetDetachmentDetailsAsync(selectedDetachmentId);
+
+        loadingDetachment = false;
+        StateHasChanged();
+    }
+}

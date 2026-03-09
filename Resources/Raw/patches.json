@@ -1,0 +1,26 @@
+[
+  {
+    "table": "Abilities",
+    "action": "delete",
+    "where": "faction_id = 'AE' AND name = 'Strands of Fate'",
+    "reason": "Outdated Index rule - replaced by Battle Focus in Codex Aeldari"
+  },
+  {
+    "table": "Abilities",
+    "action": "delete",
+    "where": "faction_id = 'AE' AND name = 'Agile Manoeuvres'",
+    "reason": "Duplicate Rule"
+  },
+  {
+    "table": "Abilities",
+    "action": "delete",
+    "where": "faction_id != 'CSM' AND name = 'Dark Pacts'",
+    "reason": "Excess dark pacts rules"
+  },
+  {
+    "table": "Detachments",
+    "action": "delete",
+    "where": "Type = 'Boarding Actions'",
+    "reason": "not supporting boarding actions"
+  }
+]

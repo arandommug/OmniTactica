@@ -1,0 +1,61 @@
+﻿@page "/"
+@using ListBuilder.AppCode.Data.Database
+@using ListBuilder.AppCode.Services
+@using ListBuilder.AppCode.Models.Core
+
+@inject WahaSQLiteService DB
+@inject WahaDataService Data
+
+<div class="p-2">
+    <div class="card bg-secondary-subtle">
+        <div class="card-header">
+            <h1 class="text-primary">Browse Factions</h1>
+        </div>
+        <div class="card-body">
+        @if (!DB.DatabaseExists)
+        {
+            <div class="alert alert-warning">Database not installed. Go to Settings to download data.</div>
+        }
+        else if (loading)
+        {
+            <div class="d-flex align-items-center">
+                <div class="spinner-border text-primary me-2" role="status" aria-hidden="true"></div>
+                <div>Loading factions...</div>
+            </div>
+        }
+        else
+        {
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1rem;">
+            @foreach (var f in factions)
+            {
+                <NavLink class="card border-primary" href="@($"/faction/{@f.Id}")">
+                    <div class="card-body">
+                        <div class="d-flex align-items-center">
+                            <div class="w-auto h5 mb-0">@f.Name</div>
+                            <icon class="fa fa-chevron-right ms-auto text-end"></icon>
+                        </div>
+                    </div>
+                </NavLink>
+            }
+            </div>
+        }
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<Faction> factions = new();
+    private bool loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!DB.DatabaseExists)
+        {
+            loading = false;
+            return;
+        }
+
+        factions = await Data.GetAllFactionsAsync();
+        loading = false;
+    }
+}
