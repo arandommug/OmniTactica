@@ -253,8 +253,8 @@
 <!-- Keyword Filter Modal -->
 @if (showKeywordModal)
 {
-    <div class="modal show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
-        <div class="modal-dialog modal-lg">
+    <div class="modal show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);" @onclick="CloseKeywordModal">
+        <div class="modal-dialog modal-lg" @onclick:stopPropagation>
             <div class="modal-content" style="max-height: 90vh; display: flex; flex-direction: column;">
                 <!-- Fixed Header -->
                 <div class="modal-header">
