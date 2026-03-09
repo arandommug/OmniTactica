@@ -1,6 +1,6 @@
-using ListBuilder.AppCode.Models.Rules;
+using OmniTactica.AppCode.Models.Rules;
 
-namespace ListBuilder.AppCode.Models.Core
+namespace OmniTactica.AppCode.Models.Core
 {
     /// <summary>
     /// Represents a Warhammer 40K faction with its associated game data.

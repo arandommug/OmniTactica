@@ -1,4 +1,4 @@
-namespace ListBuilder.AppCode.Data.Tables
+namespace OmniTactica.AppCode.Data.Tables
 {
     /// <summary>
     /// Represents the Detachment_abilities table schema.

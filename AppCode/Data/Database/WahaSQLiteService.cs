@@ -1,7 +1,7 @@
-﻿using ListBuilder.AppCode.Data.Import;
+﻿using OmniTactica.AppCode.Data.Import;
 using Microsoft.Data.Sqlite;
 
-namespace ListBuilder.AppCode.Data.Database
+namespace OmniTactica.AppCode.Data.Database
 {
     /// <summary>
     /// Core database service responsible for SQLite connection management.

@@ -1,4 +1,4 @@
-namespace ListBuilder.AppCode.Data.Tables
+namespace OmniTactica.AppCode.Data.Tables
 {
     public record AbilityTable(
         int Id,

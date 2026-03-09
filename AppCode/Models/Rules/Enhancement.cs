@@ -1,4 +1,4 @@
-namespace ListBuilder.AppCode.Models.Rules
+namespace OmniTactica.AppCode.Models.Rules
 {
     /// <summary>
     /// Represents a character enhancement/relic.

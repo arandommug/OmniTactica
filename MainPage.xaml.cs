@@ -1,6 +1,6 @@
 ﻿using Microsoft.Maui.Devices;
 
-namespace ListBuilder;
+namespace OmniTactica;
 
 public partial class MainPage : ContentPage
 {

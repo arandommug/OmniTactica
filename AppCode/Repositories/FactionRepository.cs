@@ -1,9 +1,9 @@
-using ListBuilder.AppCode.Data.Database;
-using ListBuilder.AppCode.Data.Tables;
-using ListBuilder.AppCode.Models.Core;
-using ListBuilder.AppCode.Models.Rules;
+using OmniTactica.AppCode.Data.Database;
+using OmniTactica.AppCode.Data.Tables;
+using OmniTactica.AppCode.Models.Core;
+using OmniTactica.AppCode.Models.Rules;
 
-namespace ListBuilder.AppCode.Repositories
+namespace OmniTactica.AppCode.Repositories
 {
     /// <summary>
     /// Repository for loading Faction data with associated game content.

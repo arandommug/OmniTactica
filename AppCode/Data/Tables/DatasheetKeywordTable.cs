@@ -1,6 +1,6 @@
-using ListBuilder.AppCode.Data.Database;
+using OmniTactica.AppCode.Data.Database;
 
-namespace ListBuilder.AppCode.Data.Tables
+namespace OmniTactica.AppCode.Data.Tables
 {
     /// <summary>
     /// Represents a keyword associated with a datasheet.

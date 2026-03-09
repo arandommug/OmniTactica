@@ -1,6 +1,6 @@
-using ListBuilder.AppCode.Models.Rules;
+using OmniTactica.AppCode.Models.Rules;
 
-namespace ListBuilder.AppCode.Models.Core
+namespace OmniTactica.AppCode.Models.Core
 {
     /// <summary>
     /// Represents a detachment with its associated stratagems, enhancements, and abilities.

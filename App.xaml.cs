@@ -1,4 +1,4 @@
-﻿namespace ListBuilder
+﻿namespace OmniTactica
 {
     public partial class App : Application
     {
@@ -9,7 +9,7 @@
 
         protected override Window CreateWindow(IActivationState? activationState)
         {
-            return new Window(new MainPage()) { Title = "ListBuilder" };
+            return new Window(new MainPage()) { Title = "OmniTactica" };
         }
     }
 }

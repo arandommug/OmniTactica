@@ -1,7 +1,7 @@
-﻿using ListBuilder.AppCode.Data.Database;
+﻿using OmniTactica.AppCode.Data.Database;
 using Microsoft.Data.Sqlite;
 
-namespace ListBuilder.AppCode.Data.Tables
+namespace OmniTactica.AppCode.Data.Tables
 {
     public abstract class TableBase
     {

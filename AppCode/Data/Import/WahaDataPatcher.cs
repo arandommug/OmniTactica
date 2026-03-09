@@ -2,7 +2,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 
-namespace ListBuilder.AppCode.Data.Import
+namespace OmniTactica.AppCode.Data.Import
 {
     public static class WahaDataPatcher
     {
@@ -36,7 +36,7 @@ namespace ListBuilder.AppCode.Data.Import
 
             if (string.IsNullOrWhiteSpace(json))
             {
-                const string resourceName = "ListBuilder.Resources.Raw.patches.json";
+                const string resourceName = "OmniTactica.Resources.Raw.patches.json";
 
                 try
                 {

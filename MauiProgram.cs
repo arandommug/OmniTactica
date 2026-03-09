@@ -1,10 +1,10 @@
 ﻿using CommunityToolkit.Maui.Markup;
-using ListBuilder.AppCode.Data.Database;
-using ListBuilder.AppCode.Repositories;
-using ListBuilder.AppCode.Services;
+using OmniTactica.AppCode.Data.Database;
+using OmniTactica.AppCode.Repositories;
+using OmniTactica.AppCode.Services;
 using Microsoft.Extensions.Logging;
 
-namespace ListBuilder
+namespace OmniTactica
 {
     public static class MauiProgram
     {

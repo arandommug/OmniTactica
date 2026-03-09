@@ -1,7 +1,7 @@
-using ListBuilder.AppCode.Models.Core;
-using ListBuilder.AppCode.Repositories;
+using OmniTactica.AppCode.Models.Core;
+using OmniTactica.AppCode.Repositories;
 
-namespace ListBuilder.AppCode.Services
+namespace OmniTactica.AppCode.Services
 {
     /// <summary>
     /// High-level service for accessing Warhammer 40K game data.

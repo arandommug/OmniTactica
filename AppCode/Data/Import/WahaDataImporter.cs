@@ -1,11 +1,11 @@
-﻿using ListBuilder.AppCode.Data.Database;
+﻿using OmniTactica.AppCode.Data.Database;
 using Microsoft.Data.Sqlite;
 using System.Diagnostics;
 using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace ListBuilder.AppCode.Data.Import
+namespace OmniTactica.AppCode.Data.Import
 {
     internal class WahaDataImporter
     {

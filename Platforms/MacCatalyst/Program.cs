@@ -1,7 +1,7 @@
 ﻿using ObjCRuntime;
 using UIKit;
 
-namespace ListBuilder
+namespace OmniTactica
 {
     public class Program
     {

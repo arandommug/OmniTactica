@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using System.Text;
 
-namespace ListBuilder.AppCode.Utilities
+namespace OmniTactica.AppCode.Utilities
 {
     internal class SqlMapper
     {

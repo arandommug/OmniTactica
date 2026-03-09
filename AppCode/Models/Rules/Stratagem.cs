@@ -1,4 +1,4 @@
-namespace ListBuilder.AppCode.Models.Rules
+namespace OmniTactica.AppCode.Models.Rules
 {
     /// <summary>
     /// Represents a tactical stratagem that can be used during battle.

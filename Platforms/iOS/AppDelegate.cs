@@ -1,6 +1,6 @@
 ﻿using Foundation;
 
-namespace ListBuilder
+namespace OmniTactica
 {
     [Register("AppDelegate")]
     public class AppDelegate : MauiUIApplicationDelegate
