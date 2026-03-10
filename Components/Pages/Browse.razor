@@ -10,6 +10,17 @@
     <div class="card bg-secondary-subtle">
         <div class="card-header">
             <h1 class="text-primary">Browse Factions</h1>
+            @if (DB.DatabaseExists && !loading)
+            {
+                <div class="mt-3">
+                    <input type="text" 
+                           class="form-control" 
+                           placeholder="Search factions..." 
+                           @bind="searchText"
+                           @bind:event="oninput"
+                           @bind:after="FilterFactions" />
+                </div>
+            }
         </div>
         <div class="card-body">
         @if (!DB.DatabaseExists)
@@ -25,26 +36,36 @@
         }
         else
         {
-            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1rem;">
-            @foreach (var f in factions)
+            @if (filteredFactions.Count == 0)
             {
-                <NavLink class="card border-primary" href="@($"/faction/{@f.Id}")">
-                    <div class="card-body">
-                        <div class="d-flex align-items-center">
-                            <div class="w-auto h5 mb-0">@f.Name</div>
-                            <icon class="fa fa-chevron-right ms-auto text-end"></icon>
-                        </div>
-                    </div>
-                </NavLink>
+                <div class="alert alert-info">No factions found matching "@searchText"</div>
             }
-            </div>
+            else
+            {
+                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1rem;">
+                @foreach (var f in filteredFactions)
+                {
+                    <NavLink class="card border-primary" href="@($"/faction/{@f.Id}")">
+                        <div class="card-body">
+                            <div class="d-flex align-items-center">
+                                <div class="w-auto h5 mb-0">@f.Name</div>
+                                <icon class="fa fa-chevron-right ms-auto text-end"></icon>
+                            </div>
+                        </div>
+                    </NavLink>
+                }
+                </div>
+            }
         }
         </div>
     </div>
+    <ScrollToTopButton />
 </div>
 
 @code {
     private List<Faction> factions = new();
+    private List<Faction> filteredFactions = new();
+    private string searchText = string.Empty;
     private bool loading = true;
 
     protected override async Task OnInitializedAsync()
@@ -56,6 +77,21 @@
         }
 
         factions = await Data.GetAllFactionsAsync();
+        filteredFactions = factions;
         loading = false;
+    }
+
+    private void FilterFactions()
+    {
+        if (string.IsNullOrWhiteSpace(searchText))
+        {
+            filteredFactions = factions;
+        }
+        else
+        {
+            filteredFactions = factions
+                .Where(f => f.Name.Contains(searchText, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+        }
     }
 }

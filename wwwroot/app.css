@@ -206,3 +206,41 @@ h1:focus {
     margin-bottom: 8px;
     text-align: center;
 }
+
+/* Back to top button */
+.scroll-to-top-btn {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 99;
+    width: 50px;
+    height: 50px;
+    border: none;
+    outline: none;
+    background-color: var(--bs-primary);
+    color: var(--bs-light);
+    cursor: pointer;
+    border-radius: 50%;
+    font-size: 20px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.3s, transform 0.2s;
+}
+
+@media (max-width:640px) {
+    .scroll-to-top-btn {
+        bottom: 88px;
+    }
+}
+
+.scroll-to-top-btn:hover {
+    background-color: var(--bs-primary-dark, var(--bs-primary));
+    filter: brightness(0.9);
+    transform: scale(1.1);
+}
+
+.scroll-to-top-btn:active {
+    transform: scale(0.95);
+}

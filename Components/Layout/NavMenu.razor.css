@@ -35,13 +35,11 @@
     position: fixed;
     left: 16px;
     right: 16px;
-    bottom: calc(12px + 10px);
+    bottom: 22px;
     background: var(--bs-body-bg);
     border: 1px solid var(--bs-border-color);
     border-radius: var(--bs-border-radius-xl);
     box-shadow: var(--bs-box-shadow);
-    padding: .5rem;
-    padding-bottom: calc(.5rem + env(safe-area-inset-bottom));
     transition: height .25s ease;
     overflow: hidden;
     height: 44px;
@@ -51,11 +49,8 @@
 .mobileDrawer.open {
     height: auto;
     max-height: 40vh;
+    padding: 10px 15px 15px 15px;
 }
-
-/* =========================
-   HANDLE
-========================= */
 
 /* =========================
    HANDLE
@@ -67,7 +62,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    height: 34px;
+    height: inherit;
     cursor: pointer;
     border-radius: var(--bs-border-radius);
     transition: background .15s ease;

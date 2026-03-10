@@ -1,0 +1,42 @@
+@inject IJSRuntime JS
+
+@if (isVisible)
+{
+    <button class="scroll-to-top-btn" @onclick="ScrollToTop" title="Scroll to top">
+        <i class="fa fa-chevron-up" aria-hidden="true"></i>
+    </button>
+}
+
+@code {
+    private bool isVisible = false;
+    private DotNetObjectReference<ScrollToTopButton>? dotNetRef;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            dotNetRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("initScrollToTop", dotNetRef);
+        }
+    }
+
+    [JSInvokable]
+    public void UpdateVisibility(bool visible)
+    {
+        if (isVisible != visible)
+        {
+            isVisible = visible;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ScrollToTop()
+    {
+        await JS.InvokeVoidAsync("scrollToTop");
+    }
+
+    public void Dispose()
+    {
+        dotNetRef?.Dispose();
+    }
+}
