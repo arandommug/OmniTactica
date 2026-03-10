@@ -12,11 +12,28 @@ namespace OmniTactica.AppCode.Repositories
     {
         public DatasheetRepository(WahaSQLiteService db) : base(db) { }
 
-        /// <summary>
-        /// Gets all datasheets for a faction (list view).
-        /// Optionally filters by selected keywords with AND/OR logic.
-        /// Supports both include and exclude keyword filters.
-        /// </summary>
+            /// <summary>
+            /// Gets basic datasheet info by ID.
+            /// </summary>
+            public async Task<Datasheet?> GetDatasheetByIdAsync(int datasheetId)
+            {
+                const string sql = "SELECT id, name, faction_id, role, legend FROM Datasheets WHERE id = @id";
+
+                return await QuerySingleAsync(sql, r => new Datasheet
+                {
+                    Id = I(r, "id") ?? 0,
+                    Name = S(r, "name"),
+                    FactionId = S(r, "faction_id"),
+                    Role = S(r, "role"),
+                    Legend = S(r, "legend")
+                }, ("@id", datasheetId));
+            }
+
+            /// <summary>
+            /// Gets all datasheets for a faction (list view).
+            /// Optionally filters by selected keywords with AND/OR logic.
+            /// Supports both include and exclude keyword filters.
+            /// </summary>
         public async Task<List<Datasheet>> GetDatasheetsByFactionAsync(
             string factionId,
             List<string>? includeKeywords = null,

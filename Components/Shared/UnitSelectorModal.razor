@@ -1,0 +1,121 @@
+@using OmniTactica.AppCode.Services
+@using OmniTactica.AppCode.Models.Core
+
+@inject WahaDataService Data
+
+<div class="modal show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5);">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Select Unit</h5>
+                <button type="button" class="btn-close" @onclick="OnClose"></button>
+            </div>
+            <div class="modal-body">
+                <input type="text" 
+                       class="form-control mb-3" 
+                       placeholder="Search units..." 
+                       @bind="searchText"
+                       @bind:event="oninput"
+                       @bind:after="FilterUnits" />
+
+                @if (loading)
+                {
+                    <div class="text-center">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                }
+                else if (filteredFactions.Count == 0)
+                {
+                    <div class="alert alert-info">No units found</div>
+                }
+                else
+                {
+                    @foreach (var faction in filteredFactions)
+                    {
+                        <div class="mb-3">
+                            <h6 class="text-primary">@faction.Name</h6>
+                            <div class="list-group">
+                                @foreach (var unit in faction.Datasheets.Where(d => d.Name.Contains(searchText, StringComparison.OrdinalIgnoreCase)))
+                                {
+                                    <button class="list-group-item list-group-item-action" 
+                                            @onclick="() => SelectUnit(unit.Id, unit.Name)">
+                                        @unit.Name
+                                        @if (unit.PointsCost.HasValue)
+                                        {
+                                            <span class="badge bg-secondary float-end">@unit.PointsCost pts</span>
+                                        }
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" @onclick="OnClose">Cancel</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public EventCallback<(int datasheetId, string datasheetName)> OnSelect { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private List<FactionWithDatasheets> allFactions = new();
+    private List<FactionWithDatasheets> filteredFactions = new();
+    private string searchText = string.Empty;
+    private bool loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var factions = await Data.GetAllFactionsAsync();
+        
+        foreach (var faction in factions)
+        {
+            var datasheets = await Data.GetDatasheetsByFactionAsync(faction.Id);
+            allFactions.Add(new FactionWithDatasheets 
+            { 
+                Name = faction.Name, 
+                Datasheets = datasheets 
+            });
+        }
+
+        filteredFactions = allFactions;
+        loading = false;
+    }
+
+    private void FilterUnits()
+    {
+        if (string.IsNullOrWhiteSpace(searchText))
+        {
+            filteredFactions = allFactions;
+        }
+        else
+        {
+            filteredFactions = allFactions
+                .Select(f => new FactionWithDatasheets
+                {
+                    Name = f.Name,
+                    Datasheets = f.Datasheets
+                        .Where(d => d.Name.Contains(searchText, StringComparison.OrdinalIgnoreCase))
+                        .ToList()
+                })
+                .Where(f => f.Datasheets.Any())
+                .ToList();
+        }
+    }
+
+    private async Task SelectUnit(int datasheetId, string datasheetName)
+    {
+        await OnSelect.InvokeAsync((datasheetId, datasheetName));
+    }
+
+    private class FactionWithDatasheets
+    {
+        public string Name { get; set; } = string.Empty;
+        public List<Datasheet> Datasheets { get; set; } = new();
+    }
+}

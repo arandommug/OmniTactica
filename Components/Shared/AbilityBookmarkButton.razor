@@ -1,0 +1,66 @@
+@using OmniTactica.AppCode.Services
+@using OmniTactica.AppCode.Models.Core
+
+@inject BookmarkService BookmarkService
+@implements IDisposable
+
+<button class="btn btn-sm @(isBookmarked ? "btn-warning" : "btn-outline-warning")" 
+        @onclick="ToggleBookmark"
+        title="@(isBookmarked ? "Remove bookmark" : "Bookmark this")">
+    <i class="fa @(isBookmarked ? "fa-bookmark" : "fa-bookmark-o")"></i>
+</button>
+
+@code {
+    [Parameter] public int AbilityId { get; set; }
+    [Parameter] public string AbilityName { get; set; } = string.Empty;
+    [Parameter] public string? FactionId { get; set; }
+    [Parameter] public BookmarkType Type { get; set; } = BookmarkType.Ability;
+    [Parameter] public int? DetachmentId { get; set; }
+    [Parameter] public int? DatasheetId { get; set; }
+    [Parameter] public string? Route { get; set; }
+    [Parameter] public string? AccordionId { get; set; }
+
+    private bool isBookmarked;
+
+    protected override void OnInitialized()
+    {
+        UpdateBookmarkState();
+        BookmarkService.OnBookmarksChanged += UpdateBookmarkState;
+    }
+
+    private void UpdateBookmarkState()
+    {
+        isBookmarked = BookmarkService.IsBookmarked(Type, AbilityId.ToString());
+        StateHasChanged();
+    }
+
+    private async Task ToggleBookmark()
+    {
+        if (isBookmarked)
+        {
+            await BookmarkService.RemoveBookmarkByEntityAsync(Type, AbilityId.ToString());
+        }
+        else
+        {
+            await BookmarkService.AddBookmarkAsync(new Bookmark
+            {
+                Type = Type,
+                EntityId = AbilityId.ToString(),
+                Name = AbilityName,
+                FactionId = FactionId,
+                NavigationContext = new BookmarkNavigationContext
+                {
+                    DetachmentId = DetachmentId,
+                    DatasheetId = DatasheetId,
+                    Route = Route,
+                    AccordionId = AccordionId
+                }
+            });
+        }
+    }
+
+    public void Dispose()
+    {
+        BookmarkService.OnBookmarksChanged -= UpdateBookmarkState;
+    }
+}

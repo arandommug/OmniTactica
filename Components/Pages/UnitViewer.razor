@@ -1,4 +1,5 @@
 @page "/faction/{FactionId}/unit/{DatasheetIdStr}"
+@page "/unit/{DatasheetIdStr}"
 @using OmniTactica.AppCode.Data.Database
 @using OmniTactica.AppCode.Data.Import
 @using OmniTactica.AppCode.Services
@@ -8,13 +9,23 @@
 @inject WahaDataService Data
 @inject NavigationManager Navigation
 @inject FactionViewerState ViewerState
+@inject MathhammerService MathhammerService
 
 <div class="p-2">
     <div class="card bg-secondary-subtle">
         <div class="card-header d-flex align-items-center">
-            <NavLink class="btn btn-dark btn-sm w-auto" href="@($"/faction/{FactionId}/units")">
-                <i class="fa fa-chevron-left" aria-hidden="true"></i>
-            </NavLink>
+            @if (!string.IsNullOrEmpty(FactionId))
+            {
+                <NavLink class="btn btn-dark btn-sm w-auto" href="@($"/faction/{FactionId}/units")">
+                    <i class="fa fa-chevron-left" aria-hidden="true"></i>
+                </NavLink>
+            }
+            else
+            {
+                <NavLink class="btn btn-dark btn-sm w-auto" href="/">
+                    <i class="fa fa-chevron-left" aria-hidden="true"></i>
+                </NavLink>
+            }
 
             <h1 class="text-primary m-0 ms-3">@(datasheet?.Name ?? "Unit")</h1>
         </div>
@@ -46,6 +57,13 @@
                         </select>
                     </div>
                 }
+
+                <!-- Action Buttons -->
+                <div class="mb-3">
+                    <DatasheetActionButtons DatasheetId="@datasheetId" 
+                                          DatasheetName="@datasheet.Name" 
+                                          FactionId="@FactionId" />
+                </div>
 
                 <!-- Legend/Description -->
                 @if (!string.IsNullOrEmpty(datasheet.Legend))
@@ -112,12 +130,17 @@
                                         <th>W</th>
                                         <th>Ld</th>
                                         <th>OC</th>
+                                        @if (MathhammerService.HasDefender() && MathhammerService.GetDefender()!.DatasheetId == datasheetId)
+                                        {
+                                            <th>Select</th>
+                                        }
                                     </tr>
                                 </thead>
                                 <tbody>
                                     @foreach (var model in datasheet.Models)
                                     {
-                                        <tr>
+                                        var isSelected = MathhammerService.GetDefender()?.SelectedModel?.Line == model.Line;
+                                        <tr class="@(isSelected ? "table-active" : "")">
                                             <td>
                                                 <div>@model.Name</div>
                                                 @if (!string.IsNullOrEmpty(model.InvSv))
@@ -140,6 +163,16 @@
                                             <td>@model.W</td>
                                             <td>@model.Ld</td>
                                             <td>@model.OC</td>
+                                            @if (MathhammerService.HasDefender() && MathhammerService.GetDefender()!.DatasheetId == datasheetId)
+                                            {
+                                                <td>
+                                                    <button class="btn btn-sm @(isSelected ? "btn-success" : "btn-outline-primary")" 
+                                                            @onclick="() => SelectModel(model)"
+                                                            title="@(isSelected ? "Selected as defender model" : "Select for mathhammer")">
+                                                        <i class="fa @(isSelected ? "fa-check-circle" : "fa-shield")"></i>
+                                                    </button>
+                                                </td>
+                                            }
                                         </tr>
                                     }
                                 </tbody>
@@ -169,12 +202,17 @@
                                                 <th>S</th>
                                                 <th>AP</th>
                                                 <th>D</th>
+                                                @if (MathhammerService.HasAttacker() && MathhammerService.GetAttacker()!.DatasheetId == datasheetId)
+                                                {
+                                                    <th>Select</th>
+                                                }
                                             </tr>
                                         </thead>
                                         <tbody>
                                             @foreach (var weapon in datasheet.Wargear.Where(wep => wep.Type == "Ranged"))
                                             {
-                                                <tr>
+                                                var isSelected = MathhammerService.GetAttacker()?.SelectedWeaponLine == weapon.Line;
+                                                <tr class="@(isSelected ? "table-active" : "")">
                                                     <td>
                                                         @weapon.Name
                                                         @if (!string.IsNullOrEmpty(weapon.Description))
@@ -188,6 +226,16 @@
                                                     <td>@weapon.S</td>
                                                     <td>@weapon.AP</td>
                                                     <td>@weapon.D</td>
+                                                    @if (MathhammerService.HasAttacker() && MathhammerService.GetAttacker()!.DatasheetId == datasheetId)
+                                                    {
+                                                        <td>
+                                                            <button class="btn btn-sm @(isSelected ? "btn-success" : "btn-outline-danger")" 
+                                                                    @onclick="() => SelectWeapon(weapon)"
+                                                                    title="@(isSelected ? "Selected as attacker weapon" : "Select for mathhammer")">
+                                                                <i class="fa @(isSelected ? "fa-check-circle" : "fa-bullseye")"></i>
+                                                            </button>
+                                                        </td>
+                                                    }
                                                 </tr>
                                             }
                                         </tbody>
@@ -264,7 +312,21 @@
                                     </h2>
                                     <div id="ability-@(ability.Line)" class="accordion-collapse collapse @("Datasheet|Wargear|Primarch|Fortification (левая колонка)".Contains(ability.Type) ? "show" : "")">
                                         <div class="accordion-body rule-content">
-                                            @((MarkupString)WahaDataImporter.CleanHtml(ability.Description))
+                                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                                <div class="flex-grow-1">
+                                                    @((MarkupString)WahaDataImporter.CleanHtml(ability.Description))
+                                                </div>
+                                                @if (ability.AbilityId.HasValue)
+                                                {
+                                                    <AbilityBookmarkButton AbilityId="@ability.AbilityId.Value" 
+                                                                          AbilityName="@ability.Name" 
+                                                                          FactionId="@FactionId"
+                                                                          Type="BookmarkType.Ability"
+                                                                          DatasheetId="@datasheetId"
+                                                                          Route="@($"/faction/{FactionId}/unit/{DatasheetIdStr}")"
+                                                                          AccordionId="@($"ability-{ability.Line}")" />
+                                                }
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -388,13 +450,21 @@
                                             @ability.Name
                                         </button>
                                     </h2>
-                                    <div id="det-ability-@(ability.Id)" class="accordion-collapse collapse">
+                                     <div id="det-ability-@(ability.Id)" class="accordion-collapse collapse">
                                         <div class="accordion-body rule-content">
-                                            @if (!string.IsNullOrEmpty(ability.Legend))
-                                            {
-                                                <div class="text-muted mb-2"><small>@ability.Legend</small></div>
-                                            }
-                                            @((MarkupString)WahaDataImporter.CleanHtml(ability.Description))
+                                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                                <div class="flex-grow-1">
+                                                    @if (!string.IsNullOrEmpty(ability.Legend))
+                                                    {
+                                                        <div class="text-muted mb-2"><small>@ability.Legend</small></div>
+                                                    }
+                                                    @((MarkupString)WahaDataImporter.CleanHtml(ability.Description))
+                                                </div>
+                                                <AbilityBookmarkButton AbilityId="@ability.Id" 
+                                                                      AbilityName="@ability.Name" 
+                                                                      FactionId="@FactionId"
+                                                                      Type="BookmarkType.Ability" />
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -471,21 +541,32 @@
                                     </h2>
                                     <div id="strat-@(strat.Id)" class="accordion-collapse collapse">
                                         <div class="accordion-body rule-content">
-                                            <div class="mb-2">
-                                                @if (!string.IsNullOrEmpty(strat.Type))
-                                                {
-                                                    <span class="badge bg-secondary me-1">@strat.Type</span>
-                                                }
-                                                @if (!string.IsNullOrEmpty(strat.Phase))
-                                                {
-                                                    <span class="badge bg-info me-1">@strat.Phase</span>
-                                                }
+                                            <div class="d-flex justify-content-between align-items-start">
+                                                <div class="flex-grow-1">
+                                                    <div class="mb-2">
+                                                        @if (!string.IsNullOrEmpty(strat.Type))
+                                                        {
+                                                            <span class="badge bg-secondary me-1">@strat.Type</span>
+                                                        }
+                                                        @if (!string.IsNullOrEmpty(strat.Phase))
+                                                        {
+                                                            <span class="badge bg-info me-1">@strat.Phase</span>
+                                                        }
+                                                    </div>
+                                                    @if (!string.IsNullOrEmpty(strat.Legend))
+                                                    {
+                                                        <div class="text-muted mb-2"><small>@strat.Legend</small></div>
+                                                    }
+                                                    @((MarkupString)WahaDataImporter.CleanHtml(strat.Description))
+                                                </div>
+                                                <AbilityBookmarkButton AbilityId="@strat.Id" 
+                                                                      AbilityName="@strat.Name" 
+                                                                      FactionId="@FactionId"
+                                                                      Type="BookmarkType.Stratagem"
+                                                                      DatasheetId="@datasheetId"
+                                                                      Route="@($"/faction/{FactionId}/unit/{DatasheetIdStr}")"
+                                                                      AccordionId="@($"strat-{strat.Id}")" />
                                             </div>
-                                            @if (!string.IsNullOrEmpty(strat.Legend))
-                                            {
-                                                <div class="text-muted mb-2"><small>@strat.Legend</small></div>
-                                            }
-                                            @((MarkupString)WahaDataImporter.CleanHtml(strat.Description))
                                         </div>
                                     </div>
                                 </div>
@@ -542,8 +623,21 @@
             return;
         }
 
+        // If FactionId is not provided, fetch it from the datasheet
+        if (string.IsNullOrEmpty(FactionId))
+        {
+            var basicDatasheet = await Data.GetDatasheetByIdAsync(datasheetId);
+            if (basicDatasheet != null)
+            {
+                FactionId = basicDatasheet.FactionId;
+            }
+        }
+
         // Ensure state is for correct faction
-        ViewerState.ResetForFaction(FactionId);
+        if (!string.IsNullOrEmpty(FactionId))
+        {
+            ViewerState.ResetForFaction(FactionId);
+        }
 
         // Save current datasheet to state
         ViewerState.CurrentDatasheetId = datasheetId;
@@ -552,10 +646,14 @@
         // Note: Exclude keywords are handled at the database query level
         var includeKeywords = ViewerState.SelectedKeywords.Count > 0 ? ViewerState.SelectedKeywords : null;
         var excludeKeywords = ViewerState.ExcludedKeywords.Count > 0 ? ViewerState.ExcludedKeywords : null;
-        var overview = await Data.GetFactionOverviewAsync(FactionId, includeKeywords, excludeKeywords, ViewerState.UseAndLogic);
-        if (overview != null)
+
+        if (!string.IsNullOrEmpty(FactionId))
         {
-            availableDetachments = overview.Detachments;
+            var overview = await Data.GetFactionOverviewAsync(FactionId, includeKeywords, excludeKeywords, ViewerState.UseAndLogic);
+            if (overview != null)
+            {
+                availableDetachments = overview.Detachments;
+            }
         }
 
         // Priority for detachment selection:
@@ -593,6 +691,18 @@
         await LoadDatasheetAsync();
 
         loading = false;
+        StateHasChanged();
+    }
+
+    private void SelectWeapon(DatasheetWargear weapon)
+    {
+        MathhammerService.SetAttackerWeapon(weapon, weapon.Line);
+        StateHasChanged();
+    }
+
+    private void SelectModel(DatasheetModel model)
+    {
+        MathhammerService.SetDefenderModel(model);
         StateHasChanged();
     }
 }

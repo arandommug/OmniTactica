@@ -33,6 +33,8 @@ namespace OmniTactica
             // Services
             builder.Services.AddSingleton<WahaDataService>();
             builder.Services.AddScoped<FactionViewerState>();
+            builder.Services.AddSingleton<BookmarkService>();
+            builder.Services.AddSingleton<MathhammerService>();
 
             builder.Services.AddSingleton<HttpClient>();
 

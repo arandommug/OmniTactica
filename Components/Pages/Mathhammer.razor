@@ -1,0 +1,498 @@
+@page "/mathhammer"
+@using OmniTactica.AppCode.Services
+@using OmniTactica.AppCode.Models.Core
+
+@inject MathhammerService MathhammerService
+@inject BookmarkService BookmarkService
+@inject WahaDataService DataService
+@inject NavigationManager Navigation
+@implements IDisposable
+
+<div class="p-2">
+    <div class="card bg-secondary-subtle">
+        <div class="card-header">
+            <h1 class="text-primary">
+                <i class="fa fa-fist-raised me-2"></i>Mathhammer
+            </h1>
+        </div>
+
+        <div class="card-body">
+            
+            <div class="row g-3">
+                
+                <div class="col-12 col-lg-5">
+                    <div class="card border-danger">
+                        <div class="card-header bg-danger-subtle">
+                            <h5 class="mb-0">
+                                <i class="fa fa-crosshairs me-2"></i>Attacker
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            @if (attacker != null)
+                            {
+                                <div class="d-flex align-items-center mb-3">
+                                    <h6 class="mb-0">@attacker.DatasheetName</h6>
+                                    <button class="btn btn-sm btn-outline-secondary ms-auto" @onclick="ClearAttacker">
+                                        <i class="fa fa-times"></i>
+                                    </button>
+                                </div>
+
+                                @if (attackerDatasheet != null)
+                                {
+                                    <div class="mb-3">
+                                        <label class="form-label">Select Weapon:</label>
+                                        @foreach (var weapon in attackerDatasheet.Wargear)
+                                        {
+                                            var isSelected = attacker.SelectedWeaponLine == weapon.Line;
+                                            <div class="card mb-2 @(isSelected ? "border-success" : "")">
+                                                <div class="card-body p-2">
+                                                    <div class="d-flex align-items-center">
+                                                        <div class="flex-grow-1">
+                                                            <strong>@weapon.Name</strong> (@weapon.Type)<br/>
+                                                            <small>
+                                                                Range: @weapon.Range | A: @weapon.A | 
+                                                                @(weapon.Type == "Ranged" ? $"BS: {weapon.BsWs}+" : $"WS: {weapon.BsWs}+") | 
+                                                                S: @weapon.S | AP: @weapon.AP | D: @weapon.D
+                                                            </small>
+                                                            @if (!string.IsNullOrEmpty(weapon.Description))
+                                                            {
+                                                                <br/><small class="text-muted">@weapon.Description</small>
+                                                            }
+                                                        </div>
+                                                        <button class="btn btn-sm @(isSelected ? "btn-success" : "btn-outline-primary")" 
+                                                                @onclick="() => SelectWeapon(weapon)">
+                                                            <i class="fa @(isSelected ? "fa-check" : "fa-crosshairs")"></i>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+
+                                    @if (attacker.SelectedWeapon != null)
+                                    {
+                                        <div class="mb-3">
+                                            <label class="form-label">Models with this weapon:</label>
+                                            <input type="number" 
+                                                   class="form-control" 
+                                                   min="1" 
+                                                   max="20" 
+                                                   @bind="modelCount" 
+                                                   @bind:event="oninput"
+                                                   @bind:after="UpdateModelCount" />
+                                        </div>
+                                    }
+                                }
+                                else if (!loadingAttacker)
+                                {
+                                    <button class="btn btn-sm btn-primary w-100" @onclick="LoadAttackerDatasheet">
+                                        <i class="fa fa-download me-2"></i>Load Weapons
+                                    </button>
+                                }
+                                else
+                                {
+                                    <div class="text-center">
+                                        <div class="spinner-border spinner-border-sm"></div>
+                                    </div>
+                                }
+                            }
+                            else
+                            {
+                                <p class="text-muted">No attacker selected</p>
+                                <button class="btn btn-outline-primary w-100" @onclick="@(() => selectingFor = "attacker")">
+                                    <i class="fa fa-plus me-2"></i>Select Attacker
+                                </button>
+
+                                @if (BookmarkService.GetBookmarksByType(BookmarkType.Datasheet).Any())
+                                {
+                                    <hr />
+                                    <small class="text-muted">From Bookmarks:</small>
+                                    @foreach (var bookmark in BookmarkService.GetBookmarksByType(BookmarkType.Datasheet).Take(5))
+                                    {
+                                        <button class="btn btn-sm btn-outline-secondary w-100 mt-1" @onclick="() => SelectAttackerFromBookmark(bookmark)">
+                                            @bookmark.Name
+                                        </button>
+                                    }
+                                }
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-12 col-lg-2 d-flex align-items-center justify-content-center">
+                    <button class="btn btn-lg btn-outline-primary" 
+                            @onclick="SwapUnits" 
+                            disabled="@(!MathhammerService.HasAttacker() || !MathhammerService.HasDefender())">
+                        <i class="fa fa-exchange-alt"></i>
+                    </button>
+                </div>
+
+                <div class="col-12 col-lg-5">
+                    <div class="card border-primary">
+                        <div class="card-header bg-primary-subtle">
+                            <h5 class="mb-0">
+                                <i class="fa fa-shield-alt me-2"></i>Defender
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            @if (defender != null)
+                            {
+                                <div class="d-flex align-items-center mb-3">
+                                    <h6 class="mb-0">@defender.DatasheetName</h6>
+                                    <button class="btn btn-sm btn-outline-secondary ms-auto" @onclick="ClearDefender">
+                                        <i class="fa fa-times"></i>
+                                    </button>
+                                </div>
+
+                                @if (defenderDatasheet != null)
+                                {
+                                    <div class="mb-3">
+                                        <label class="form-label">Select Model:</label>
+                                        @foreach (var mdl in defenderDatasheet.Models)
+                                        {
+                                            var isSelected = defender.SelectedModel?.Line == mdl.Line;
+                                            <div class="card mb-2 @(isSelected ? "border-success" : "")">
+                                                <div class="card-body p-2">
+                                                    <div class="d-flex align-items-center">
+                                                        <div class="flex-grow-1">
+                                                            <strong>@mdl.Name</strong><br/>
+                                                            <small>
+                                                                M: @mdl.M | T: @mdl.T | Sv: @mdl.Sv+ | W: @mdl.W | 
+                                                                Ld: @mdl.Ld+ | OC: @mdl.OC
+                                                                @if (!string.IsNullOrEmpty(mdl.InvSv))
+                                                                {
+                                                                    <text> | Invuln: @(mdl.InvSv)+</text>
+                                                                }
+                                                            </small>
+                                                        </div>
+                                                        <button class="btn btn-sm @(isSelected ? "btn-success" : "btn-outline-primary")" 
+                                                                @onclick="() => SelectModel(mdl)">
+                                                            <i class="fa @(isSelected ? "fa-check" : "fa-shield-alt")"></i>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                                else if (!loadingDefender)
+                                {
+                                    <button class="btn btn-sm btn-primary w-100" @onclick="LoadDefenderDatasheet">
+                                        <i class="fa fa-download me-2"></i>Load Models
+                                    </button>
+                                }
+                                else
+                                {
+                                    <div class="text-center">
+                                        <div class="spinner-border spinner-border-sm"></div>
+                                    </div>
+                                }
+                            }
+                            else
+                            {
+                                <p class="text-muted">No defender selected</p>
+                                <button class="btn btn-outline-primary w-100" @onclick="@(() => selectingFor = "defender")">
+                                    <i class="fa fa-plus me-2"></i>Select Defender
+                                </button>
+
+                                @if (BookmarkService.GetBookmarksByType(BookmarkType.Datasheet).Any())
+                                {
+                                    <hr />
+                                    <small class="text-muted">From Bookmarks:</small>
+                                    @foreach (var bookmark in BookmarkService.GetBookmarksByType(BookmarkType.Datasheet).Take(5))
+                                    {
+                                        <button class="btn btn-sm btn-outline-secondary w-100 mt-1" @onclick="() => SelectDefenderFromBookmark(bookmark)">
+                                            @bookmark.Name
+                                        </button>
+                                    }
+                                }
+                            }
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            @if (MathhammerService.CanCalculate())
+            {
+                <div class="mt-4">
+                    <button class="btn btn-lg btn-success w-100" @onclick="Calculate">
+                        <i class="fa fa-calculator me-2"></i>Calculate
+                    </button>
+                </div>
+
+                @if (result != null)
+                {
+                    <div class="card mt-4 border-success">
+                        <div class="card-header bg-success-subtle">
+                            <h5 class="mb-0">
+                                <i class="fa fa-chart-bar me-2"></i>Results
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row g-3">
+                                <div class="col-6 col-md-3">
+                                    <div class="text-center">
+                                        <h2 class="text-primary mb-0">@result.AverageHits.ToString("F2")</h2>
+                                        <small class="text-muted">Avg Hits</small>
+                                    </div>
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <div class="text-center">
+                                        <h2 class="text-primary mb-0">@result.AverageWounds.ToString("F2")</h2>
+                                        <small class="text-muted">Avg Wounds</small>
+                                    </div>
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <div class="text-center">
+                                        <h2 class="text-primary mb-0">@result.AverageDamage.ToString("F2")</h2>
+                                        <small class="text-muted">Avg Damage</small>
+                                    </div>
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <div class="text-center">
+                                        <h2 class="text-danger mb-0">@result.AverageModelsKilled.ToString("F2")</h2>
+                                        <small class="text-muted">Models Killed</small>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <hr />
+
+                            <h6>Breakdown:</h6>
+                            <div class="table-responsive">
+                                <table class="table table-sm">
+                                    <tbody>
+                                        @foreach (var stage in result.StageBreakdown)
+                                        {
+                                            <tr>
+                                                <td>@stage.Key</td>
+                                                <td class="text-end">
+                                                    @if (stage.Key.Contains("Chance"))
+                                                    {
+                                                        <text>@stage.Value.ToString("F1")%</text>
+                                                    }
+                                                    else
+                                                    {
+                                                        <text>@stage.Value.ToString("F2")</text>
+                                                    }
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                }
+            }
+            else
+            {
+                <div class="alert alert-info mt-4">
+                    <i class="fa fa-info-circle me-2"></i>
+                    Select an attacker, defender, and weapon to calculate results.
+                </div>
+            }
+
+        </div>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(selectingFor))
+{
+    <UnitSelectorModal OnSelect="HandleUnitSelected" OnClose="CloseSelector" />
+}
+
+@code {
+    private AttackerContext? attacker;
+    private DefenderContext? defender;
+    private MathhammerResult? result;
+    private string selectingFor = string.Empty;
+    private int modelCount = 1;
+
+    private DatasheetDetail? attackerDatasheet;
+    private DatasheetDetail? defenderDatasheet;
+    private bool loadingAttacker;
+    private bool loadingDefender;
+
+    protected override void OnInitialized()
+    {
+        attacker = MathhammerService.GetAttacker();
+        defender = MathhammerService.GetDefender();
+
+        if (attacker != null)
+        {
+            modelCount = attacker.ModelsWithWeapon;
+        }
+
+        MathhammerService.OnContextChanged += OnContextChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            if (attacker != null && attackerDatasheet == null)
+            {
+                await LoadAttackerDatasheet();
+            }
+            if (defender != null && defenderDatasheet == null)
+            {
+                await LoadDefenderDatasheet();
+            }
+        }
+    }
+
+    private async Task LoadAttackerDatasheet()
+    {
+        if (attacker == null) return;
+
+        loadingAttacker = true;
+        StateHasChanged();
+
+        attackerDatasheet = await DataService.GetDatasheetDetailAsync(attacker.DatasheetId);
+
+        loadingAttacker = false;
+        StateHasChanged();
+    }
+
+    private async Task LoadDefenderDatasheet()
+    {
+        if (defender == null) return;
+
+        loadingDefender = true;
+        StateHasChanged();
+
+        defenderDatasheet = await DataService.GetDatasheetDetailAsync(defender.DatasheetId);
+
+        loadingDefender = false;
+        StateHasChanged();
+    }
+
+    private void OnContextChanged()
+    {
+        attacker = MathhammerService.GetAttacker();
+        defender = MathhammerService.GetDefender();
+        result = null;
+
+        if (attacker != null)
+        {
+            modelCount = attacker.ModelsWithWeapon;
+            if (attackerDatasheet == null || attackerDatasheet.Id != attacker.DatasheetId)
+            {
+                attackerDatasheet = null;
+                _ = LoadAttackerDatasheet();
+            }
+        }
+        else
+        {
+            attackerDatasheet = null;
+        }
+
+        if (defender != null)
+        {
+            if (defenderDatasheet == null || defenderDatasheet.Id != defender.DatasheetId)
+            {
+                defenderDatasheet = null;
+                _ = LoadDefenderDatasheet();
+            }
+        }
+        else
+        {
+            defenderDatasheet = null;
+        }
+
+        StateHasChanged();
+    }
+
+    private void Calculate()
+    {
+        result = MathhammerCalculator.Calculate(MathhammerService.GetContext());
+    }
+
+    private void SwapUnits()
+    {
+        MathhammerService.SwapAttackerDefender();
+        result = null;
+    }
+
+    private void ClearAttacker()
+    {
+        MathhammerService.ClearAttacker();
+        attackerDatasheet = null;
+        result = null;
+    }
+
+    private void ClearDefender()
+    {
+        MathhammerService.ClearDefender();
+        defenderDatasheet = null;
+        result = null;
+    }
+
+    private void SelectWeapon(DatasheetWargear weapon)
+    {
+        MathhammerService.SetAttackerWeapon(weapon, weapon.Line, modelCount);
+        result = null;
+    }
+
+    private void SelectModel(DatasheetModel model)
+    {
+        MathhammerService.SetDefenderModel(model);
+        result = null;
+    }
+
+    private void UpdateModelCount()
+    {
+        MathhammerService.SetAttackerModelCount(modelCount);
+        result = null;
+    }
+
+    private async Task HandleUnitSelected((int datasheetId, string datasheetName) unit)
+    {
+        if (selectingFor == "attacker")
+        {
+            MathhammerService.SetAttacker(unit.datasheetId, unit.datasheetName);
+            attackerDatasheet = null;
+            await LoadAttackerDatasheet();
+        }
+        else if (selectingFor == "defender")
+        {
+            MathhammerService.SetDefender(unit.datasheetId, unit.datasheetName);
+            defenderDatasheet = null;
+            await LoadDefenderDatasheet();
+        }
+
+        selectingFor = string.Empty;
+    }
+
+    private async Task SelectAttackerFromBookmark(Bookmark bookmark)
+    {
+        if (int.TryParse(bookmark.EntityId, out var id))
+        {
+            MathhammerService.SetAttacker(id, bookmark.Name);
+            attackerDatasheet = null;
+            await LoadAttackerDatasheet();
+        }
+    }
+
+    private async Task SelectDefenderFromBookmark(Bookmark bookmark)
+    {
+        if (int.TryParse(bookmark.EntityId, out var id))
+        {
+            MathhammerService.SetDefender(id, bookmark.Name);
+            defenderDatasheet = null;
+            await LoadDefenderDatasheet();
+        }
+    }
+
+    private void CloseSelector()
+    {
+        selectingFor = string.Empty;
+    }
+
+    public void Dispose()
+    {
+        MathhammerService.OnContextChanged -= OnContextChanged;
+    }
+}

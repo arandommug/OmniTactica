@@ -83,6 +83,12 @@ namespace OmniTactica.AppCode.Services
             => _datasheets.GetDatasheetsByFactionAsync(factionId, includeKeywords, excludeKeywords, useAndLogic);
 
         /// <summary>
+        /// Gets basic datasheet info by ID.
+        /// </summary>
+        public Task<Datasheet?> GetDatasheetByIdAsync(int datasheetId)
+            => _datasheets.GetDatasheetByIdAsync(datasheetId);
+
+        /// <summary>
         /// Gets a complete datasheet with all details.
         /// Optionally filters enhancements, stratagems, and abilities by detachment.
         /// </summary>

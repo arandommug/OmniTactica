@@ -7,22 +7,25 @@
 @inject WahaDataService Data
 
 <div class="p-2">
-    <div class="card bg-secondary-subtle">
-        <div class="card-header">
-            <h1 class="text-primary">Browse Factions</h1>
-            @if (DB.DatabaseExists && !loading)
-            {
-                <div class="mt-3">
-                    <input type="text" 
-                           class="form-control" 
-                           placeholder="Search factions..." 
-                           @bind="searchText"
-                           @bind:event="oninput"
-                           @bind:after="FilterFactions" />
+
+    <div class="row g-2">
+        <div class="col-12 col-lg-8">
+            <div class="card bg-secondary-subtle">
+                <div class="card-header">
+                    <h1 class="text-primary">Browse Factions</h1>
+                    @if (DB.DatabaseExists && !loading)
+                    {
+                        <div class="mt-3">
+                            <input type="text" 
+                                   class="form-control" 
+                                   placeholder="Search factions..." 
+                                   @bind="searchText"
+                                   @bind:event="oninput"
+                                   @bind:after="FilterFactions" />
+                        </div>
+                    }
                 </div>
-            }
-        </div>
-        <div class="card-body">
+                <div class="card-body">
         @if (!DB.DatabaseExists)
         {
             <div class="alert alert-warning">Database not installed. Go to Settings to download data.</div>
@@ -59,6 +62,14 @@
         }
         </div>
     </div>
+        </div>
+
+        <div class="col-12 col-lg-4">
+            <BookmarksSidebar />
+        </div>
+
+    </div>
+
     <ScrollToTopButton />
 </div>
 

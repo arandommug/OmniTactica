@@ -5,10 +5,13 @@
 @using OmniTactica.AppCode.Models.Core
 @using OmniTactica.AppCode.Models.Rules
 @using OmniTactica.AppCode.Helpers
+@using Microsoft.JSInterop
 
 @inject WahaSQLiteService DB
 @inject WahaDataService Data
 @inject FactionViewerState ViewerState
+@inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
 
 <div class="p-2">
     <div class="card bg-secondary-subtle">
@@ -66,7 +69,21 @@
                             </h2>
                             <div id="ability-@(a.Id)" class="accordion-collapse collapse">
                                 <div class="accordion-body rule-content">
-                                    @((MarkupString)WahaDataImporter.CleanHtml(a.Description))                                
+                                    <div class="d-flex justify-content-between align-items-start mb-2">
+                                        <div class="flex-grow-1">
+                                            @if (!string.IsNullOrEmpty(a.Legend))
+                                            {
+                                                <div class="text-muted mb-2"><small>@a.Legend</small></div>
+                                            }
+                                            @((MarkupString)WahaDataImporter.CleanHtml(a.Description))
+                                        </div>
+                                        <AbilityBookmarkButton AbilityId="@a.Id" 
+                                                              AbilityName="@a.Name" 
+                                                              FactionId="@FactionId"
+                                                              Type="BookmarkType.FactionRule"
+                                                              Route="@($"/faction/{FactionId}")"
+                                                              AccordionId="@($"ability-{a.Id}")" />
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -156,11 +173,22 @@
                                         </h2>
                                         <div id="det-ability-@(ability.Id)" class="accordion-collapse collapse">
                                             <div class="accordion-body rule-content">
-                                                @if (!string.IsNullOrEmpty(ability.Legend))
-                                                {
-                                                    <div class="text-muted mb-2"><small>@ability.Legend</small></div>
-                                                }
-                                                @((MarkupString)WahaDataImporter.CleanHtml(ability.Description))
+                                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                                    <div class="flex-grow-1">
+                                                        @if (!string.IsNullOrEmpty(ability.Legend))
+                                                        {
+                                                            <div class="text-muted mb-2"><small>@ability.Legend</small></div>
+                                                        }
+                                                        @((MarkupString)WahaDataImporter.CleanHtml(ability.Description))
+                                                    </div>
+                                                    <AbilityBookmarkButton AbilityId="@ability.Id" 
+                                                                          AbilityName="@ability.Name" 
+                                                                          FactionId="@FactionId"
+                                                                          Type="BookmarkType.Ability"
+                                                                          DetachmentId="@selectedDetachment.Id"
+                                                                          Route="@($"/faction/{FactionId}")"
+                                                                          AccordionId="@($"det-ability-{ability.Id}")" />
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -200,21 +228,32 @@
                                         </h2>
                                         <div id="strat-@(strat.Id)" class="accordion-collapse collapse">
                                             <div class="accordion-body rule-content">
-                                                <div class="mb-2">
-                                                    @if (!string.IsNullOrEmpty(strat.Type))
-                                                    {
-                                                        <span class="badge bg-secondary me-1">@strat.Type</span>
-                                                    }
-                                                    @if (!string.IsNullOrEmpty(strat.Phase))
-                                                    {
-                                                        <span class="badge bg-info me-1">@strat.Phase</span>
-                                                    }
+                                                <div class="d-flex justify-content-between align-items-start">
+                                                    <div class="flex-grow-1">
+                                                        <div class="mb-2">
+                                                            @if (!string.IsNullOrEmpty(strat.Type))
+                                                            {
+                                                                <span class="badge bg-secondary me-1">@strat.Type</span>
+                                                            }
+                                                            @if (!string.IsNullOrEmpty(strat.Phase))
+                                                            {
+                                                                <span class="badge bg-info me-1">@strat.Phase</span>
+                                                            }
+                                                        </div>
+                                                        @if (!string.IsNullOrEmpty(strat.Legend))
+                                                        {
+                                                            <div class="text-muted mb-2"><small>@strat.Legend</small></div>
+                                                        }
+                                                        @((MarkupString)WahaDataImporter.CleanHtml(strat.Description))
+                                                    </div>
+                                                    <AbilityBookmarkButton AbilityId="@strat.Id" 
+                                                                          AbilityName="@strat.Name" 
+                                                                          FactionId="@FactionId"
+                                                                          Type="BookmarkType.Stratagem"
+                                                                          DetachmentId="@selectedDetachment.Id"
+                                                                          Route="@($"/faction/{FactionId}")"
+                                                                          AccordionId="@($"strat-{strat.Id}")" />
                                                 </div>
-                                                @if (!string.IsNullOrEmpty(strat.Legend))
-                                                {
-                                                    <div class="text-muted mb-2"><small>@strat.Legend</small></div>
-                                                }
-                                                @((MarkupString)WahaDataImporter.CleanHtml(strat.Description))
                                             </div>
                                         </div>
                                     </div>
@@ -251,11 +290,22 @@
                                         </h2>
                                         <div id="enh-@(enhancement.Id)" class="accordion-collapse collapse">
                                             <div class="accordion-body rule-content">
-                                                @if (!string.IsNullOrEmpty(enhancement.Legend))
-                                                {
-                                                    <div class="text-muted mb-2"><small>@enhancement.Legend</small></div>
-                                                }
-                                                @((MarkupString)WahaDataImporter.CleanHtml(enhancement.Description))
+                                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                                    <div class="flex-grow-1">
+                                                        @if (!string.IsNullOrEmpty(enhancement.Legend))
+                                                        {
+                                                            <div class="text-muted mb-2"><small>@enhancement.Legend</small></div>
+                                                        }
+                                                        @((MarkupString)WahaDataImporter.CleanHtml(enhancement.Description))
+                                                    </div>
+                                                    <AbilityBookmarkButton AbilityId="@enhancement.Id" 
+                                                                          AbilityName="@enhancement.Name" 
+                                                                          FactionId="@FactionId"
+                                                                          Type="BookmarkType.Enhancement"
+                                                                          DetachmentId="@selectedDetachment.Id"
+                                                                          Route="@($"/faction/{FactionId}")"
+                                                                          AccordionId="@($"enh-{enhancement.Id}")" />
+                                                </div>
                                             </div>
                                         </div>
                                     </div>

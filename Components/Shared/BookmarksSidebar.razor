@@ -1,0 +1,145 @@
+@using OmniTactica.AppCode.Services
+@using OmniTactica.AppCode.Models.Core
+@using Microsoft.JSInterop
+
+@inject BookmarkService BookmarkService
+@inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
+@implements IDisposable
+
+<div class="card">
+    <div class="card-header d-flex align-items-center">
+        <h6 class="mb-0">
+            <i class="fa fa-star me-2"></i>Bookmarks
+        </h6>
+        @if (bookmarks.Any())
+        {
+            <button class="btn btn-sm btn-outline-danger ms-auto" 
+                    @onclick="ClearAllBookmarks"
+                    title="Clear all bookmarks">
+                <i class="fa fa-trash"></i>
+            </button>
+        }
+    </div>
+    <div class="card-body">
+        @if (!bookmarks.Any())
+        {
+            <p class="text-muted small mb-0">
+                <i class="fa fa-info-circle me-1"></i>
+                No bookmarks yet. Bookmark units, detachments, and more for quick access.
+            </p>
+        }
+        else
+        {
+            @foreach (var group in bookmarks.GroupBy(b => b.Type))
+            {
+                <div class="mb-3">
+                    <small class="text-muted text-uppercase fw-bold">@group.Key</small>
+                    <div class="list-group list-group-flush">
+                        @foreach (var bookmark in group)
+                        {
+                            <div class="list-group-item p-2 d-flex align-items-center">
+                                <a href="@GetBookmarkUrl(bookmark)" 
+                                   @onclick="async () => await NavigateToBookmark(bookmark)"
+                                   @onclick:preventDefault="true"
+                                   class="text-decoration-none flex-grow-1">
+                                    @bookmark.Name
+                                </a>
+                                <button class="btn btn-sm btn-outline-danger ms-2" 
+                                        @onclick="() => RemoveBookmark(bookmark.Id)"
+                                        title="Remove">
+                                    <i class="fa fa-times"></i>
+                                </button>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private List<Bookmark> bookmarks = new();
+
+    protected override void OnInitialized()
+    {
+        LoadBookmarks();
+        BookmarkService.OnBookmarksChanged += LoadBookmarks;
+    }
+
+    private void LoadBookmarks()
+    {
+        bookmarks = BookmarkService.GetAllBookmarks()
+            .OrderBy(b => b.Type)
+            .ThenBy(b => b.Name)
+            .ToList();
+        StateHasChanged();
+    }
+
+    private async Task RemoveBookmark(string bookmarkId)
+    {
+        await BookmarkService.RemoveBookmarkAsync(bookmarkId);
+    }
+
+    private async Task ClearAllBookmarks()
+    {
+        await BookmarkService.ClearAllBookmarksAsync();
+    }
+
+    private string GetBookmarkUrl(Bookmark bookmark)
+    {
+        // Use explicit route if provided in navigation context
+        if (!string.IsNullOrEmpty(bookmark.NavigationContext?.Route))
+        {
+            return bookmark.NavigationContext.Route;
+        }
+
+        // Fallback to type-based routing
+        return bookmark.Type switch
+        {
+            BookmarkType.Datasheet => $"/unit/{bookmark.EntityId}",
+            BookmarkType.Detachment => $"/faction/{bookmark.FactionId}",
+            BookmarkType.FactionRule => $"/faction/{bookmark.FactionId}",
+            BookmarkType.Ability => $"/faction/{bookmark.FactionId}",
+            BookmarkType.Stratagem => $"/faction/{bookmark.FactionId}",
+            BookmarkType.Enhancement => $"/faction/{bookmark.FactionId}",
+            _ => "/"
+        };
+    }
+
+    private async Task NavigateToBookmark(Bookmark bookmark)
+    {
+        var url = GetBookmarkUrl(bookmark);
+        var context = bookmark.NavigationContext;
+
+        // Navigate to the route
+        Navigation.NavigateTo(url);
+
+        // Wait for navigation and rendering
+        await Task.Delay(500);
+
+        // Set detachment dropdown if applicable
+        if (context?.DetachmentId.HasValue == true)
+        {
+            await JSRuntime.InvokeVoidAsync("bookmarkNavigation.setDropdownValue", 
+                "detachmentSelect", 
+                context.DetachmentId.Value.ToString());
+
+            // Wait for detachment to load
+            await Task.Delay(500);
+        }
+
+        // Expand accordion if applicable
+        if (!string.IsNullOrEmpty(context?.AccordionId))
+        {
+            await JSRuntime.InvokeVoidAsync("bookmarkNavigation.expandAccordion", 
+                context.AccordionId);
+        }
+    }
+
+    public void Dispose()
+    {
+        BookmarkService.OnBookmarksChanged -= LoadBookmarks;
+    }
+}
