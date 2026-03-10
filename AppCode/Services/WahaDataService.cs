@@ -36,30 +36,30 @@ namespace OmniTactica.AppCode.Services
             => _factions.GetAllKeywordsForFactionAsync(factionId);
 
         /// <summary>
-        /// Gets keywords grouped by frequency (common vs unique usage).
+        /// Gets keywords grouped by type and frequency (faction, common vs unique usage).
         /// </summary>
-        public Task<(List<string> CommonKeywords, List<string> UniqueKeywords)> GetFactionKeywordsGroupedAsync(string factionId)
+        public Task<(List<string> FactionKeywords, List<string> CommonKeywords, List<string> UniqueKeywords)> GetFactionKeywordsGroupedAsync(string factionId)
             => _factions.GetKeywordsGroupedByFrequencyAsync(factionId);
 
         /// <summary>
         /// Gets a faction with all its abilities for the faction viewer page.
-        /// Optionally filters by selected keywords with AND/OR logic.
+        /// Optionally filters by include/exclude keywords with AND/OR logic.
         /// </summary>
-        public Task<Faction?> GetFactionWithAbilitiesAsync(string factionId, List<string>? keywordFilters = null, bool useAndLogic = false)
-            => _factions.GetFactionWithAbilitiesAsync(factionId, keywordFilters, useAndLogic);
+        public Task<Faction?> GetFactionWithAbilitiesAsync(string factionId, List<string>? includeKeywords = null, List<string>? excludeKeywords = null, bool useAndLogic = false)
+            => _factions.GetFactionWithAbilitiesAsync(factionId, includeKeywords, excludeKeywords, useAndLogic);
 
         /// <summary>
         /// Gets a complete faction overview including detachments.
-        /// Optionally filters by selected keywords with AND/OR logic.
+        /// Optionally filters by include/exclude keywords with AND/OR logic.
         /// Optimized to minimize database queries.
         /// </summary>
-        public async Task<FactionOverview?> GetFactionOverviewAsync(string factionId, List<string>? keywordFilters = null, bool useAndLogic = false)
+        public async Task<FactionOverview?> GetFactionOverviewAsync(string factionId, List<string>? includeKeywords = null, List<string>? excludeKeywords = null, bool useAndLogic = false)
         {
-            var faction = await _factions.GetFactionWithAbilitiesAsync(factionId, keywordFilters, useAndLogic);
+            var faction = await _factions.GetFactionWithAbilitiesAsync(factionId, includeKeywords, excludeKeywords, useAndLogic);
             if (faction == null)
                 return null;
 
-            var detachments = await _detachments.GetByFactionAsync(factionId, keywordFilters, useAndLogic);
+            var detachments = await _detachments.GetByFactionAsync(factionId, includeKeywords, excludeKeywords, useAndLogic);
 
             return new FactionOverview
             {

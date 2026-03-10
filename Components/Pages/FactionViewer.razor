@@ -41,8 +41,8 @@
                 <div class="mb-3">
                     <KeywordFilterModal 
                         FactionId="@FactionId"
-                        InitialIncludeKeywords="@selectedKeywords"
-                        InitialExcludeKeywords="@excludedKeywords"
+                        InitialIncludeKeywords="@includeKeywords"
+                        InitialExcludeKeywords="@excludeKeywords"
                         InitialUseAndLogic="@useAndLogic"
                         OnApplyFilter="@HandleKeywordFilterApplied" />
                 </div>
@@ -51,7 +51,7 @@
                 <div class="h4 text-primary">Army Abilities</div>
                 @if (faction.Abilities.Count == 0)
                 {
-                    <div class="text-muted mb-3">No army abilities available @(selectedKeywords.Count > 0 ? "matching the selected keywords" : "").</div>
+                    <div class="text-muted mb-3">No army abilities available @((includeKeywords.Count > 0 || excludeKeywords.Count > 0) ? "matching the selected keywords" : "").</div>
                 }
                 else
                 {
@@ -80,7 +80,7 @@
                 <div class="h4 text-primary">Detachments</div>
                 @if (detachments.Count == 0)
                 {
-                    <div class="text-muted">No detachments available @(selectedKeywords.Count > 0 ? "matching the selected keywords" : "for this faction").</div>
+                    <div class="text-muted">No detachments available @((includeKeywords.Count > 0 || excludeKeywords.Count > 0) ? "matching the selected keywords" : "for this faction").</div>
                 }
                 else
                 {
@@ -138,9 +138,9 @@
                                 @foreach (var ability in selectedDetachment.Abilities)
                                 {
                                     var combinedText = $"{ability.Legend} {ability.Description}";
-                                    var matchesFilter = KeywordFilterHelper.MatchesKeywordFilter(combinedText, selectedKeywords, excludedKeywords, useAndLogic);
-                                    var matchedKeywords = matchesFilter ? KeywordFilterHelper.GetMatchedKeywords(combinedText, selectedKeywords) : new List<string>();
-                                    var passesFilter = KeywordFilterHelper.PassesFilter(combinedText, selectedKeywords, excludedKeywords, useAndLogic);
+                                    var matchesFilter = KeywordFilterHelper.MatchesKeywordFilter(combinedText, includeKeywords, excludeKeywords, useAndLogic);
+                                    var matchedKeywords = matchesFilter ? KeywordFilterHelper.GetMatchedKeywords(combinedText, includeKeywords) : new List<string>();
+                                    var passesFilter = KeywordFilterHelper.PassesFilter(combinedText, includeKeywords, excludeKeywords, useAndLogic);
 
                                     <div class="accordion-item">
                                         <h2 class="accordion-header">
@@ -178,9 +178,9 @@
                                 @foreach (var strat in selectedDetachment.Stratagems)
                                 {
                                     var combinedText = $"{strat.Legend} {strat.Description}";
-                                    var matchesFilter = KeywordFilterHelper.MatchesKeywordFilter(combinedText, selectedKeywords, excludedKeywords, useAndLogic);
-                                    var matchedKeywords = matchesFilter ? KeywordFilterHelper.GetMatchedKeywords(combinedText, selectedKeywords) : new List<string>();
-                                    var passesFilter = KeywordFilterHelper.PassesFilter(combinedText, selectedKeywords, excludedKeywords, useAndLogic);
+                                    var matchesFilter = KeywordFilterHelper.MatchesKeywordFilter(combinedText, includeKeywords, excludeKeywords, useAndLogic);
+                                    var matchedKeywords = matchesFilter ? KeywordFilterHelper.GetMatchedKeywords(combinedText, includeKeywords) : new List<string>();
+                                    var passesFilter = KeywordFilterHelper.PassesFilter(combinedText, includeKeywords, excludeKeywords, useAndLogic);
 
                                     <div class="accordion-item">
                                         <h2 class="accordion-header">
@@ -232,9 +232,9 @@
                                 @foreach (var enhancement in selectedDetachment.Enhancements)
                                 {
                                     var combinedText = $"{enhancement.Legend} {enhancement.Description}";
-                                    var matchesFilter = KeywordFilterHelper.MatchesKeywordFilter(combinedText, selectedKeywords, excludedKeywords, useAndLogic);
-                                    var matchedKeywords = matchesFilter ? KeywordFilterHelper.GetMatchedKeywords(combinedText, selectedKeywords) : new List<string>();
-                                    var passesFilter = KeywordFilterHelper.PassesFilter(combinedText, selectedKeywords, excludedKeywords, useAndLogic);
+                                    var matchesFilter = KeywordFilterHelper.MatchesKeywordFilter(combinedText, includeKeywords, excludeKeywords, useAndLogic);
+                                    var matchedKeywords = matchesFilter ? KeywordFilterHelper.GetMatchedKeywords(combinedText, includeKeywords) : new List<string>();
+                                    var passesFilter = KeywordFilterHelper.PassesFilter(combinedText, includeKeywords, excludeKeywords, useAndLogic);
 
                                     <div class="accordion-item">
                                         <h2 class="accordion-header">
@@ -283,8 +283,8 @@
     private bool loadingDetachment = false;
 
     // Keyword filtering
-    private List<string> selectedKeywords = new();
-    private List<string> excludedKeywords = new();
+    private List<string> includeKeywords = new();
+    private List<string> excludeKeywords = new();
     private bool useAndLogic = false;
 
     protected override async Task OnInitializedAsync()
@@ -299,8 +299,8 @@
         ViewerState.ResetForFaction(FactionId);
 
         // Load state from service
-        selectedKeywords = new List<string>(ViewerState.SelectedKeywords);
-        excludedKeywords = new List<string>(ViewerState.ExcludedKeywords);
+        includeKeywords = new List<string>(ViewerState.SelectedKeywords);
+        excludeKeywords = new List<string>(ViewerState.ExcludedKeywords);
         useAndLogic = ViewerState.UseAndLogic;
         selectedDetachmentId = ViewerState.SelectedFactionDetachmentId ?? 0;
 
@@ -317,7 +317,11 @@
 
     private async Task LoadFactionDataAsync()
     {
-        var overview = await Data.GetFactionOverviewAsync(FactionId, selectedKeywords.Count > 0 ? selectedKeywords : null, useAndLogic);
+        var overview = await Data.GetFactionOverviewAsync(
+            FactionId, 
+            includeKeywords.Count > 0 ? includeKeywords : null,
+            excludeKeywords.Count > 0 ? excludeKeywords : null,
+            useAndLogic);
         if (overview != null)
         {
             faction = overview.Faction;
@@ -327,12 +331,12 @@
 
     private async Task HandleKeywordFilterApplied((List<string> IncludeKeywords, List<string> ExcludeKeywords, bool UseAndLogic) filterValues)
     {
-        selectedKeywords = filterValues.IncludeKeywords;
-        excludedKeywords = filterValues.ExcludeKeywords;
+        includeKeywords = filterValues.IncludeKeywords;
+        excludeKeywords = filterValues.ExcludeKeywords;
         useAndLogic = filterValues.UseAndLogic;
 
         // Save to state
-        ViewerState.SetKeywordFilter(selectedKeywords, excludedKeywords, useAndLogic);
+        ViewerState.SetKeywordFilter(includeKeywords, excludeKeywords, useAndLogic);
 
         // Remember the currently selected detachment
         var previousDetachmentId = selectedDetachmentId;

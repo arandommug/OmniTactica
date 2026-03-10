@@ -63,5 +63,8 @@ namespace OmniTactica.AppCode.Data.Tables
 
     protected static int? I(SqliteDataReader r, string col)
         => r.IsDBNull(r.GetOrdinal(col)) ? null : r.GetInt32(r.GetOrdinal(col));
+
+    protected static bool B(SqliteDataReader r, string col)
+        => r.IsDBNull(r.GetOrdinal(col)) ? false : r.GetString(r.GetOrdinal(col)) == "1" || r.GetString(r.GetOrdinal(col)).ToLower() == "true";
     }
 }

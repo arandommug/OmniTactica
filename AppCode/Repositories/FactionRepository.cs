@@ -2,6 +2,7 @@ using OmniTactica.AppCode.Data.Database;
 using OmniTactica.AppCode.Data.Tables;
 using OmniTactica.AppCode.Models.Core;
 using OmniTactica.AppCode.Models.Rules;
+using OmniTactica.AppCode.Utilities;
 
 namespace OmniTactica.AppCode.Repositories
 {
@@ -42,9 +43,9 @@ namespace OmniTactica.AppCode.Repositories
 
         /// <summary>
         /// Gets a faction with all its abilities loaded.
-        /// Optionally filters by selected keywords with AND/OR logic.
+        /// Optionally filters by include/exclude keywords with AND/OR logic.
         /// </summary>
-        public async Task<Faction?> GetFactionWithAbilitiesAsync(string factionId, List<string>? keywordFilters = null, bool useAndLogic = false)
+        public async Task<Faction?> GetFactionWithAbilitiesAsync(string factionId, List<string>? includeKeywords = null, List<string>? excludeKeywords = null, bool useAndLogic = false)
         {
             var faction = await GetFactionAsync(factionId);
             if (faction == null)
@@ -69,44 +70,64 @@ namespace OmniTactica.AppCode.Repositories
             // Filter abilities based on keywords
             var filteredAbilities = abilities;
 
-            if (keywordFilters != null && keywordFilters.Count > 0)
+            if ((includeKeywords != null && includeKeywords.Count > 0) || (excludeKeywords != null && excludeKeywords.Count > 0))
             {
-                System.Diagnostics.Debug.WriteLine($"[FactionRepository] Filtering abilities with {keywordFilters.Count} keywords ({(useAndLogic ? "AND" : "OR")} logic)");
+                System.Diagnostics.Debug.WriteLine($"[FactionRepository] Filtering abilities with {includeKeywords?.Count ?? 0} include keywords, {excludeKeywords?.Count ?? 0} exclude keywords ({(useAndLogic ? "AND" : "OR")} logic)");
 
                 filteredAbilities = abilities
                     .Where(a =>
                     {
-                        var combinedText = $"{a.Legend} {a.Description}";
+                        var combinedText = HtmlUtility.ConvertHtmlToPlainText($"{a.Legend} {a.Description}");
 
-                        if (useAndLogic)
+                        // Check exclude keywords first - must NOT contain ANY of these
+                        if (excludeKeywords != null && excludeKeywords.Count > 0)
                         {
-                            // AND logic: ability must mention ALL keywords
-                            var matchesAll = keywordFilters.All(kw =>
+                            var hasExcluded = excludeKeywords.Any(kw =>
                                 combinedText.Contains(kw, StringComparison.OrdinalIgnoreCase));
 
-                            if (matchesAll)
-                                System.Diagnostics.Debug.WriteLine($"  [{a.Name}] matches ALL keywords -> INCLUDE");
-                            else
-                                System.Diagnostics.Debug.WriteLine($"  [{a.Name}] doesn't match all keywords -> EXCLUDE");
-
-                            return matchesAll;
-                        }
-                        else
-                        {
-                            // OR logic: ability must mention ANY keyword
-                            var matchesAny = keywordFilters.Any(kw =>
-                                combinedText.Contains(kw, StringComparison.OrdinalIgnoreCase));
-
-                            if (matchesAny)
+                            if (hasExcluded)
                             {
-                                var matched = keywordFilters.Where(kw => combinedText.Contains(kw, StringComparison.OrdinalIgnoreCase)).ToList();
-                                System.Diagnostics.Debug.WriteLine($"  [{a.Name}] matches keywords: {string.Join(", ", matched)} -> INCLUDE");
+                                System.Diagnostics.Debug.WriteLine($"  [{a.Name}] contains excluded keyword -> EXCLUDE");
+                                return false;
+                            }
+                        }
+
+                        // Check include keywords
+                        if (includeKeywords != null && includeKeywords.Count > 0)
+                        {
+                            if (useAndLogic)
+                            {
+                                // AND logic: ability must mention ALL keywords
+                                var matchesAll = includeKeywords.All(kw =>
+                                    combinedText.Contains(kw, StringComparison.OrdinalIgnoreCase));
+
+                                if (matchesAll)
+                                    System.Diagnostics.Debug.WriteLine($"  [{a.Name}] matches ALL keywords -> INCLUDE");
+                                else
+                                    System.Diagnostics.Debug.WriteLine($"  [{a.Name}] doesn't match all keywords -> EXCLUDE");
+
+                                return matchesAll;
                             }
                             else
-                                System.Diagnostics.Debug.WriteLine($"  [{a.Name}] doesn't match any keyword -> EXCLUDE");
+                            {
+                                // OR logic: ability must mention ANY keyword
+                                var matchesAny = includeKeywords.Any(kw =>
+                                    combinedText.Contains(kw, StringComparison.OrdinalIgnoreCase));
 
-                            return matchesAny;
+                                if (matchesAny)
+                                {
+                                    var matched = includeKeywords.Where(kw => combinedText.Contains(kw, StringComparison.OrdinalIgnoreCase)).ToList();
+                                    System.Diagnostics.Debug.WriteLine($"  [{a.Name}] matches keywords: {string.Join(", ", matched)} -> INCLUDE");
+                                }
+                                else
+                                    System.Diagnostics.Debug.WriteLine($"  [{a.Name}] doesn't match any keyword -> EXCLUDE");
+
+                                return matchesAny;
+                            }
                         }
+
+                        // If we have exclude keywords but no include keywords, and we haven't excluded it, include it
+                        return true;
                     })
                     .ToList();
 
@@ -139,17 +160,17 @@ namespace OmniTactica.AppCode.Repositories
 
         /// <summary>
         /// Gets all keywords with their usage counts for a faction.
-        /// Returns keywords grouped by frequency: common (>1 use) and unique (1 use).
+        /// Returns keywords grouped by type and frequency: faction keywords, common (>1 use) and unique (1 use).
         /// </summary>
-        public async Task<(List<string> CommonKeywords, List<string> UniqueKeywords)> GetKeywordsGroupedByFrequencyAsync(string factionId)
+        public async Task<(List<string> FactionKeywords, List<string> CommonKeywords, List<string> UniqueKeywords)> GetKeywordsGroupedByFrequencyAsync(string factionId)
         {
             const string sql = """
-                SELECT dk.keyword, COUNT(DISTINCT dk.datasheet_id) as usage_count
+                SELECT dk.keyword, dk.is_faction_keyword, COUNT(DISTINCT dk.datasheet_id) as usage_count
                 FROM Datasheets_keywords dk
                 JOIN Datasheets d ON dk.datasheet_id = d.id
                 WHERE dk.keyword != '' AND d.faction_id = @factionId
-                GROUP BY dk.keyword
-                ORDER BY usage_count DESC, dk.keyword
+                GROUP BY dk.keyword, dk.is_faction_keyword
+                ORDER BY dk.is_faction_keyword DESC, usage_count DESC, dk.keyword
                 """;
 
             await using var conn = _db.CreateConnection();
@@ -159,6 +180,7 @@ namespace OmniTactica.AppCode.Repositories
             cmd.CommandText = sql;
             cmd.Parameters.AddWithValue("@factionId", factionId);
 
+            var factionKeywords = new List<string>();
             var commonKeywords = new List<string>();
             var uniqueKeywords = new List<string>();
 
@@ -166,15 +188,18 @@ namespace OmniTactica.AppCode.Repositories
             while (await reader.ReadAsync())
             {
                 var keyword = S(reader, "keyword");
+                var isFactionKeyword = B(reader, "is_faction_keyword");
                 var count = I(reader, "usage_count") ?? 0;
 
-                if (count > 1)
+                if (isFactionKeyword)
+                    factionKeywords.Add(keyword);
+                else if (count > 1)
                     commonKeywords.Add(keyword);
                 else
                     uniqueKeywords.Add(keyword);
             }
 
-            return (commonKeywords, uniqueKeywords);
+            return (factionKeywords, commonKeywords, uniqueKeywords);
         }
     }
 }

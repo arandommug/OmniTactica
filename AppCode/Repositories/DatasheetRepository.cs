@@ -275,7 +275,7 @@ namespace OmniTactica.AppCode.Repositories
             var keywords = await QueryListAsync(sql, r => new
             {
                 Keyword = S(r, "keyword"),
-                IsFactionKeyword = S(r, "is_faction_keyword") == "1"
+                IsFactionKeyword = B(r, "is_faction_keyword")
             }, ("@id", datasheet.Id));
 
             datasheet.Keywords = keywords.Where(k => !k.IsFactionKeyword).Select(k => k.Keyword).ToList();
@@ -425,7 +425,7 @@ namespace OmniTactica.AppCode.Repositories
             const string sql = @"
                 SELECT keyword
                 FROM Datasheets_keywords
-                WHERE datasheet_id = @id AND is_faction_keyword != '1'";
+                WHERE datasheet_id = @id AND is_faction_keyword != 'true'";
 
             return await QueryListAsync(sql, r => S(r, "keyword"), ("@id", datasheetId));
         }

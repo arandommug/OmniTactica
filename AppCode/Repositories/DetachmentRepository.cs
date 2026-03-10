@@ -2,6 +2,7 @@ using OmniTactica.AppCode.Data.Database;
 using OmniTactica.AppCode.Data.Tables;
 using OmniTactica.AppCode.Models.Core;
 using OmniTactica.AppCode.Models.Rules;
+using OmniTactica.AppCode.Utilities;
 
 namespace OmniTactica.AppCode.Repositories
 {
@@ -14,9 +15,9 @@ namespace OmniTactica.AppCode.Repositories
 
         /// <summary>
         /// Gets all detachments for a specific faction.
-        /// Optionally filters by keywords - only shows detachments whose abilities, stratagems, or enhancements mention the keywords.
+        /// Optionally filters by include/exclude keywords - only shows detachments whose abilities, stratagems, or enhancements mention the keywords.
         /// </summary>
-        public async Task<List<Detachment>> GetByFactionAsync(string factionId, List<string>? keywordFilters = null, bool useAndLogic = false)
+        public async Task<List<Detachment>> GetByFactionAsync(string factionId, List<string>? includeKeywords = null, List<string>? excludeKeywords = null, bool useAndLogic = false)
         {
             const string sql = """
                 SELECT id, faction_id, name, legend, type 
@@ -37,15 +38,15 @@ namespace OmniTactica.AppCode.Repositories
             // Filter detachments based on keywords
             var filteredDetachments = detachments;
 
-            if (keywordFilters != null && keywordFilters.Count > 0)
+            if ((includeKeywords != null && includeKeywords.Count > 0) || (excludeKeywords != null && excludeKeywords.Count > 0))
             {
-                System.Diagnostics.Debug.WriteLine($"[DetachmentRepository] Filtering {detachments.Count} detachments with {keywordFilters.Count} keywords ({(useAndLogic ? "AND" : "OR")} logic)");
+                System.Diagnostics.Debug.WriteLine($"[DetachmentRepository] Filtering {detachments.Count} detachments with {includeKeywords?.Count ?? 0} include keywords, {excludeKeywords?.Count ?? 0} exclude keywords ({(useAndLogic ? "AND" : "OR")} logic)");
 
                 var matchingDetachments = new List<Detachment>();
 
                 foreach (var detachment in detachments)
                 {
-                    var hasMatch = await DetachmentMatchesKeywordsAsync(detachment.Id, keywordFilters, useAndLogic);
+                    var hasMatch = await DetachmentMatchesKeywordsAsync(detachment.Id, includeKeywords, excludeKeywords, useAndLogic);
 
                     if (hasMatch)
                     {
@@ -66,9 +67,9 @@ namespace OmniTactica.AppCode.Repositories
         }
 
         /// <summary>
-        /// Checks if a detachment's abilities, stratagems, or enhancements mention the specified keywords.
+        /// Checks if a detachment's abilities, stratagems, or enhancements match the include/exclude keyword filters.
         /// </summary>
-        private async Task<bool> DetachmentMatchesKeywordsAsync(int detachmentId, List<string> keywords, bool useAndLogic)
+        private async Task<bool> DetachmentMatchesKeywordsAsync(int detachmentId, List<string>? includeKeywords, List<string>? excludeKeywords, bool useAndLogic)
         {
             // Get all text content from detachment abilities, stratagems, and enhancements
             const string sql = """
@@ -84,18 +85,35 @@ namespace OmniTactica.AppCode.Repositories
                 """;
 
             var textContents = await QueryListAsync(sql, r => S(r, "description"), ("@id", detachmentId));
-            var combinedText = string.Join(" ", textContents);
+            var combinedText = HtmlUtility.ConvertHtmlToPlainText(string.Join(" ", textContents));
 
-            if (useAndLogic)
+            // Check exclude keywords first - must NOT contain ANY of these
+            if (excludeKeywords != null && excludeKeywords.Count > 0)
             {
-                // AND logic: detachment must mention ALL keywords
-                return keywords.All(kw => combinedText.Contains(kw, StringComparison.OrdinalIgnoreCase));
+                var hasExcluded = excludeKeywords.Any(kw =>
+                    combinedText.Contains(kw, StringComparison.OrdinalIgnoreCase));
+
+                if (hasExcluded)
+                    return false;
             }
-            else
+
+            // Check include keywords
+            if (includeKeywords != null && includeKeywords.Count > 0)
             {
-                // OR logic: detachment must mention ANY keyword
-                return keywords.Any(kw => combinedText.Contains(kw, StringComparison.OrdinalIgnoreCase));
+                if (useAndLogic)
+                {
+                    // AND logic: detachment must mention ALL keywords
+                    return includeKeywords.All(kw => combinedText.Contains(kw, StringComparison.OrdinalIgnoreCase));
+                }
+                else
+                {
+                    // OR logic: detachment must mention ANY keyword
+                    return includeKeywords.Any(kw => combinedText.Contains(kw, StringComparison.OrdinalIgnoreCase));
+                }
             }
+
+            // If we have exclude keywords but no include keywords, and we haven't excluded it, include it
+            return true;
         }
 
         /// <summary>

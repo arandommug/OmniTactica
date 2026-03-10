@@ -86,9 +86,64 @@
                     }
                     else
                     {
+                        var filteredFaction = GetFilteredFactionKeywords();
                         var filteredCommon = GetFilteredCommonKeywords();
                         var filteredUnique = GetFilteredUniqueKeywords();
                         var autoExpandUnique = ShouldAutoExpandUniqueKeywords();
+
+                        <!-- Faction Keywords (always at top) -->
+                        @if (filteredFaction.Count == 1)
+                        {
+                            <div class="mb-3">
+                                <small class="text-muted d-block mb-2">
+                                    <i class="fa fa-shield me-1"></i>Faction Keyword
+                                </small>
+                                <div class="d-flex flex-wrap gap-2">
+                                    <button disabled class="btn btn-sm btn-primary">
+                                        @filteredFaction[0]
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                        else if (filteredFaction.Count > 0)
+                        {
+                            <div class="mb-3">
+                                <small class="text-muted d-block mb-2">
+                                    <i class="fa fa-shield me-1"></i> Faction Keyword(s) (@filteredFaction.Count@(string.IsNullOrWhiteSpace(searchText) && filteredFaction.Count != 1 ? "" : $" of {factionKeywords.Count}"))
+                                </small>
+                                <div class="d-flex flex-wrap gap-2">
+                                    @foreach (var keyword in filteredFaction)
+                                    {
+                                        var state = GetKeywordState(keyword);
+                                        var buttonClass = filteredFaction.Count == 1 ? "btn-primary" :
+                                                          state == KeywordFilterState.Include ? "btn-success" : 
+                                                          state == KeywordFilterState.Exclude ? "btn-danger" : 
+                                                          "btn-outline-primary";
+
+                                        var icon = filteredFaction.Count == 1 ? "fa-check" :
+                                                   state == KeywordFilterState.Include ? "fa-check" : 
+                                                   state == KeywordFilterState.Exclude ? "fa-times" : "";
+
+                                        <button class="btn @buttonClass btn-sm" disabled=@(filteredFaction.Count == 1)
+                                                @onclick="@(() => CycleKeywordState(keyword))">
+                                            @if (state == KeywordFilterState.Include)
+                                            {
+                                                <text>+</text>
+                                            }
+                                            else if (state == KeywordFilterState.Exclude)
+                                            {
+                                                <text>-</text>
+                                            }
+                                            @keyword
+                                            @if (!string.IsNullOrEmpty(icon))
+                                            {
+                                                <i class="fa @icon ms-1"></i>
+                                            }
+                                        </button>
+                                    }
+                                </div>
+                            </div>
+                        }
 
                         <!-- Common Keywords (used by multiple datasheets) -->
                         @if (filteredCommon.Count > 0)
@@ -172,7 +227,7 @@
                             </div>
                         }
 
-                        @if (filteredCommon.Count == 0 && filteredUnique.Count == 0)
+                        @if (filteredFaction.Count == 0 && filteredCommon.Count == 0 && filteredUnique.Count == 0)
                         {
                             <div class="text-muted text-center py-3">
                                 <i class="fa fa-info-circle me-1"></i>
@@ -256,6 +311,7 @@
     // Internal state - component manages everything
     private bool showModal = false;
     private bool loading = false;
+    private List<string> factionKeywords = new();
     private List<string> commonKeywords = new();
     private List<string> uniqueKeywords = new();
     private bool showUniqueKeywords = false;
@@ -318,6 +374,7 @@
         StateHasChanged();
 
         var grouped = await Data.GetFactionKeywordsGroupedAsync(FactionId);
+        factionKeywords = grouped.FactionKeywords;
         commonKeywords = grouped.CommonKeywords;
         uniqueKeywords = grouped.UniqueKeywords;
 
@@ -396,23 +453,36 @@
         showModal = false;
     }
 
+    private List<string> GetFilteredFactionKeywords()
+    {
+        if (string.IsNullOrWhiteSpace(searchText))
+            return factionKeywords.OrderBy(kw => kw).ToList();
+
+        return factionKeywords
+            .Where(kw => kw.Contains(searchText, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(kw => kw)
+            .ToList();
+    }
+
     private List<string> GetFilteredCommonKeywords()
     {
         if (string.IsNullOrWhiteSpace(searchText))
-            return commonKeywords;
+            return commonKeywords.OrderBy(kw => kw).ToList();
 
         return commonKeywords
             .Where(kw => kw.Contains(searchText, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(kw => kw)
             .ToList();
     }
 
     private List<string> GetFilteredUniqueKeywords()
     {
         if (string.IsNullOrWhiteSpace(searchText))
-            return uniqueKeywords;
+            return uniqueKeywords.OrderBy(kw => kw).ToList();
 
         return uniqueKeywords
             .Where(kw => kw.Contains(searchText, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(kw => kw)
             .ToList();
     }
 

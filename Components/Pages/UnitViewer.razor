@@ -76,19 +76,23 @@
                 <div class="mb-3">
                     @if (datasheet.FactionKeywords.Count > 0)
                     {
-                        <span class="text-muted me-2">Faction:</span>
-                        @foreach (var kw in datasheet.FactionKeywords)
-                        {
-                            <span class="badge bg-primary me-1">@kw</span>
-                        }
+                        <div class="mb-2">
+                            <span class="text-muted me-2">Faction Keywords:</span>
+                            @foreach (var kw in datasheet.FactionKeywords.OrderBy(k => k))
+                            {
+                                <span class="badge bg-primary me-1">@kw</span>
+                            }
+                        </div>
                     }
                     @if (datasheet.Keywords.Count > 0)
                     {
-                        <span class="text-muted me-2 ms-2">Keywords:</span>
-                        @foreach (var kw in datasheet.Keywords)
-                        {
-                            <span class="badge bg-info me-1">@kw</span>
-                        }
+                        <div>
+                            <span class="text-muted me-2">Keywords:</span>
+                            @foreach (var kw in datasheet.Keywords.OrderBy(k => k))
+                            {
+                                <span class="badge bg-info me-1">@kw</span>
+                            }
+                        </div>
                     }
                 </div>
 
@@ -547,7 +551,8 @@
         // Load available detachments for the faction, filtered by keywords if any are selected
         // Note: Exclude keywords are handled at the database query level
         var includeKeywords = ViewerState.SelectedKeywords.Count > 0 ? ViewerState.SelectedKeywords : null;
-        var overview = await Data.GetFactionOverviewAsync(FactionId, includeKeywords, ViewerState.UseAndLogic);
+        var excludeKeywords = ViewerState.ExcludedKeywords.Count > 0 ? ViewerState.ExcludedKeywords : null;
+        var overview = await Data.GetFactionOverviewAsync(FactionId, includeKeywords, excludeKeywords, ViewerState.UseAndLogic);
         if (overview != null)
         {
             availableDetachments = overview.Detachments;
