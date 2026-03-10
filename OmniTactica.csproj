@@ -80,6 +80,10 @@
     </ItemGroup>
 
     <ItemGroup>
+      <AndroidResource Remove="Platforms\Android\Resources\xml\network_security_config.xml" />
+    </ItemGroup>
+
+    <ItemGroup>
       <Content Remove="Resources\Raw\patches.json" />
     </ItemGroup>
 
@@ -94,9 +98,13 @@
       <Content Include="wwwroot\css\themes\bootstrap.min.css" />
     </ItemGroup>
 
-    <ItemGroup>
-      <EmbeddedResource Include="Resources\Raw\patches.json" />
-    </ItemGroup>
+	<ItemGroup>
+	  <EmbeddedResource Include="Resources\Raw\patches.json" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <AndroidResource Include="Platforms\Android\Resources\xml\network_security_config.xml" />
+	</ItemGroup>
 
 	<ItemGroup>
         <PackageReference Include="CommunityToolkit.Maui.Markup" Version="7.0.1" />

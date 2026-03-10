@@ -2,7 +2,7 @@
 @using OmniTactica.AppCode.Models.Core
 
 @inject BookmarkService BookmarkService
-@inject MathhammerService MathhammerService
+@inject VersusService VersusService
 @inject NavigationManager Navigation
 @implements IDisposable
 
@@ -68,14 +68,14 @@
 
     private void SetAsAttacker()
     {
-        MathhammerService.SetAttacker(DatasheetId, DatasheetName);
-        Navigation.NavigateTo("/mathhammer");
+        VersusService.SetAttacker(DatasheetId, DatasheetName);
+        Navigation.NavigateTo("/versus");
     }
 
     private void SetAsDefender()
     {
-        MathhammerService.SetDefender(DatasheetId, DatasheetName);
-        Navigation.NavigateTo("/mathhammer");
+        VersusService.SetDefender(DatasheetId, DatasheetName);
+        Navigation.NavigateTo("/versus");
     }
 
     public void Dispose()

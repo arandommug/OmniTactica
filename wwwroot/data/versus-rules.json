@@ -1,0 +1,263 @@
+{
+  "rules": [
+    {
+      "id": "rapid_fire",
+      "name": "Rapid Fire",
+      "trigger": "attack_start",
+      "condition": { "type": "target_within_half_range" },
+      "effect": { "type": "add_attacks", "value": "X" }
+    },
+    {
+      "id": "melta",
+      "name": "Melta",
+      "trigger": "damage_roll",
+      "condition": { "type": "target_within_half_range" },
+      "effect": { "type": "add_damage", "value": "X" }
+    },
+    {
+      "id": "sustained_hits",
+      "name": "Sustained Hits",
+      "trigger": "after_hit_roll",
+      "condition": { "type": "critical_hit" },
+      "effect": { "type": "add_hits", "value": "X" }
+    },
+    {
+      "id": "lethal_hits",
+      "name": "Lethal Hits",
+      "trigger": "after_hit_roll",
+      "condition": { "type": "critical_hit" },
+      "effect": { "type": "auto_wound" }
+    },
+    {
+      "id": "devastating_wounds",
+      "name": "Devastating Wounds",
+      "trigger": "after_wound_roll",
+      "condition": { "type": "critical_wound" },
+      "effect": { "type": "convert_damage_to_mortal" }
+    },
+    {
+      "id": "torrent",
+      "name": "Torrent",
+      "trigger": "attack_start",
+      "condition": { "type": "always" },
+      "effect": { "type": "auto_hit" }
+    },
+    {
+      "id": "twin_linked",
+      "name": "Twin-Linked",
+      "trigger": "before_wound_roll",
+      "condition": { "type": "always" },
+      "effect": { "type": "reroll_wounds" }
+    },
+    {
+      "id": "heavy",
+      "name": "Heavy",
+      "trigger": "before_hit_roll",
+      "condition": { "type": "unit_remained_stationary" },
+      "effect": { "type": "add_hit_modifier", "value": 1 }
+    },
+    {
+      "id": "blast",
+      "name": "Blast",
+      "trigger": "attack_start",
+      "condition": { "type": "target_unit_size_5_plus" },
+      "effect": { "type": "add_attacks", "value": 1 }
+    },
+    {
+      "id": "blast_large",
+      "name": "Blast (Large)",
+      "trigger": "attack_start",
+      "condition": { "type": "target_unit_size_10_plus" },
+      "effect": { "type": "add_attacks", "value": 2 }
+    },
+    {
+      "id": "anti_vehicle",
+      "name": "Anti-Vehicle",
+      "trigger": "before_wound_roll",
+      "condition": { "type": "target_is_vehicle" },
+      "effect": { "type": "critical_wound_on", "value": 4 }
+    },
+    {
+      "id": "anti_monster",
+      "name": "Anti-Monster",
+      "trigger": "before_wound_roll",
+      "condition": { "type": "target_is_monster" },
+      "effect": { "type": "critical_wound_on", "value": 4 }
+    },
+    {
+      "id": "precision",
+      "name": "Precision",
+      "trigger": "after_wound",
+      "condition": { "type": "target_has_character" },
+      "effect": { "type": "allow_character_allocation" }
+    },
+    {
+      "id": "pistol_shoot_in_melee",
+      "name": "Pistol",
+      "trigger": "attack_start",
+      "condition": { "type": "within_engagement_range" },
+      "effect": { "type": "allow_shooting" }
+    },
+    {
+      "id": "reroll_hit_rolls",
+      "name": "Reroll Hit Rolls",
+      "trigger": "before_hit_roll",
+      "condition": { "type": "always" },
+      "effect": { "type": "reroll_hits" }
+    },
+    {
+      "id": "reroll_hit_ones",
+      "name": "Reroll Hit Ones",
+      "trigger": "after_hit_roll",
+      "condition": { "type": "hit_roll_equals", "value": 1 },
+      "effect": { "type": "reroll_hit" }
+    },
+    {
+      "id": "reroll_wound_rolls",
+      "name": "Reroll Wound Rolls",
+      "trigger": "before_wound_roll",
+      "condition": { "type": "always" },
+      "effect": { "type": "reroll_wounds" }
+    },
+    {
+      "id": "reroll_wound_ones",
+      "name": "Reroll Wound Ones",
+      "trigger": "after_wound_roll",
+      "condition": { "type": "wound_roll_equals", "value": 1 },
+      "effect": { "type": "reroll_wound" }
+    },
+    {
+      "id": "plus_one_to_hit",
+      "name": "+1 To Hit",
+      "trigger": "before_hit_roll",
+      "condition": { "type": "always" },
+      "effect": { "type": "add_hit_modifier", "value": 1 }
+    },
+    {
+      "id": "minus_one_to_hit",
+      "name": "-1 To Hit",
+      "trigger": "before_hit_roll",
+      "condition": { "type": "always" },
+      "effect": { "type": "add_hit_modifier", "value": -1 }
+    },
+    {
+      "id": "plus_one_to_wound",
+      "name": "+1 To Wound",
+      "trigger": "before_wound_roll",
+      "condition": { "type": "always" },
+      "effect": { "type": "add_wound_modifier", "value": 1 }
+    },
+    {
+      "id": "minus_one_to_wound",
+      "name": "-1 To Wound",
+      "trigger": "before_wound_roll",
+      "condition": { "type": "always" },
+      "effect": { "type": "add_wound_modifier", "value": -1 }
+    },
+    {
+      "id": "feel_no_pain_6",
+      "name": "Feel No Pain 6+",
+      "trigger": "after_damage",
+      "condition": { "type": "always" },
+      "effect": { "type": "ignore_wounds_on", "value": 6 }
+    },
+    {
+      "id": "feel_no_pain_5",
+      "name": "Feel No Pain 5+",
+      "trigger": "after_damage",
+      "condition": { "type": "always" },
+      "effect": { "type": "ignore_wounds_on", "value": 5 }
+    },
+    {
+      "id": "feel_no_pain_4",
+      "name": "Feel No Pain 4+",
+      "trigger": "after_damage",
+      "condition": { "type": "always" },
+      "effect": { "type": "ignore_wounds_on", "value": 4 }
+    },
+    {
+      "id": "damage_reduction_1",
+      "name": "Damage Reduction 1",
+      "trigger": "before_damage_applied",
+      "condition": { "type": "always" },
+      "effect": { "type": "reduce_damage", "value": 1 }
+    },
+    {
+      "id": "damage_halved",
+      "name": "Halve Damage",
+      "trigger": "before_damage_applied",
+      "condition": { "type": "always" },
+      "effect": { "type": "halve_damage" }
+    },
+    {
+      "id": "advance_and_shoot",
+      "name": "Advance and Shoot",
+      "trigger": "unit_selected_to_shoot",
+      "condition": { "type": "unit_advanced" },
+      "effect": { "type": "allow_shooting" }
+    },
+    {
+      "id": "fall_back_and_shoot",
+      "name": "Fall Back and Shoot",
+      "trigger": "unit_selected_to_shoot",
+      "condition": { "type": "unit_fell_back" },
+      "effect": { "type": "allow_shooting" }
+    },
+    {
+      "id": "fall_back_and_charge",
+      "name": "Fall Back and Charge",
+      "trigger": "charge_phase",
+      "condition": { "type": "unit_fell_back" },
+      "effect": { "type": "allow_charge" }
+    },
+    {
+      "id": "lance",
+      "name": "Lance",
+      "trigger": "before_wound_roll",
+      "condition": { "type": "unit_charged_this_turn" },
+      "effect": { "type": "add_wound_modifier", "value": 1 }
+    },
+    {
+      "id": "fight_first",
+      "name": "Fight First",
+      "trigger": "fight_phase",
+      "condition": { "type": "always" },
+      "effect": { "type": "fight_first" }
+    },
+    {
+      "id": "fight_on_death",
+      "name": "Fight on Death",
+      "trigger": "model_destroyed",
+      "condition": { "type": "always" },
+      "effect": { "type": "allow_final_attack" }
+    },
+    {
+      "id": "exploding_hits",
+      "name": "Exploding Hits",
+      "trigger": "after_hit_roll",
+      "condition": { "type": "hit_roll_equals", "value": 6 },
+      "effect": { "type": "add_hits", "value": 1 }
+    },
+    {
+      "id": "extra_attack_on_kill",
+      "name": "Extra Attack on Kill",
+      "trigger": "model_destroyed",
+      "condition": { "type": "attacker_destroyed_model" },
+      "effect": { "type": "add_attacks", "value": 1 }
+    },
+    {
+      "id": "objective_control_bonus",
+      "name": "Objective Control +",
+      "trigger": "objective_control",
+      "condition": { "type": "within_objective_range" },
+      "effect": { "type": "add_oc", "value": 1 }
+    },
+    {
+      "id": "cover_bonus",
+      "name": "Cover",
+      "trigger": "save_roll",
+      "condition": { "type": "target_in_cover" },
+      "effect": { "type": "add_save_modifier", "value": 1 }
+    }
+  ]
+}

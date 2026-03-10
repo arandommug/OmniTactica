@@ -1,8 +1,8 @@
-@page "/mathhammer"
+@page "/versus"
 @using OmniTactica.AppCode.Services
 @using OmniTactica.AppCode.Models.Core
 
-@inject MathhammerService MathhammerService
+@inject VersusService VersusService
 @inject BookmarkService BookmarkService
 @inject WahaDataService DataService
 @inject NavigationManager Navigation
@@ -12,7 +12,7 @@
     <div class="card bg-secondary-subtle">
         <div class="card-header">
             <h1 class="text-primary">
-                <i class="fa fa-fist-raised me-2"></i>Mathhammer
+                <i class="fa fa-fist-raised me-2"></i>Versus
             </h1>
         </div>
 
@@ -122,7 +122,7 @@
                 <div class="col-12 col-lg-2 d-flex align-items-center justify-content-center">
                     <button class="btn btn-lg btn-outline-primary" 
                             @onclick="SwapUnits" 
-                            disabled="@(!MathhammerService.HasAttacker() || !MathhammerService.HasDefender())">
+                            disabled="@(!VersusService.HasAttacker() || !VersusService.HasDefender())">
                         <i class="fa fa-exchange-alt"></i>
                     </button>
                 </div>
@@ -213,11 +213,20 @@
 
             </div>
 
-            @if (MathhammerService.CanCalculate())
+            @if (VersusService.CanCalculate())
             {
                 <div class="mt-4">
-                    <button class="btn btn-lg btn-success w-100" @onclick="Calculate">
-                        <i class="fa fa-calculator me-2"></i>Calculate
+                    <button class="btn btn-lg btn-success w-100" @onclick="Calculate" disabled="@calculating">
+                        @if (calculating)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2"></span>
+                            <text>Running @simulationCount simulations...</text>
+                        }
+                        else
+                        {
+                            <i class="fa fa-calculator me-2"></i>
+                            <text>Calculate (@simulationCount simulations)</text>
+                        }
                     </button>
                 </div>
 
@@ -226,11 +235,11 @@
                     <div class="card mt-4 border-success">
                         <div class="card-header bg-success-subtle">
                             <h5 class="mb-0">
-                                <i class="fa fa-chart-bar me-2"></i>Results
+                                <i class="fa fa-chart-bar me-2"></i>Results (Monte Carlo Simulation)
                             </h5>
                         </div>
                         <div class="card-body">
-                            <div class="row g-3">
+                            <div class="row g-3 mb-3">
                                 <div class="col-6 col-md-3">
                                     <div class="text-center">
                                         <h2 class="text-primary mb-0">@result.AverageHits.ToString("F2")</h2>
@@ -257,6 +266,44 @@
                                 </div>
                             </div>
 
+                            <div class="row g-3 mb-3">
+                                <div class="col-6">
+                                    <div class="text-center">
+                                        <h3 class="text-info mb-0">@result.MedianDamage</h3>
+                                        <small class="text-muted">Median Damage</small>
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="text-center">
+                                        <h3 class="text-success mb-0">@result.KillProbability.ToString("F1")%</h3>
+                                        <small class="text-muted">Kill Probability</small>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <hr />
+
+                            <h6>Damage Distribution:</h6>
+                            <div class="mb-3">
+                                @foreach (var entry in result.DamageDistribution.OrderBy(kv => kv.Key).Take(10))
+                                {
+                                    <div class="mb-2">
+                                        <div class="d-flex justify-content-between">
+                                            <span>@entry.Key damage</span>
+                                            <span>@entry.Value.ToString("F1")%</span>
+                                        </div>
+                                        <div class="progress" style="height: 20px;">
+                                            <div class="progress-bar" role="progressbar" style="width: @(entry.Value)%">
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                                @if (result.DamageDistribution.Count > 10)
+                                {
+                                    <small class="text-muted">Showing top 10 results...</small>
+                                }
+                            </div>
+
                             <hr />
 
                             <h6>Breakdown:</h6>
@@ -268,7 +315,7 @@
                                             <tr>
                                                 <td>@stage.Key</td>
                                                 <td class="text-end">
-                                                    @if (stage.Key.Contains("Chance"))
+                                                    @if (stage.Key.Contains("Chance") || stage.Key.Contains("Probability"))
                                                     {
                                                         <text>@stage.Value.ToString("F1")%</text>
                                                     }
@@ -282,6 +329,8 @@
                                     </tbody>
                                 </table>
                             </div>
+
+                            <small class="text-muted">Based on @result.SimulationCount Monte Carlo simulations</small>
                         </div>
                     </div>
                 }
@@ -306,9 +355,11 @@
 @code {
     private AttackerContext? attacker;
     private DefenderContext? defender;
-    private MathhammerResult? result;
+    private VersusResult? result;
     private string selectingFor = string.Empty;
     private int modelCount = 1;
+    private int simulationCount = 10000;
+    private bool calculating = false;
 
     private DatasheetDetail? attackerDatasheet;
     private DatasheetDetail? defenderDatasheet;
@@ -317,15 +368,15 @@
 
     protected override void OnInitialized()
     {
-        attacker = MathhammerService.GetAttacker();
-        defender = MathhammerService.GetDefender();
+        attacker = VersusService.GetAttacker();
+        defender = VersusService.GetDefender();
 
         if (attacker != null)
         {
             modelCount = attacker.ModelsWithWeapon;
         }
 
-        MathhammerService.OnContextChanged += OnContextChanged;
+        VersusService.OnContextChanged += OnContextChanged;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -371,8 +422,8 @@
 
     private void OnContextChanged()
     {
-        attacker = MathhammerService.GetAttacker();
-        defender = MathhammerService.GetDefender();
+        attacker = VersusService.GetAttacker();
+        defender = VersusService.GetDefender();
         result = null;
 
         if (attacker != null)
@@ -405,46 +456,54 @@
         StateHasChanged();
     }
 
-    private void Calculate()
+    private async Task Calculate()
     {
-        result = MathhammerCalculator.Calculate(MathhammerService.GetContext());
+        calculating = true;
+        StateHasChanged();
+
+        await Task.Delay(1); // Allow UI to update
+
+        result = VersusCalculator.Calculate(VersusService.GetContext(), simulationCount);
+
+        calculating = false;
+        StateHasChanged();
     }
 
     private void SwapUnits()
     {
-        MathhammerService.SwapAttackerDefender();
+        VersusService.SwapAttackerDefender();
         result = null;
     }
 
     private void ClearAttacker()
     {
-        MathhammerService.ClearAttacker();
+        VersusService.ClearAttacker();
         attackerDatasheet = null;
         result = null;
     }
 
     private void ClearDefender()
     {
-        MathhammerService.ClearDefender();
+        VersusService.ClearDefender();
         defenderDatasheet = null;
         result = null;
     }
 
     private void SelectWeapon(DatasheetWargear weapon)
     {
-        MathhammerService.SetAttackerWeapon(weapon, weapon.Line, modelCount);
+        VersusService.SetAttackerWeapon(weapon, weapon.Line, modelCount);
         result = null;
     }
 
     private void SelectModel(DatasheetModel model)
     {
-        MathhammerService.SetDefenderModel(model);
+        VersusService.SetDefenderModel(model);
         result = null;
     }
 
     private void UpdateModelCount()
     {
-        MathhammerService.SetAttackerModelCount(modelCount);
+        VersusService.SetAttackerModelCount(modelCount);
         result = null;
     }
 
@@ -452,13 +511,13 @@
     {
         if (selectingFor == "attacker")
         {
-            MathhammerService.SetAttacker(unit.datasheetId, unit.datasheetName);
+            VersusService.SetAttacker(unit.datasheetId, unit.datasheetName);
             attackerDatasheet = null;
             await LoadAttackerDatasheet();
         }
         else if (selectingFor == "defender")
         {
-            MathhammerService.SetDefender(unit.datasheetId, unit.datasheetName);
+            VersusService.SetDefender(unit.datasheetId, unit.datasheetName);
             defenderDatasheet = null;
             await LoadDefenderDatasheet();
         }
@@ -470,7 +529,7 @@
     {
         if (int.TryParse(bookmark.EntityId, out var id))
         {
-            MathhammerService.SetAttacker(id, bookmark.Name);
+            VersusService.SetAttacker(id, bookmark.Name);
             attackerDatasheet = null;
             await LoadAttackerDatasheet();
         }
@@ -480,7 +539,7 @@
     {
         if (int.TryParse(bookmark.EntityId, out var id))
         {
-            MathhammerService.SetDefender(id, bookmark.Name);
+            VersusService.SetDefender(id, bookmark.Name);
             defenderDatasheet = null;
             await LoadDefenderDatasheet();
         }
@@ -493,6 +552,6 @@
 
     public void Dispose()
     {
-        MathhammerService.OnContextChanged -= OnContextChanged;
+        VersusService.OnContextChanged -= OnContextChanged;
     }
 }

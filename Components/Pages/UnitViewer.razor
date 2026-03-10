@@ -9,7 +9,7 @@
 @inject WahaDataService Data
 @inject NavigationManager Navigation
 @inject FactionViewerState ViewerState
-@inject MathhammerService MathhammerService
+@inject VersusService VersusService
 
 <div class="p-2">
     <div class="card bg-secondary-subtle">
@@ -130,7 +130,7 @@
                                         <th>W</th>
                                         <th>Ld</th>
                                         <th>OC</th>
-                                        @if (MathhammerService.HasDefender() && MathhammerService.GetDefender()!.DatasheetId == datasheetId)
+                                        @if (VersusService.HasDefender() && VersusService.GetDefender()!.DatasheetId == datasheetId)
                                         {
                                             <th>Select</th>
                                         }
@@ -139,7 +139,7 @@
                                 <tbody>
                                     @foreach (var model in datasheet.Models)
                                     {
-                                        var isSelected = MathhammerService.GetDefender()?.SelectedModel?.Line == model.Line;
+                                        var isSelected = VersusService.GetDefender()?.SelectedModel?.Line == model.Line;
                                         <tr class="@(isSelected ? "table-active" : "")">
                                             <td>
                                                 <div>@model.Name</div>
@@ -163,12 +163,12 @@
                                             <td>@model.W</td>
                                             <td>@model.Ld</td>
                                             <td>@model.OC</td>
-                                            @if (MathhammerService.HasDefender() && MathhammerService.GetDefender()!.DatasheetId == datasheetId)
+                                            @if (VersusService.HasDefender() && VersusService.GetDefender()!.DatasheetId == datasheetId)
                                             {
                                                 <td>
                                                     <button class="btn btn-sm @(isSelected ? "btn-success" : "btn-outline-primary")" 
                                                             @onclick="() => SelectModel(model)"
-                                                            title="@(isSelected ? "Selected as defender model" : "Select for mathhammer")">
+                                                            title="@(isSelected ? "Selected as defender model" : "Select for Versus")">
                                                         <i class="fa @(isSelected ? "fa-check-circle" : "fa-shield")"></i>
                                                     </button>
                                                 </td>
@@ -202,7 +202,7 @@
                                                 <th>S</th>
                                                 <th>AP</th>
                                                 <th>D</th>
-                                                @if (MathhammerService.HasAttacker() && MathhammerService.GetAttacker()!.DatasheetId == datasheetId)
+                                                @if (VersusService.HasAttacker() && VersusService.GetAttacker()!.DatasheetId == datasheetId)
                                                 {
                                                     <th>Select</th>
                                                 }
@@ -211,7 +211,7 @@
                                         <tbody>
                                             @foreach (var weapon in datasheet.Wargear.Where(wep => wep.Type == "Ranged"))
                                             {
-                                                var isSelected = MathhammerService.GetAttacker()?.SelectedWeaponLine == weapon.Line;
+                                                var isSelected = VersusService.GetAttacker()?.SelectedWeaponLine == weapon.Line;
                                                 <tr class="@(isSelected ? "table-active" : "")">
                                                     <td>
                                                         @weapon.Name
@@ -226,12 +226,12 @@
                                                     <td>@weapon.S</td>
                                                     <td>@weapon.AP</td>
                                                     <td>@weapon.D</td>
-                                                    @if (MathhammerService.HasAttacker() && MathhammerService.GetAttacker()!.DatasheetId == datasheetId)
+                                                    @if (VersusService.HasAttacker() && VersusService.GetAttacker()!.DatasheetId == datasheetId)
                                                     {
                                                         <td>
                                                             <button class="btn btn-sm @(isSelected ? "btn-success" : "btn-outline-danger")" 
                                                                     @onclick="() => SelectWeapon(weapon)"
-                                                                    title="@(isSelected ? "Selected as attacker weapon" : "Select for mathhammer")">
+                                                                    title="@(isSelected ? "Selected as attacker weapon" : "Select for Versus")">
                                                                 <i class="fa @(isSelected ? "fa-check-circle" : "fa-bullseye")"></i>
                                                             </button>
                                                         </td>
@@ -696,13 +696,13 @@
 
     private void SelectWeapon(DatasheetWargear weapon)
     {
-        MathhammerService.SetAttackerWeapon(weapon, weapon.Line);
+        VersusService.SetAttackerWeapon(weapon, weapon.Line);
         StateHasChanged();
     }
 
     private void SelectModel(DatasheetModel model)
     {
-        MathhammerService.SetDefenderModel(model);
+        VersusService.SetDefenderModel(model);
         StateHasChanged();
     }
 }

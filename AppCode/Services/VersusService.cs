@@ -4,19 +4,19 @@ using OmniTactica.AppCode.Utilities;
 namespace OmniTactica.AppCode.Services
 {
     /// <summary>
-    /// State service for managing mathhammer combat calculations.
+    /// State service for managing versus combat calculations.
     /// Maintains attacker/defender context across navigation.
     /// </summary>
-    public class MathhammerService
+    public class VersusService
     {
-        private MathhammerContext _context = new();
+        private VersusContext _context = new();
 
         public event Action? OnContextChanged;
 
-        public MathhammerContext GetContext() => _context;
+        public VersusContext GetContext() => _context;
 
         public AttackerContext? GetAttacker() => _context.Attacker;
-        
+
         public DefenderContext? GetDefender() => _context.Defender;
 
         public void SetAttacker(int datasheetId, string datasheetName)
@@ -89,17 +89,23 @@ namespace OmniTactica.AppCode.Services
 
         public void SwapAttackerDefender()
         {
-            (_context.Attacker, _context.Defender) = (_context.Defender != null && _context.Attacker != null
-                ? (new AttackerContext
+            if (_context.Defender != null && _context.Attacker != null)
+            {
+                var newAttacker = new AttackerContext
                 {
                     DatasheetId = _context.Defender.DatasheetId,
                     DatasheetName = _context.Defender.DatasheetName
-                }, new DefenderContext
+                };
+
+                var newDefender = new DefenderContext
                 {
                     DatasheetId = _context.Attacker.DatasheetId,
                     DatasheetName = _context.Attacker.DatasheetName
-                })
-                : (_context.Attacker, _context.Defender));
+                };
+
+                _context.Attacker = newAttacker;
+                _context.Defender = newDefender;
+            }
 
             OnContextChanged?.Invoke();
         }
@@ -118,12 +124,12 @@ namespace OmniTactica.AppCode.Services
 
         public void ClearAll()
         {
-            _context = new MathhammerContext();
+            _context = new VersusContext();
             OnContextChanged?.Invoke();
         }
 
         public bool HasAttacker() => _context.Attacker != null;
-        
+
         public bool HasDefender() => _context.Defender != null;
 
         public bool CanCalculate() => 

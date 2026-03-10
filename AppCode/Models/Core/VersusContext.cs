@@ -1,9 +1,9 @@
 namespace OmniTactica.AppCode.Models.Core
 {
     /// <summary>
-    /// Represents the complete state for a mathhammer combat calculation.
+    /// Represents the complete state for a versus combat calculation.
     /// </summary>
-    public class MathhammerContext
+    public class VersusContext
     {
         public AttackerContext? Attacker { get; set; }
         public DefenderContext? Defender { get; set; }
