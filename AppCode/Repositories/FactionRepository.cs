@@ -19,12 +19,11 @@ namespace OmniTactica.AppCode.Repositories
         {
             const string sql = "SELECT id, name FROM Factions ORDER BY name";
 
-            var tables = await QueryListAsync(sql, r => new FactionTable(
-                Id: S(r, "id"),
-                Name: S(r, "name")
-            ));
-
-            return tables.Select(MapFactionFromTable).ToList();
+            return await QueryListAsync(sql, r => new Faction
+            {
+                Id = S(r, "id"),
+                Name = S(r, "name")
+            });
         }
 
         /// <summary>
@@ -34,12 +33,11 @@ namespace OmniTactica.AppCode.Repositories
         {
             const string sql = "SELECT id, name FROM Factions WHERE id = @id";
 
-            var table = await QuerySingleAsync(sql, r => new FactionTable(
-                Id: S(r, "id"),
-                Name: S(r, "name")
-            ), ("@id", factionId));
-
-            return table != null ? MapFactionFromTable(table) : null;
+            return await QuerySingleAsync(sql, r => new Faction
+            {
+                Id = S(r, "id"),
+                Name = S(r, "name")
+            }, ("@id", factionId));
         }
 
         /// <summary>
@@ -59,22 +57,23 @@ namespace OmniTactica.AppCode.Repositories
                 ORDER BY name
                 """;
 
-            var abilityTables = await QueryListAsync(abilitySql, r => new AbilityTable(
-                Id: I(r, "id") ?? 0,
-                Name: S(r, "name"),
-                Legend: S(r, "legend"),
-                FactionId: S(r, "faction_id"),
-                Description: S(r, "description")
-            ), ("@factionId", factionId));
+            var abilities = await QueryListAsync(abilitySql, r => new Ability
+            {
+                Id = I(r, "id") ?? 0,
+                Name = S(r, "name"),
+                Legend = S(r, "legend"),
+                FactionId = S(r, "faction_id"),
+                Description = S(r, "description")
+            }, ("@factionId", factionId));
 
             // Filter abilities based on keywords
-            var filteredAbilities = abilityTables;
+            var filteredAbilities = abilities;
 
             if (keywordFilters != null && keywordFilters.Count > 0)
             {
                 System.Diagnostics.Debug.WriteLine($"[FactionRepository] Filtering abilities with {keywordFilters.Count} keywords ({(useAndLogic ? "AND" : "OR")} logic)");
 
-                filteredAbilities = abilityTables
+                filteredAbilities = abilities
                     .Where(a =>
                     {
                         var combinedText = $"{a.Legend} {a.Description}";
@@ -114,7 +113,7 @@ namespace OmniTactica.AppCode.Repositories
                 System.Diagnostics.Debug.WriteLine($"[FactionRepository] Result: {filteredAbilities.Count} abilities after filtering");
             }
 
-            faction.Abilities = filteredAbilities.Select(MapAbilityFromTable).ToList();
+            faction.Abilities = filteredAbilities;
 
             return faction;
         }
@@ -177,21 +176,5 @@ namespace OmniTactica.AppCode.Repositories
 
             return (commonKeywords, uniqueKeywords);
         }
-
-
-        private static Faction MapFactionFromTable(FactionTable table) => new()
-        {
-            Id = table.Id,
-            Name = table.Name
-        };
-
-        private static Ability MapAbilityFromTable(AbilityTable table) => new()
-        {
-            Id = table.Id,
-            Name = table.Name,
-            Legend = table.Legend,
-            FactionId = table.FactionId,
-            Description = table.Description
-        };
     }
 }

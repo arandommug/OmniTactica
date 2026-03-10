@@ -11,13 +11,16 @@ namespace OmniTactica.AppCode.Services
     {
         private readonly FactionRepository _factions;
         private readonly DetachmentRepository _detachments;
+        private readonly DatasheetRepository _datasheets;
 
         public WahaDataService(
             FactionRepository factions,
-            DetachmentRepository detachments)
+            DetachmentRepository detachments,
+            DatasheetRepository datasheets)
         {
             _factions = factions;
             _detachments = detachments;
+            _datasheets = datasheets;
         }
 
         /// <summary>
@@ -70,6 +73,21 @@ namespace OmniTactica.AppCode.Services
         /// </summary>
         public Task<Detachment?> GetDetachmentDetailsAsync(int detachmentId)
             => _detachments.GetDetachmentWithDetailsAsync(detachmentId);
+
+        /// <summary>
+        /// Gets all datasheets for a faction (list view).
+        /// Optionally filters by selected keywords with AND/OR logic.
+        /// Supports both include and exclude keyword filters.
+        /// </summary>
+        public Task<List<Datasheet>> GetDatasheetsByFactionAsync(string factionId, List<string>? includeKeywords = null, List<string>? excludeKeywords = null, bool useAndLogic = false)
+            => _datasheets.GetDatasheetsByFactionAsync(factionId, includeKeywords, excludeKeywords, useAndLogic);
+
+        /// <summary>
+        /// Gets a complete datasheet with all details.
+        /// Optionally filters enhancements, stratagems, and abilities by detachment.
+        /// </summary>
+        public Task<DatasheetDetail?> GetDatasheetDetailAsync(int datasheetId, int? detachmentId = null)
+            => _datasheets.GetDatasheetDetailAsync(datasheetId, detachmentId);
     }
 
     /// <summary>

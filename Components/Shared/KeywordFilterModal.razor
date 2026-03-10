@@ -1,0 +1,427 @@
+@using OmniTactica.AppCode.Services
+@using OmniTactica.AppCode.Helpers
+
+@inject WahaDataService Data
+
+<!-- Filter Button -->
+<button class="btn btn-primary" @onclick="OpenModal">
+    <i class="fa fa-filter me-2"></i>Filter by Keywords
+    @if (currentIncludeKeywords.Count > 0 || currentExcludeKeywords.Count > 0)
+    {
+        @if (currentIncludeKeywords.Count > 0)
+        {
+            <span class="badge bg-success text-white ms-2">@currentIncludeKeywords.Count include</span>
+        }
+        @if (currentExcludeKeywords.Count > 0)
+        {
+            <span class="badge bg-danger text-white ms-2">@currentExcludeKeywords.Count exclude</span>
+        }
+    }
+</button>
+
+@if (currentIncludeKeywords.Count > 0 || currentExcludeKeywords.Count > 0)
+{
+    <button class="btn btn-outline-secondary ms-2" @onclick="ClearFilter">
+        <i class="fa fa-times me-1"></i>Clear Filter
+    </button>
+    <div class="mt-2">
+        <span class="badge bg-secondary me-1">@(currentUseAndLogic ? "AND" : "OR") Logic</span>
+        @foreach (var kw in currentIncludeKeywords)
+        {
+            <span class="badge bg-success me-1">+@kw</span>
+        }
+        @foreach (var kw in currentExcludeKeywords)
+        {
+            <span class="badge bg-danger me-1">-@kw</span>
+        }
+    </div>
+}
+
+<!-- Modal -->
+@if (showModal)
+{
+    <div class="modal show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);" @onclick="HandleCancel">
+        <div class="modal-dialog modal-lg" @onclick:stopPropagation>
+            <div class="modal-content" style="max-height: 90vh; display: flex; flex-direction: column;">
+                <!-- Fixed Header -->
+                <div class="modal-header">
+                    <h5 class="modal-title">Filter by Keywords</h5>
+                    <button type="button" class="btn-close" @onclick="HandleCancel"></button>
+                </div>
+
+                <!-- Scrollable Body with Keywords Only -->
+                <div class="modal-body" style="overflow-y: auto; flex: 1 1 auto;">
+                    <!-- Search Box -->
+                    <div class="mb-3">
+                        <div class="input-group">
+                            <span class="input-group-text">
+                                <i class="fa fa-search"></i>
+                            </span>
+                            <input type="text" 
+                                   class="form-control" 
+                                   placeholder="Search keywords..." 
+                                   @bind="searchText" 
+                                   @bind:event="oninput" />
+                            @if (!string.IsNullOrWhiteSpace(searchText))
+                            {
+                                <button class="btn btn-outline-secondary" type="button" @onclick="ClearSearch">
+                                    <i class="fa fa-times"></i>
+                                </button>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="mb-2">
+                        <strong>Select Keywords (@(tempIncludeKeywords.Count) include, @(tempExcludeKeywords.Count) exclude):</strong>
+                        <small class="d-block text-muted">Tap once to include, twice to exclude, three times to clear</small>
+                    </div>
+
+                    @if (loading)
+                    {
+                        <div class="text-center py-3">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading keywords...</span>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        var filteredCommon = GetFilteredCommonKeywords();
+                        var filteredUnique = GetFilteredUniqueKeywords();
+                        var autoExpandUnique = ShouldAutoExpandUniqueKeywords();
+
+                        <!-- Common Keywords (used by multiple datasheets) -->
+                        @if (filteredCommon.Count > 0)
+                        {
+                            <div class="mb-3">
+                                <small class="text-muted d-block mb-2">
+                                    <i class="fa fa-star me-1"></i>Common Keywords (@filteredCommon.Count@(string.IsNullOrWhiteSpace(searchText) ? "" : $" of {commonKeywords.Count}"))
+                                </small>
+                                <div class="d-flex flex-wrap gap-2">
+                                    @foreach (var keyword in filteredCommon)
+                                    {
+                                        var state = GetKeywordState(keyword);
+                                        var buttonClass = state == KeywordFilterState.Include ? "btn-success" : 
+                                                          state == KeywordFilterState.Exclude ? "btn-danger" : 
+                                                          "btn-outline-secondary";
+                                        var icon = state == KeywordFilterState.Include ? "fa-check" : 
+                                                   state == KeywordFilterState.Exclude ? "fa-times" : "";
+
+                                        <button class="btn @buttonClass btn-sm"
+                                                @onclick="@(() => CycleKeywordState(keyword))">
+                                            @if (state == KeywordFilterState.Include)
+                                            {
+                                                <text>+</text>
+                                            }
+                                            else if (state == KeywordFilterState.Exclude)
+                                            {
+                                                <text>-</text>
+                                            }
+                                            @keyword
+                                            @if (!string.IsNullOrEmpty(icon))
+                                            {
+                                                <i class="fa @icon ms-1"></i>
+                                            }
+                                        </button>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        <!-- Unique Keywords (used by only one datasheet) - Collapsible -->
+                        @if (filteredUnique.Count > 0)
+                        {
+                            <div>
+                                <button class="btn btn-link btn-sm p-0 text-decoration-none" @onclick="ToggleUniqueKeywords">
+                                    <i class="fa @(autoExpandUnique ? "fa-chevron-down" : "fa-chevron-right") me-1"></i>
+                                    Unique Keywords (@filteredUnique.Count@(string.IsNullOrWhiteSpace(searchText) ? "" : $" of {uniqueKeywords.Count}"))
+                                    <small class="text-muted ms-1">(used by single unit)</small>
+                                </button>
+
+                                @if (autoExpandUnique)
+                                {
+                                    <div class="d-flex flex-wrap gap-2 mt-2">
+                                        @foreach (var keyword in filteredUnique)
+                                        {
+                                            var state = GetKeywordState(keyword);
+                                            var buttonClass = state == KeywordFilterState.Include ? "btn-success" : 
+                                                              state == KeywordFilterState.Exclude ? "btn-danger" : 
+                                                              "btn-outline-secondary";
+                                            var icon = state == KeywordFilterState.Include ? "fa-check" : 
+                                                       state == KeywordFilterState.Exclude ? "fa-times" : "";
+
+                                            <button class="btn @buttonClass btn-sm"
+                                                    @onclick="@(() => CycleKeywordState(keyword))">
+                                                @if (state == KeywordFilterState.Include)
+                                                {
+                                                    <text>+</text>
+                                                }
+                                                else if (state == KeywordFilterState.Exclude)
+                                                {
+                                                    <text>-</text>
+                                                }
+                                                @keyword
+                                                @if (!string.IsNullOrEmpty(icon))
+                                                {
+                                                    <i class="fa @icon ms-1"></i>
+                                                }
+                                            </button>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        @if (filteredCommon.Count == 0 && filteredUnique.Count == 0)
+                        {
+                            <div class="text-muted text-center py-3">
+                                <i class="fa fa-info-circle me-1"></i>
+                                @if (string.IsNullOrWhiteSpace(searchText))
+                                {
+                                    <text>No keywords found for this faction</text>
+                                }
+                                else
+                                {
+                                    <text>No keywords match "@searchText"</text>
+                                }
+                            </div>
+                        }
+                    }
+                </div>
+
+                <!-- Fixed Footer with Toggle and Buttons -->
+                <div class="modal-footer" style="flex-shrink: 0; flex-direction: column; align-items: stretch; gap: 0.5rem;">
+                    <!-- AND/OR Toggle -->
+                    <div class="w-100">
+                        <label class="form-label mb-1"><small>Filter Logic:</small></label>
+                        <div class="btn-group w-100" role="group">
+                            <input type="radio" class="btn-check" name="logicToggle" id="orLogic" checked="@(!tempUseAndLogic)" @onchange="@(() => tempUseAndLogic = false)" />
+                            <label class="btn btn-outline-primary btn-sm" for="orLogic">
+                                OR
+                                <small class="d-none d-md-inline">(Any)</small>
+                            </label>
+
+                            <input type="radio" class="btn-check" name="logicToggle" id="andLogic" checked="@tempUseAndLogic" @onchange="@(() => tempUseAndLogic = true)" />
+                            <label class="btn btn-outline-primary btn-sm" for="andLogic">
+                                AND
+                                <small class="d-none d-md-inline">(All)</small>
+                            </label>
+                        </div>
+                        <small class="text-muted d-block mt-1">
+                            @if (tempUseAndLogic)
+                            {
+                                <text>Match <strong>all</strong> selected keywords</text>
+                            }
+                            else
+                            {
+                                <text>Match <strong>any</strong> selected keyword</text>
+                            }
+                        </small>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="d-flex gap-2 w-100">
+                        <button type="button" class="btn btn-secondary flex-fill" @onclick="HandleCancel">
+                            Cancel
+                        </button>
+                        <button type="button" class="btn btn-outline-warning flex-fill" @onclick="HandleClear">
+                            Clear
+                        </button>
+                        <button type="button" class="btn btn-primary flex-fill" @onclick="HandleApply">
+                            Apply
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public string FactionId { get; set; } = string.Empty;
+
+    [Parameter]
+    public EventCallback<(List<string> IncludeKeywords, List<string> ExcludeKeywords, bool UseAndLogic)> OnApplyFilter { get; set; }
+
+    [Parameter]
+    public List<string>? InitialIncludeKeywords { get; set; }
+
+    [Parameter]
+    public List<string>? InitialExcludeKeywords { get; set; }
+
+    [Parameter]
+    public bool InitialUseAndLogic { get; set; }
+
+    // Internal state - component manages everything
+    private bool showModal = false;
+    private bool loading = false;
+    private List<string> commonKeywords = new();
+    private List<string> uniqueKeywords = new();
+    private bool showUniqueKeywords = false;
+
+    // Current applied state
+    private List<string> currentIncludeKeywords = new();
+    private List<string> currentExcludeKeywords = new();
+    private bool currentUseAndLogic = false;
+
+    // Temporary state while modal is open
+    private List<string> tempIncludeKeywords = new();
+    private List<string> tempExcludeKeywords = new();
+    private bool tempUseAndLogic = false;
+    private string searchText = string.Empty;
+
+    protected override void OnParametersSet()
+    {
+        // Initialize current state from parameters if provided
+        if (InitialIncludeKeywords != null && currentIncludeKeywords.Count == 0)
+        {
+            currentIncludeKeywords = new List<string>(InitialIncludeKeywords);
+        }
+        if (InitialExcludeKeywords != null && currentExcludeKeywords.Count == 0)
+        {
+            currentExcludeKeywords = new List<string>(InitialExcludeKeywords);
+        }
+        currentUseAndLogic = InitialUseAndLogic;
+    }
+
+    private async Task OpenModal()
+    {
+        // Copy current state to temp for editing
+        tempIncludeKeywords = new List<string>(currentIncludeKeywords);
+        tempExcludeKeywords = new List<string>(currentExcludeKeywords);
+        tempUseAndLogic = currentUseAndLogic;
+        searchText = string.Empty;
+        showUniqueKeywords = false;
+
+        // Load keywords if needed
+        if (commonKeywords.Count == 0)
+        {
+            await LoadKeywords();
+        }
+
+        showModal = true;
+        StateHasChanged();
+    }
+
+    private async Task ClearFilter()
+    {
+        currentIncludeKeywords.Clear();
+        currentExcludeKeywords.Clear();
+        currentUseAndLogic = false;
+        await OnApplyFilter.InvokeAsync((new List<string>(), new List<string>(), false));
+    }
+
+    private async Task LoadKeywords()
+    {
+        loading = true;
+        StateHasChanged();
+
+        var grouped = await Data.GetFactionKeywordsGroupedAsync(FactionId);
+        commonKeywords = grouped.CommonKeywords;
+        uniqueKeywords = grouped.UniqueKeywords;
+
+        loading = false;
+        StateHasChanged();
+    }
+
+    private KeywordFilterState GetKeywordState(string keyword)
+    {
+        if (tempIncludeKeywords.Contains(keyword))
+            return KeywordFilterState.Include;
+        if (tempExcludeKeywords.Contains(keyword))
+            return KeywordFilterState.Exclude;
+        return KeywordFilterState.None;
+    }
+
+    private void CycleKeywordState(string keyword)
+    {
+        var currentState = GetKeywordState(keyword);
+
+        // Remove from both lists first
+        tempIncludeKeywords.Remove(keyword);
+        tempExcludeKeywords.Remove(keyword);
+
+        // Cycle: None -> Include -> Exclude -> None
+        switch (currentState)
+        {
+            case KeywordFilterState.None:
+                tempIncludeKeywords.Add(keyword);
+                break;
+            case KeywordFilterState.Include:
+                tempExcludeKeywords.Add(keyword);
+                break;
+            case KeywordFilterState.Exclude:
+                // Already removed from both lists, so it's None
+                break;
+        }
+    }
+
+    private void ToggleUniqueKeywords()
+    {
+        showUniqueKeywords = !showUniqueKeywords;
+    }
+
+    private void ClearSearch()
+    {
+        searchText = string.Empty;
+    }
+
+    private void HandleCancel()
+    {
+        showModal = false;
+    }
+
+    private void HandleClear()
+    {
+        tempIncludeKeywords.Clear();
+        tempExcludeKeywords.Clear();
+    }
+
+    private async Task HandleApply()
+    {
+        // Update current state
+        currentIncludeKeywords = new List<string>(tempIncludeKeywords);
+        currentExcludeKeywords = new List<string>(tempExcludeKeywords);
+        currentUseAndLogic = tempUseAndLogic;
+
+        // Notify parent with the selected values
+        await OnApplyFilter.InvokeAsync((
+            new List<string>(tempIncludeKeywords), 
+            new List<string>(tempExcludeKeywords), 
+            tempUseAndLogic
+        ));
+
+        // Close modal
+        showModal = false;
+    }
+
+    private List<string> GetFilteredCommonKeywords()
+    {
+        if (string.IsNullOrWhiteSpace(searchText))
+            return commonKeywords;
+
+        return commonKeywords
+            .Where(kw => kw.Contains(searchText, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+    }
+
+    private List<string> GetFilteredUniqueKeywords()
+    {
+        if (string.IsNullOrWhiteSpace(searchText))
+            return uniqueKeywords;
+
+        return uniqueKeywords
+            .Where(kw => kw.Contains(searchText, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+    }
+
+    private bool ShouldAutoExpandUniqueKeywords()
+    {
+        if (string.IsNullOrWhiteSpace(searchText))
+            return showUniqueKeywords;
+
+        // Auto-expand if search matches any unique keyword
+        return uniqueKeywords.Any(kw => kw.Contains(searchText, StringComparison.OrdinalIgnoreCase));
+    }
+}

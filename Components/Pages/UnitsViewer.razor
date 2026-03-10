@@ -1,0 +1,144 @@
+@page "/faction/{FactionId}/units"
+@using OmniTactica.AppCode.Data.Database
+@using OmniTactica.AppCode.Services
+@using OmniTactica.AppCode.Models.Core
+
+@inject WahaSQLiteService DB
+@inject WahaDataService Data
+@inject NavigationManager Navigation
+@inject FactionViewerState ViewerState
+
+<div class="p-2">
+    <div class="card bg-secondary-subtle">
+        <div class="card-header d-flex align-items-center">
+            <NavLink class="btn btn-dark btn-sm w-auto" href="@($"/faction/{FactionId}")">
+                <i class="fa fa-chevron-left" aria-hidden="true"></i>
+            </NavLink>
+
+            <h1 class="text-primary m-0 ms-3">Units</h1>
+        </div>
+        <div class="card-body">
+            @if (loading)
+            {
+                <div class="d-flex align-items-center">
+                    <div class="spinner-border text-primary me-2" role="status" aria-hidden="true"></div>
+                    <div>Loading units...</div>
+                </div>
+            }
+            else
+            {
+                <!-- Keyword Filter Component -->
+                <div class="mb-3">
+                    <KeywordFilterModal 
+                        FactionId="@FactionId"
+                        InitialIncludeKeywords="@includeKeywords"
+                        InitialExcludeKeywords="@excludeKeywords"
+                        InitialUseAndLogic="@useAndLogic"
+                        OnApplyFilter="@HandleKeywordFilterApplied" />
+                </div>
+
+                <!-- Units List -->
+                <div class="mb-2">
+                    <strong>@datasheets.Count @(datasheets.Count == 1 ? "Unit" : "Units") Found</strong>
+                </div>
+
+                @if (datasheets.Count == 0)
+                {
+                    <div class="text-muted">No units found @((includeKeywords.Count > 0 || excludeKeywords.Count > 0) ? "matching the selected keywords" : "for this faction").</div>
+                }
+                else
+                {
+                    <div class="list-group">
+                        @foreach (var unit in datasheets)
+                        {
+                            <a href="@($"/faction/{FactionId}/unit/{unit.Id}")" class="list-group-item list-group-item-action">
+                                <div class="d-flex w-100 justify-content-between align-items-start">
+                                    <div class="flex-grow-1">
+                                        <h5 class="mb-1">@unit.Name</h5>
+                                        @if (!string.IsNullOrEmpty(unit.Role))
+                                        {
+                                            <span class="badge bg-secondary me-1">@unit.Role</span>
+                                        }
+                                        @if (unit.PointsCost.HasValue)
+                                        {
+                                            <span class="badge bg-success">@unit.PointsCost pts</span>
+                                        }
+                                        @if (unit.Keywords.Count > 0)
+                                        {
+                                            <div class="mt-2">
+                                                <small class="text-muted">
+                                                    @string.Join(", ", unit.Keywords.Take(5))@(unit.Keywords.Count > 5 ? "..." : "")
+                                                </small>
+                                            </div>
+                                        }
+                                    </div>
+                                    <i class="fa fa-chevron-right mt-2 ms-2 text-muted"></i>
+                                </div>
+                            </a>
+                        }
+                    </div>
+                }
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public string FactionId { get; set; } = string.Empty;
+
+    private List<Datasheet> datasheets = new();
+    private bool loading = true;
+
+    // Keyword filtering
+    private List<string> includeKeywords = new();
+    private List<string> excludeKeywords = new();
+    private bool useAndLogic = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!DB.DatabaseExists)
+        {
+            loading = false;
+            return;
+        }
+
+        // Ensure state is for correct faction
+        ViewerState.ResetForFaction(FactionId);
+
+        // Load state from service
+        includeKeywords = new List<string>(ViewerState.SelectedKeywords);
+        excludeKeywords = new List<string>(ViewerState.ExcludedKeywords);
+        useAndLogic = ViewerState.UseAndLogic;
+
+        await LoadUnitsAsync();
+        loading = false;
+    }
+
+    private async Task LoadUnitsAsync()
+    {
+        datasheets = await Data.GetDatasheetsByFactionAsync(
+            FactionId, 
+            includeKeywords.Count > 0 ? includeKeywords : null, 
+            excludeKeywords.Count > 0 ? excludeKeywords : null,
+            useAndLogic);
+    }
+
+    private async Task HandleKeywordFilterApplied((List<string> IncludeKeywords, List<string> ExcludeKeywords, bool UseAndLogic) filterValues)
+    {
+        includeKeywords = filterValues.IncludeKeywords;
+        excludeKeywords = filterValues.ExcludeKeywords;
+        useAndLogic = filterValues.UseAndLogic;
+
+        // Save to state
+        ViewerState.SetKeywordFilter(includeKeywords, excludeKeywords, useAndLogic);
+
+        loading = true;
+        StateHasChanged();
+
+        await LoadUnitsAsync();
+
+        loading = false;
+        StateHasChanged();
+    }
+}

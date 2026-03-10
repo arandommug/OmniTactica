@@ -28,9 +28,11 @@ namespace OmniTactica
             // Repositories
             builder.Services.AddSingleton<FactionRepository>();
             builder.Services.AddSingleton<DetachmentRepository>();
+            builder.Services.AddSingleton<DatasheetRepository>();
 
             // Services
             builder.Services.AddSingleton<WahaDataService>();
+            builder.Services.AddScoped<FactionViewerState>();
 
             builder.Services.AddSingleton<HttpClient>();
 

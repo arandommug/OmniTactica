@@ -25,24 +25,25 @@ namespace OmniTactica.AppCode.Repositories
                 ORDER BY name
                 """;
 
-            var tables = await QueryListAsync(sql, r => new DetachmentTable(
-                Id: I(r, "id") ?? 0,
-                FactionId: S(r, "faction_id"),
-                Name: S(r, "name"),
-                Legend: S(r, "legend"),
-                Type: S(r, "type")
-            ), ("@factionId", factionId));
+            var detachments = await QueryListAsync(sql, r => new Detachment
+            {
+                Id = I(r, "id") ?? 0,
+                FactionId = S(r, "faction_id"),
+                Name = S(r, "name"),
+                Legend = S(r, "legend"),
+                Type = S(r, "type")
+            }, ("@factionId", factionId));
 
             // Filter detachments based on keywords
-            var filteredDetachments = tables;
+            var filteredDetachments = detachments;
 
             if (keywordFilters != null && keywordFilters.Count > 0)
             {
-                System.Diagnostics.Debug.WriteLine($"[DetachmentRepository] Filtering {tables.Count} detachments with {keywordFilters.Count} keywords ({(useAndLogic ? "AND" : "OR")} logic)");
+                System.Diagnostics.Debug.WriteLine($"[DetachmentRepository] Filtering {detachments.Count} detachments with {keywordFilters.Count} keywords ({(useAndLogic ? "AND" : "OR")} logic)");
 
-                var matchingDetachments = new List<DetachmentTable>();
+                var matchingDetachments = new List<Detachment>();
 
-                foreach (var detachment in tables)
+                foreach (var detachment in detachments)
                 {
                     var hasMatch = await DetachmentMatchesKeywordsAsync(detachment.Id, keywordFilters, useAndLogic);
 
@@ -61,7 +62,7 @@ namespace OmniTactica.AppCode.Repositories
                 System.Diagnostics.Debug.WriteLine($"[DetachmentRepository] Result: {filteredDetachments.Count} detachments after filtering");
             }
 
-            return filteredDetachments.Select(MapFromTable).ToList();
+            return filteredDetachments;
         }
 
         /// <summary>
@@ -108,18 +109,17 @@ namespace OmniTactica.AppCode.Repositories
                 WHERE id = @id
                 """;
 
-            var table = await QuerySingleAsync(sql, r => new DetachmentTable(
-                Id: I(r, "id") ?? 0,
-                FactionId: S(r, "faction_id"),
-                Name: S(r, "name"),
-                Legend: S(r, "legend"),
-                Type: S(r, "type")
-            ), ("@id", detachmentId));
+            var detachment = await QuerySingleAsync(sql, r => new Detachment
+            {
+                Id = I(r, "id") ?? 0,
+                FactionId = S(r, "faction_id"),
+                Name = S(r, "name"),
+                Legend = S(r, "legend"),
+                Type = S(r, "type")
+            }, ("@id", detachmentId));
 
-            if (table == null)
+            if (detachment == null)
                 return null;
-
-            var detachment = MapFromTable(table);
 
             // Load detachment-specific abilities
             const string abilitySql = """
@@ -129,17 +129,16 @@ namespace OmniTactica.AppCode.Repositories
                 ORDER BY name
                 """;
 
-            var abilityTables = await QueryListAsync(abilitySql, r => new DetachmentAbilityTable(
-                Id: I(r, "id") ?? 0,
-                FactionId: S(r, "faction_id"),
-                Name: S(r, "name"),
-                Legend: S(r, "legend"),
-                Description: S(r, "description"),
-                Detachment: S(r, "detachment"),
-                DetachmentId: I(r, "detachment_id") ?? 0
-            ), ("@detachmentId", detachmentId));
-
-            detachment.Abilities = abilityTables.Select(MapDetachmentAbilityFromTable).ToList();
+            detachment.Abilities = await QueryListAsync(abilitySql, r => new DetachmentAbility
+            {
+                Id = I(r, "id") ?? 0,
+                FactionId = S(r, "faction_id"),
+                Name = S(r, "name"),
+                Legend = S(r, "legend"),
+                Description = S(r, "description"),
+                Detachment = S(r, "detachment"),
+                DetachmentId = I(r, "detachment_id") ?? 0
+            }, ("@detachmentId", detachmentId));
 
             // Load stratagems
             const string stratagemSql = """
@@ -149,21 +148,20 @@ namespace OmniTactica.AppCode.Repositories
                 ORDER BY name
                 """;
 
-            var stratagemTables = await QueryListAsync(stratagemSql, r => new StratagemTable(
-                Id: I(r, "id") ?? 0,
-                FactionId: S(r, "faction_id"),
-                Name: S(r, "name"),
-                Type: S(r, "type"),
-                CpCost: S(r, "cp_cost"),
-                Legend: S(r, "legend"),
-                Turn: S(r, "turn"),
-                Phase: S(r, "phase"),
-                Detachment: S(r, "detachment"),
-                DetachmentId: I(r, "detachment_id") ?? 0,
-                Description: S(r, "description")
-            ), ("@detachmentId", detachmentId));
-
-            detachment.Stratagems = stratagemTables.Select(MapStratagemFromTable).ToList();
+            detachment.Stratagems = await QueryListAsync(stratagemSql, r => new Stratagem
+            {
+                Id = I(r, "id") ?? 0,
+                FactionId = S(r, "faction_id"),
+                Name = S(r, "name"),
+                Type = S(r, "type"),
+                CpCost = S(r, "cp_cost"),
+                Legend = S(r, "legend"),
+                Turn = S(r, "turn"),
+                Phase = S(r, "phase"),
+                Detachment = S(r, "detachment"),
+                DetachmentId = I(r, "detachment_id") ?? 0,
+                Description = S(r, "description")
+            }, ("@detachmentId", detachmentId));
 
             // Load enhancements
             const string enhancementSql = """
@@ -173,67 +171,19 @@ namespace OmniTactica.AppCode.Repositories
                 ORDER BY name
                 """;
 
-            var enhancementTables = await QueryListAsync(enhancementSql, r => new EnhancementTable(
-                Id: I(r, "id") ?? 0,
-                FactionId: S(r, "faction_id"),
-                Name: S(r, "name"),
-                Cost: I(r, "cost") ?? 0,
-                Detachment: S(r, "detachment"),
-                DetachmentId: I(r, "detachment_id") ?? 0,
-                Legend: S(r, "legend"),
-                Description: S(r, "description")
-            ), ("@detachmentId", detachmentId));
-
-            detachment.Enhancements = enhancementTables.Select(MapEnhancementFromTable).ToList();
+            detachment.Enhancements = await QueryListAsync(enhancementSql, r => new Enhancement
+            {
+                Id = I(r, "id") ?? 0,
+                FactionId = S(r, "faction_id"),
+                Name = S(r, "name"),
+                Cost = I(r, "cost") ?? 0,
+                Detachment = S(r, "detachment"),
+                DetachmentId = I(r, "detachment_id") ?? 0,
+                Legend = S(r, "legend"),
+                Description = S(r, "description")
+            }, ("@detachmentId", detachmentId));
 
             return detachment;
         }
-
-        private static Detachment MapFromTable(DetachmentTable table) => new()
-        {
-            Id = table.Id,
-            FactionId = table.FactionId,
-            Name = table.Name,
-            Legend = table.Legend,
-            Type = table.Type
-        };
-
-        private static DetachmentAbility MapDetachmentAbilityFromTable(DetachmentAbilityTable table) => new()
-        {
-            Id = table.Id,
-            FactionId = table.FactionId,
-            Name = table.Name,
-            Legend = table.Legend,
-            Description = table.Description,
-            Detachment = table.Detachment,
-            DetachmentId = table.DetachmentId
-        };
-
-        private static Stratagem MapStratagemFromTable(StratagemTable table) => new()
-        {
-            Id = table.Id,
-            FactionId = table.FactionId,
-            Name = table.Name,
-            Type = table.Type,
-            CpCost = table.CpCost,
-            Legend = table.Legend,
-            Turn = table.Turn,
-            Phase = table.Phase,
-            Detachment = table.Detachment,
-            DetachmentId = table.DetachmentId,
-            Description = table.Description
-        };
-
-        private static Enhancement MapEnhancementFromTable(EnhancementTable table) => new()
-        {
-            Id = table.Id,
-            FactionId = table.FactionId,
-            Name = table.Name,
-            Cost = table.Cost,
-            Detachment = table.Detachment,
-            DetachmentId = table.DetachmentId,
-            Legend = table.Legend,
-            Description = table.Description
-        };
     }
 }

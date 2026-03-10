@@ -4,9 +4,11 @@
 @using OmniTactica.AppCode.Services
 @using OmniTactica.AppCode.Models.Core
 @using OmniTactica.AppCode.Models.Rules
+@using OmniTactica.AppCode.Helpers
 
 @inject WahaSQLiteService DB
 @inject WahaDataService Data
+@inject FactionViewerState ViewerState
 
 <div class="p-2">
     <div class="card bg-secondary-subtle">
@@ -17,7 +19,7 @@
 
             <h1 class="text-primary m-0 ms-3">@faction?.Name</h1>
 
-            <NavLink class="btn btn-outline-primary ms-auto" href="/">
+            <NavLink class="btn btn-outline-primary ms-auto" href="@($"/faction/{FactionId}/units")">
                 Units<i class="fa fa-chevron-right ms-2" aria-hidden="true"></i>
             </NavLink>
         </div>
@@ -35,29 +37,14 @@
             }
             else
             {
-                <!-- Keyword Filter Button -->
+                <!-- Keyword Filter Component -->
                 <div class="mb-3">
-                    <button class="btn btn-primary" @onclick="OpenKeywordModal">
-                        <i class="fa fa-filter me-2"></i>Filter by Keywords
-                        @if (selectedKeywords.Count > 0)
-                        {
-                            <span class="badge bg-light text-dark ms-2">@selectedKeywords.Count selected</span>
-                        }
-                    </button>
-
-                    @if (selectedKeywords.Count > 0)
-                    {
-                        <button class="btn btn-outline-secondary ms-2" @onclick="ClearKeywordFilter">
-                            <i class="fa fa-times me-1"></i>Clear Filter
-                        </button>
-                        <div class="mt-2">
-                            <span class="badge bg-secondary me-1">@(useAndLogic ? "AND" : "OR") Logic</span>
-                            @foreach (var kw in selectedKeywords)
-                            {
-                                <span class="badge bg-primary me-1">@kw</span>
-                            }
-                        </div>
-                    }
+                    <KeywordFilterModal 
+                        FactionId="@FactionId"
+                        InitialIncludeKeywords="@selectedKeywords"
+                        InitialExcludeKeywords="@excludedKeywords"
+                        InitialUseAndLogic="@useAndLogic"
+                        OnApplyFilter="@HandleKeywordFilterApplied" />
                 </div>
 
                 <!-- Army Abilities Section -->
@@ -150,10 +137,21 @@
                                 <div class="accordion">
                                 @foreach (var ability in selectedDetachment.Abilities)
                                 {
+                                    var combinedText = $"{ability.Legend} {ability.Description}";
+                                    var matchesFilter = KeywordFilterHelper.MatchesKeywordFilter(combinedText, selectedKeywords, excludedKeywords, useAndLogic);
+                                    var matchedKeywords = matchesFilter ? KeywordFilterHelper.GetMatchedKeywords(combinedText, selectedKeywords) : new List<string>();
+                                    var passesFilter = KeywordFilterHelper.PassesFilter(combinedText, selectedKeywords, excludedKeywords, useAndLogic);
+
                                     <div class="accordion-item">
                                         <h2 class="accordion-header">
                                             <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#det-ability-@(ability.Id)" aria-expanded="false">
                                                 @ability.Name
+                                                @if (matchesFilter)
+                                                {
+                                                    <span class="badge bg-success ms-2" title="Matches: @string.Join(", ", matchedKeywords)">
+                                                        <i class="fa fa-filter me-1"></i>@matchedKeywords.Count keyword@(matchedKeywords.Count == 1 ? "" : "s")
+                                                    </span>
+                                                }
                                             </button>
                                         </h2>
                                         <div id="det-ability-@(ability.Id)" class="accordion-collapse collapse">
@@ -179,6 +177,11 @@
                                 <div class="accordion">
                                 @foreach (var strat in selectedDetachment.Stratagems)
                                 {
+                                    var combinedText = $"{strat.Legend} {strat.Description}";
+                                    var matchesFilter = KeywordFilterHelper.MatchesKeywordFilter(combinedText, selectedKeywords, excludedKeywords, useAndLogic);
+                                    var matchedKeywords = matchesFilter ? KeywordFilterHelper.GetMatchedKeywords(combinedText, selectedKeywords) : new List<string>();
+                                    var passesFilter = KeywordFilterHelper.PassesFilter(combinedText, selectedKeywords, excludedKeywords, useAndLogic);
+
                                     <div class="accordion-item">
                                         <h2 class="accordion-header">
                                             <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#strat-@(strat.Id)" aria-expanded="false">
@@ -186,6 +189,12 @@
                                                 @if (!string.IsNullOrEmpty(strat.CpCost))
                                                 {
                                                     <span class="badge bg-warning text-dark ms-2">@strat.CpCost CP</span>
+                                                }
+                                                @if (matchesFilter)
+                                                {
+                                                    <span class="badge bg-success ms-2" title="Matches: @string.Join(", ", matchedKeywords)">
+                                                        <i class="fa fa-filter me-1"></i>@matchedKeywords.Count keyword@(matchedKeywords.Count == 1 ? "" : "s")
+                                                    </span>
                                                 }
                                             </button>
                                         </h2>
@@ -222,11 +231,22 @@
                                 <div class="accordion">
                                 @foreach (var enhancement in selectedDetachment.Enhancements)
                                 {
+                                    var combinedText = $"{enhancement.Legend} {enhancement.Description}";
+                                    var matchesFilter = KeywordFilterHelper.MatchesKeywordFilter(combinedText, selectedKeywords, excludedKeywords, useAndLogic);
+                                    var matchedKeywords = matchesFilter ? KeywordFilterHelper.GetMatchedKeywords(combinedText, selectedKeywords) : new List<string>();
+                                    var passesFilter = KeywordFilterHelper.PassesFilter(combinedText, selectedKeywords, excludedKeywords, useAndLogic);
+
                                     <div class="accordion-item">
                                         <h2 class="accordion-header">
                                             <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#enh-@(enhancement.Id)" aria-expanded="false">
                                                 @enhancement.Name
                                                 <span class="badge bg-success text-white ms-2">@enhancement.Cost pts</span>
+                                                @if (matchesFilter)
+                                                {
+                                                    <span class="badge bg-success ms-2" title="Matches: @string.Join(", ", matchedKeywords)">
+                                                        <i class="fa fa-filter me-1"></i>@matchedKeywords.Count keyword@(matchedKeywords.Count == 1 ? "" : "s")
+                                                    </span>
+                                                }
                                             </button>
                                         </h2>
                                         <div id="enh-@(enhancement.Id)" class="accordion-collapse collapse">
@@ -250,145 +270,6 @@
     </div>
 </div>
 
-<!-- Keyword Filter Modal -->
-@if (showKeywordModal)
-{
-    <div class="modal show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);" @onclick="CloseKeywordModal">
-        <div class="modal-dialog modal-lg" @onclick:stopPropagation>
-            <div class="modal-content" style="max-height: 90vh; display: flex; flex-direction: column;">
-                <!-- Fixed Header -->
-                <div class="modal-header">
-                    <h5 class="modal-title">Filter by Keywords</h5>
-                    <button type="button" class="btn-close" @onclick="CloseKeywordModal"></button>
-                </div>
-
-                <!-- Scrollable Body with Keywords Only -->
-                <div class="modal-body" style="overflow-y: auto; flex: 1 1 auto;">
-                    <div class="mb-2">
-                        <strong>Select Keywords (@tempSelectedKeywords.Count selected):</strong>
-                    </div>
-
-                    @if (loadingKeywords)
-                    {
-                        <div class="text-center py-3">
-                            <div class="spinner-border text-primary" role="status">
-                                <span class="visually-hidden">Loading keywords...</span>
-                            </div>
-                        </div>
-                    }
-                    else
-                    {
-                        <!-- Common Keywords (used by multiple datasheets) -->
-                        @if (commonKeywords.Count > 0)
-                        {
-                            <div class="mb-3">
-                                <small class="text-muted d-block mb-2">
-                                    <i class="fa fa-star me-1"></i>Common Keywords (@commonKeywords.Count)
-                                </small>
-                                <div class="d-flex flex-wrap gap-2">
-                                    @foreach (var keyword in commonKeywords)
-                                    {
-                                        var isSelected = tempSelectedKeywords.Contains(keyword);
-                                        <button class="btn @(isSelected ? "btn-primary" : "btn-outline-secondary") btn-sm"
-                                                @onclick="@(() => ToggleKeyword(keyword))">
-                                            @keyword
-                                            @if (isSelected)
-                                            {
-                                                <i class="fa fa-check ms-1"></i>
-                                            }
-                                        </button>
-                                    }
-                                </div>
-                            </div>
-                        }
-
-                        <!-- Unique Keywords (used by only one datasheet) - Collapsible -->
-                        @if (uniqueKeywords.Count > 0)
-                        {
-                            <div>
-                                <button class="btn btn-link btn-sm p-0 text-decoration-none" @onclick="ToggleUniqueKeywords">
-                                    <i class="fa @(showUniqueKeywords ? "fa-chevron-down" : "fa-chevron-right") me-1"></i>
-                                    Unique Keywords (@uniqueKeywords.Count)
-                                    <small class="text-muted ms-1">(used by single unit)</small>
-                                </button>
-
-                                @if (showUniqueKeywords)
-                                {
-                                    <div class="d-flex flex-wrap gap-2 mt-2">
-                                        @foreach (var keyword in uniqueKeywords)
-                                        {
-                                            var isSelected = tempSelectedKeywords.Contains(keyword);
-                                            <button class="btn @(isSelected ? "btn-primary" : "btn-outline-secondary") btn-sm"
-                                                    @onclick="@(() => ToggleKeyword(keyword))">
-                                                @keyword
-                                                @if (isSelected)
-                                                {
-                                                    <i class="fa fa-check ms-1"></i>
-                                                }
-                                            </button>
-                                        }
-                                    </div>
-                                }
-                            </div>
-                        }
-
-                        @if (commonKeywords.Count == 0 && uniqueKeywords.Count == 0)
-                        {
-                            <div class="text-muted text-center py-3">
-                                <i class="fa fa-info-circle me-1"></i>No keywords found for this faction
-                            </div>
-                        }
-                    }
-                </div>
-
-                <!-- Fixed Footer with Toggle and Buttons -->
-                <div class="modal-footer" style="flex-shrink: 0; flex-direction: column; align-items: stretch; gap: 0.5rem;">
-                    <!-- AND/OR Toggle -->
-                    <div class="w-100">
-                        <label class="form-label mb-1"><small>Filter Logic:</small></label>
-                        <div class="btn-group w-100" role="group">
-                            <input type="radio" class="btn-check" name="logicToggle" id="orLogic" checked="@(!tempUseAndLogic)" @onchange="@(() => tempUseAndLogic = false)" />
-                            <label class="btn btn-outline-primary btn-sm" for="orLogic">
-                                OR
-                                <small class="d-none d-md-inline">(Any)</small>
-                            </label>
-
-                            <input type="radio" class="btn-check" name="logicToggle" id="andLogic" checked="@tempUseAndLogic" @onchange="@(() => tempUseAndLogic = true)" />
-                            <label class="btn btn-outline-primary btn-sm" for="andLogic">
-                                AND
-                                <small class="d-none d-md-inline">(All)</small>
-                            </label>
-                        </div>
-                        <small class="text-muted d-block mt-1">
-                            @if (tempUseAndLogic)
-                            {
-                                <text>Match <strong>all</strong> selected keywords</text>
-                            }
-                            else
-                            {
-                                <text>Match <strong>any</strong> selected keyword</text>
-                            }
-                        </small>
-                    </div>
-
-                    <!-- Action Buttons -->
-                    <div class="d-flex gap-2 w-100">
-                        <button type="button" class="btn btn-secondary flex-fill" @onclick="CloseKeywordModal">
-                            Cancel
-                        </button>
-                        <button type="button" class="btn btn-outline-warning flex-fill" @onclick="ClearTempSelection">
-                            Clear
-                        </button>
-                        <button type="button" class="btn btn-primary flex-fill" @onclick="ApplyKeywordFilter">
-                            Apply
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-}
-
 @code {
     [Parameter]
     public string FactionId { get; set; } = string.Empty;
@@ -402,17 +283,8 @@
 
     // Keyword filtering
     private List<string> selectedKeywords = new();
+    private List<string> excludedKeywords = new();
     private bool useAndLogic = false;
-
-    // Keyword modal
-    private bool showKeywordModal = false;
-    private bool loadingKeywords = false;
-    private List<string> availableKeywords = new();
-    private List<string> commonKeywords = new();
-    private List<string> uniqueKeywords = new();
-    private bool showUniqueKeywords = false;
-    private List<string> tempSelectedKeywords = new();
-    private bool tempUseAndLogic = false;
 
     protected override async Task OnInitializedAsync()
     {
@@ -422,7 +294,23 @@
             return;
         }
 
+        // Initialize or reset state for this faction
+        ViewerState.ResetForFaction(FactionId);
+
+        // Load state from service
+        selectedKeywords = new List<string>(ViewerState.SelectedKeywords);
+        excludedKeywords = new List<string>(ViewerState.ExcludedKeywords);
+        useAndLogic = ViewerState.UseAndLogic;
+        selectedDetachmentId = ViewerState.SelectedFactionDetachmentId ?? 0;
+
         await LoadFactionDataAsync();
+
+        // If we had a detachment selected, reload it
+        if (selectedDetachmentId > 0)
+        {
+            await OnDetachmentChanged();
+        }
+
         loading = false;
     }
 
@@ -434,78 +322,45 @@
             faction = overview.Faction;
             detachments = overview.Detachments;
         }
-
-        // Clear selected detachment when filtering changes
-        selectedDetachment = null;
-        selectedDetachmentId = 0;
     }
 
-    private async Task OpenKeywordModal()
+    private async Task HandleKeywordFilterApplied((List<string> IncludeKeywords, List<string> ExcludeKeywords, bool UseAndLogic) filterValues)
     {
-        showKeywordModal = true;
-        loadingKeywords = true;
-        showUniqueKeywords = false; // Reset collapse state
-        tempSelectedKeywords = new List<string>(selectedKeywords);
-        tempUseAndLogic = useAndLogic;
-        StateHasChanged();
+        selectedKeywords = filterValues.IncludeKeywords;
+        excludedKeywords = filterValues.ExcludeKeywords;
+        useAndLogic = filterValues.UseAndLogic;
 
-        // Load keywords grouped by frequency
-        var grouped = await Data.GetFactionKeywordsGroupedAsync(FactionId);
-        commonKeywords = grouped.CommonKeywords;
-        uniqueKeywords = grouped.UniqueKeywords;
-        availableKeywords = commonKeywords.Concat(uniqueKeywords).ToList();
+        // Save to state
+        ViewerState.SetKeywordFilter(selectedKeywords, excludedKeywords, useAndLogic);
 
-        loadingKeywords = false;
-        StateHasChanged();
-    }
-
-    private void ToggleUniqueKeywords()
-    {
-        showUniqueKeywords = !showUniqueKeywords;
-    }
-
-    private void CloseKeywordModal()
-    {
-        showKeywordModal = false;
-    }
-
-    private void ToggleKeyword(string keyword)
-    {
-        if (tempSelectedKeywords.Contains(keyword))
-            tempSelectedKeywords.Remove(keyword);
-        else
-            tempSelectedKeywords.Add(keyword);
-    }
-
-    private void ClearTempSelection()
-    {
-        tempSelectedKeywords.Clear();
-    }
-
-    private async Task ApplyKeywordFilter()
-    {
-        selectedKeywords = new List<string>(tempSelectedKeywords);
-        useAndLogic = tempUseAndLogic;
-        showKeywordModal = false;
+        // Remember the currently selected detachment
+        var previousDetachmentId = selectedDetachmentId;
 
         loading = true;
         StateHasChanged();
 
         await LoadFactionDataAsync();
 
-        loading = false;
-        StateHasChanged();
-    }
+        // Check if the previously selected detachment is still available after filtering
+        if (previousDetachmentId > 0)
+        {
+            var stillAvailable = detachments.Any(d => d.Id == previousDetachmentId);
 
-    private async Task ClearKeywordFilter()
-    {
-        selectedKeywords.Clear();
-        useAndLogic = false;
-
-        loading = true;
-        StateHasChanged();
-
-        await LoadFactionDataAsync();
+            if (stillAvailable)
+            {
+                // Keep the selection and reload the detachment details
+                selectedDetachmentId = previousDetachmentId;
+                await OnDetachmentChanged();
+            }
+            else
+            {
+                // Clear the selection since it's no longer available
+                selectedDetachment = null;
+                selectedDetachmentId = 0;
+                ViewerState.SelectedFactionDetachmentId = null;
+                ViewerState.SetDetachment(null);
+            }
+        }
 
         loading = false;
         StateHasChanged();
@@ -516,6 +371,8 @@
         if (selectedDetachmentId == 0)
         {
             selectedDetachment = null;
+            ViewerState.SelectedFactionDetachmentId = null;
+            ViewerState.SetDetachment(null);
             return;
         }
 
@@ -523,6 +380,10 @@
         StateHasChanged();
 
         selectedDetachment = await Data.GetDetachmentDetailsAsync(selectedDetachmentId);
+
+        // Save to state
+        ViewerState.SelectedFactionDetachmentId = selectedDetachmentId;
+        ViewerState.SetDetachment(selectedDetachmentId);
 
         loadingDetachment = false;
         StateHasChanged();
