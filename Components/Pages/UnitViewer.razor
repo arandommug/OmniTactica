@@ -246,7 +246,7 @@
                             {
                                 <div class="accordion-item">
                                     <h2 class="accordion-header">
-                                        <button class="accordion-button @("Datasheet|Wargear|Primarch|Fortification (левая колонка)".Contains(ability.Type) ? "collapsed" : "")" type="button" data-bs-toggle="collapse" data-bs-target="#ability-@(ability.Line)" aria-expanded="false">
+                                        <button class="accordion-button @("Datasheet|Wargear|Primarch|Fortification (левая колонка)".Contains(ability.Type) ? "" : "collapsed")" type="button" data-bs-toggle="collapse" data-bs-target="#ability-@(ability.Line)" aria-expanded="false">
                                             @ability.Name
                                             @if (!string.IsNullOrEmpty(ability.Type) && ability.Type != "Fortification (левая колонка)")
                                             {

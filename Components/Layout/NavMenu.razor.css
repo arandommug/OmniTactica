@@ -68,8 +68,6 @@
     transition: background .15s ease;
 }
 
-/* hover feedback (desktop) */
-
 .drawerHandle:hover {
     background: rgba(255,255,255,.05);
 }
