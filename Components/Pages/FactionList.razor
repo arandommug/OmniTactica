@@ -6,8 +6,22 @@
 @inject WahaSQLiteService DB
 @inject WahaDataService Data
 
-<div class="p-2">
+<style>
+    .factionList {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 1rem;
+    }
 
+    @@media (max-width:640px)
+    {
+        .factionList {
+            grid-template-columns: repeat(1, minmax(max-content, 1fr));
+        }
+    }
+</style>
+
+<div class="p-2">
     <div class="row g-2">
         <div class="col-12 col-lg-8">
             <div class="card bg-secondary-subtle">
@@ -45,14 +59,14 @@
             }
             else
             {
-                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1rem;">
+                <div class="factionList">
                 @foreach (var f in filteredFactions)
                 {
                     <NavLink class="card border-primary" href="@($"/faction/{@f.Id}")">
-                        <div class="card-body">
-                            <div class="d-flex align-items-center">
+                        <div class="card-body pe-0">
+                            <div class="d-flex align-items-center text-nowrap">
                                 <div class="w-auto h5 mb-0">@f.Name</div>
-                                <icon class="fa fa-chevron-right ms-auto text-end"></icon>
+                                <icon class="fa fa-chevron-right ms-auto text-end me-3"></icon>
                             </div>
                         </div>
                     </NavLink>
