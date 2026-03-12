@@ -534,3 +534,46 @@ a {
 .scroll-to-top-btn:active {
     transform: scale(0.95);
 }
+
+/* =========================
+   OVERLAY SCROLLBARS - Pretty, fading scrollbars
+========================= */
+
+/* Enable overlay scrollbars that don't take up space */
+.overlay-scrollbar {
+    scrollbar-gutter: stable;
+    /* Modern browsers - overlay scrollbar */
+    scrollbar-width: thin;
+    scrollbar-color: rgba(108, 117, 125, 0.5) transparent;
+}
+
+/* Webkit browsers (Chrome, Safari, Edge) */
+.overlay-scrollbar::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+.overlay-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.overlay-scrollbar::-webkit-scrollbar-thumb {
+    background-color: rgba(108, 117, 125, 0.5);
+    border-radius: 10px;
+    transition: background-color 0.3s ease, opacity 0.3s ease;
+}
+
+.overlay-scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(108, 117, 125, 0.8);
+}
+
+/* Fade out when not scrolling */
+.overlay-scrollbar::-webkit-scrollbar-thumb {
+    opacity: 0;
+}
+
+.overlay-scrollbar:hover::-webkit-scrollbar-thumb,
+.overlay-scrollbar:focus::-webkit-scrollbar-thumb,
+.overlay-scrollbar:active::-webkit-scrollbar-thumb {
+    opacity: 1;
+}

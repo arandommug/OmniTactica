@@ -12,12 +12,12 @@
 @inject NavigationManager Navigation
 @inject FactionViewerState ViewerState
 
-<div class="p-2">
-    <div class="row g-2">
+<div class="d-flex flex-column" style="height: 100vh; padding: 0.5rem;">
+    <div class="row g-2 flex-grow-1" style="min-height: 0; margin: 0 0 0.5rem 0;">
         <!-- Unit Details Card -->
-        <div class="col-12 col-xxl-6">
-            <div class="card bg-secondary-subtle">
-                <div class="card-header d-flex align-items-center justify-content-between">
+        <div class="col-12 col-xxl-6 d-flex flex-column" style="min-height: 0; height: 100%; padding-bottom: 0.5rem;">
+            <div class="card bg-secondary-subtle d-flex flex-column" style="min-height: 0; height: 100%;">
+                <div class="card-header d-flex align-items-center justify-content-between flex-shrink-0">
                     <div class="d-flex align-items-center">
                         @if (!string.IsNullOrEmpty(FactionId))
                         {
@@ -63,7 +63,7 @@
                         <DatasheetBookmarkButton DatasheetId="@datasheetId" DatasheetName="@datasheet.Name" FactionId="@FactionId" />
                     }
                 </div>
-                <div class="card-body">
+                <div class="card-body overlay-scrollbar" style="overflow-y: auto; overflow-x: hidden; flex: 1 1 auto; min-height: 0;">
                     <div class="row">
                         @if (loading)
                         {
@@ -436,45 +436,47 @@
                                     }
                                 </div>
                             }
-
-                            <!-- Keywords at Bottom (Full Width) -->
-                            <div class="p-1 col-12">
-                                @if (datasheet.FactionKeywords.Count > 0)
+                        }
+                    </div>
+                </div>
+                <!-- Keywords Footer -->
+                @if (!loading && datasheet != null && (datasheet.FactionKeywords.Count > 0 || datasheet.Keywords.Count > 0))
+                {
+                    <div class="card-footer bg-secondary-subtle flex-shrink-0">
+                        @if (datasheet.FactionKeywords.Count > 0)
+                        {
+                            <div class="mb-2">
+                                <span class="text-muted me-2">Faction Keyword(s):</span>
+                                @foreach (var kw in datasheet.FactionKeywords.OrderBy(k => k))
                                 {
-                                    <div class="mb-2">
-                                        <span class="text-muted me-2">Faction Keyword(s):</span>
-                                        @foreach (var kw in datasheet.FactionKeywords.OrderBy(k => k))
-                                        {
-                                            <span class="badge bg-primary me-1">@kw</span>
-                                        }
-                                    </div>
+                                    <span class="badge bg-primary me-1">@kw</span>
                                 }
-                                @if (datasheet.Keywords.Count > 0)
+                            </div>
+                        }
+                        @if (datasheet.Keywords.Count > 0)
+                        {
+                            <div class="@(datasheet.FactionKeywords.Count > 0 ? "" : "mb-0")">
+                                <span class="text-muted me-2">Keywords:</span>
+                                @foreach (var kw in datasheet.Keywords.OrderBy(k => k))
                                 {
-                                    <div>
-                                        <span class="text-muted me-2">Keywords:</span>
-                                        @foreach (var kw in datasheet.Keywords.OrderBy(k => k))
-                                        {
-                                            <span class="badge bg-info me-1">@kw</span>
-                                        }
-                                    </div>
+                                    <span class="badge bg-info me-1">@kw</span>
                                 }
                             </div>
                         }
                     </div>
-                </div>
+                }
             </div>
         </div>
 
     <!-- Detachment Card -->
     @if (datasheet != null && (availableDetachments.Count > 0 || datasheet.DetachmentAbilities.Count > 0 || datasheet.Enhancements.Count > 0 || datasheet.Stratagems.Count > 0))
     {
-        <div class="col-12 col-xxl-6">
-            <div class="card bg-secondary-subtle">
-                <div class="card-header">
+        <div class="col-12 col-xxl-6 d-flex flex-column" style="min-height: 0; height: 100%; padding-bottom: 0.5rem;">
+            <div class="card bg-secondary-subtle d-flex flex-column" style="min-height: 0; height: 100%;">
+                <div class="card-header flex-shrink-0">
                     <h5 class="text-primary m-0">Detachment Rules</h5>
                 </div>
-                <div class="card-body">
+                <div class="card-body overlay-scrollbar" style="overflow-y: auto; overflow-x: hidden; flex: 1 1 auto; min-height: 0;">
                     <div class="row">
                 <!-- Detachment Selector -->
                     @if (availableDetachments.Count > 0)
@@ -496,6 +498,7 @@
                             @if (datasheet.DetachmentAbilities.Count > 0)
                             {
                                 <div class="mb-4">
+                                    <h6 class="text-secondary mb-2">Detachment Abilitie(s)</h6>
                                     <div class="accordion">
                                         @foreach (var ability in datasheet.DetachmentAbilities)
                                         {
@@ -520,6 +523,7 @@
                             @if (datasheet.Enhancements.Count > 0)
                             {
                                 <div class="mb-4">
+                                    <h6 class="text-secondary mb-2">Enhancements</h6>
                                     <div class="accordion">
                                         @foreach (var enhancement in datasheet.Enhancements)
                                         {
@@ -567,23 +571,29 @@
                                         <div class="mb-3">
                                             <h6 class="text-secondary mb-2">@phaseGroup.Key</h6>
                                             <div class="accordion">
-                                            @foreach (var strat in phaseGroup.Value)
+                                            @foreach (var strat in phaseGroup.Value.OrderBy(s => GetTurnSortOrder(s.Turn)).ThenBy(s => s.Name))
                                             {
                                                 var group = groupedStratagems.First(g => g.Stratagem.Id == strat.Id);
                                                 var turnBadgeClass = GetTurnBadgeClass(strat.Turn);
 
                                                 <div class="accordion-item">
                                                     <h2 class="accordion-header">
-                                                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#strat-@(strat.Id)" aria-expanded="false">
-                                                            @strat.Name
-                                                            @if (!string.IsNullOrEmpty(strat.CpCost))
-                                                            {
-                                                                <span class="badge bg-warning text-dark ms-2">@strat.CpCost CP</span>
-                                                            }
-                                                            @if (!string.IsNullOrEmpty(strat.Turn))
-                                                            {
-                                                                <span class="badge @turnBadgeClass ms-2">@strat.Turn</span>
-                                                            }
+                                                        <button class="accordion-button collapsed flex-wrap py-2" type="button" data-bs-toggle="collapse" data-bs-target="#strat-@(strat.Id)" aria-expanded="false">
+                                                            <div class="d-flex flex-wrap justify-content-between" style="width: 90%; display: grid;">
+                                                                <div class="d-inline-block text-nowrap my-1 me-2">
+                                                                    @strat.Name
+                                                                </div>
+                                                                <div class="d-inline-block my-1 text-nowrap">
+                                                                @if (!string.IsNullOrEmpty(strat.Turn))
+                                                                {
+                                                                    <span class="badge @turnBadgeClass me-2">@strat.Turn</span>
+                                                                }
+                                                                @if (!string.IsNullOrEmpty(strat.CpCost))
+                                                                {
+                                                                    <span class="badge bg-warning text-dark">@strat.CpCost CP</span>
+                                                                }
+                                                                </div>
+                                                            </div>
                                                         </button>
                                                     </h2>
                                                     <div id="strat-@(strat.Id)" class="accordion-collapse collapse">
@@ -754,6 +764,28 @@
     private string GetTurnBadgeClass(string turn)
     {
         return StratagemHelper.GetTurnBadgeClass(turn);
+    }
+
+    private int GetTurnSortOrder(string turn)
+    {
+        if (string.IsNullOrEmpty(turn)) return 99;
+
+        var turnUpper = turn.Trim().ToUpperInvariant();
+
+        // Priority order: Your Turn (1) -> Either Player's Turn (2) -> Opponent's Turn (3)
+        if (turnUpper.Contains("YOUR TURN") || turnUpper.Contains("YOUR COMMAND PHASE") || 
+            turnUpper.Contains("YOUR MOVEMENT PHASE") || turnUpper.Contains("YOUR SHOOTING PHASE") || 
+            turnUpper.Contains("YOUR CHARGE PHASE") || turnUpper.Contains("YOUR FIGHT PHASE"))
+            return 1;
+
+        if (turnUpper.Contains("EITHER PLAYER") || turnUpper.Contains("ANY PHASE") || 
+            turnUpper.Contains("EITHER PLAYERS"))
+            return 2;
+
+        if (turnUpper.Contains("OPPONENT") || turnUpper.Contains("OPPONENTS"))
+            return 3;
+
+        return 99; // Unknown/other turns go last
     }
 }
 
