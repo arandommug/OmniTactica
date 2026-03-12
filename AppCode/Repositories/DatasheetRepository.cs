@@ -2,6 +2,7 @@ using OmniTactica.AppCode.Data.Database;
 using OmniTactica.AppCode.Data.Tables;
 using OmniTactica.AppCode.Models.Core;
 using OmniTactica.AppCode.Models.Rules;
+using OmniTactica.AppCode.Helpers;
 
 namespace OmniTactica.AppCode.Repositories
 {
@@ -154,7 +155,10 @@ namespace OmniTactica.AppCode.Repositories
             if (datasheet == null)
                 return null;
 
-            // Load all related data in parallel
+            // Load keywords first as they're needed for filtering Core Wargear Stratagems
+            await LoadKeywordsAsync(datasheet);
+
+            // Load all other related data in parallel
             var tasksToAwait = new Task[]
             {
                 LoadModelsAsync(datasheet),
@@ -162,7 +166,6 @@ namespace OmniTactica.AppCode.Repositories
                 LoadAbilitiesAsync(datasheet),
                 LoadOptionsAsync(datasheet),
                 LoadCostsAsync(datasheet),
-                LoadKeywordsAsync(datasheet),
                 LoadLeaderRelationshipsAsync(datasheet),
                 LoadDetachmentAbilitiesAsync(datasheet, detachmentId),
                 LoadEnhancementsAsync(datasheet, detachmentId),
@@ -401,9 +404,10 @@ namespace OmniTactica.AppCode.Repositories
 
         private async Task LoadStratagemsAsync(DatasheetDetail datasheet, int? detachmentId)
         {
+            // First, load faction-specific stratagems
             var sql = @"
                 SELECT DISTINCT
-                    s.id, s.name, s.type, s.cp_cost, s.legend, s.turn, s.phase, s.description, s.detachment_id
+                    s.id, s.faction_id, s.name, s.type, s.cp_cost, s.legend, s.turn, s.phase, s.description, s.detachment, s.detachment_id
                 FROM Datasheets_stratagems ds
                 INNER JOIN Stratagems s ON s.id = ds.stratagem_id
                 WHERE ds.datasheet_id = @id
@@ -423,9 +427,10 @@ namespace OmniTactica.AppCode.Repositories
 
             sql += " ORDER BY s.name";
 
-            datasheet.Stratagems = await QueryListAsync(sql, r => new Stratagem
+            var factionStratagems = await QueryListAsync(sql, r => new Stratagem
             {
                 Id = I(r, "id") ?? 0,
+                FactionId = S(r, "faction_id"),
                 Name = S(r, "name"),
                 Type = S(r, "type"),
                 CpCost = S(r, "cp_cost"),
@@ -433,8 +438,50 @@ namespace OmniTactica.AppCode.Repositories
                 Turn = S(r, "turn"),
                 Phase = S(r, "phase"),
                 Description = S(r, "description"),
+                Detachment = S(r, "detachment"),
                 DetachmentId = I(r, "detachment_id") ?? 0
             }, parameters.ToArray());
+
+            // Second, load Core stratagems (no faction_id or detachment_id)
+            // Note: Core stratagems don't have datasheet associations, so we query directly from Stratagems table
+            var coreSql = @"
+                SELECT DISTINCT
+                    s.id, s.faction_id, s.name, s.type, s.cp_cost, s.legend, s.turn, s.phase, s.description, s.detachment, s.detachment_id
+                FROM Stratagems s
+                WHERE (s.faction_id IS NULL OR s.faction_id = '')
+                AND s.type LIKE 'Core%'
+                ORDER BY s.name";
+
+            var coreStratagems = await QueryListAsync(coreSql, r => new Stratagem
+            {
+                Id = I(r, "id") ?? 0,
+                FactionId = S(r, "faction_id"),
+                Name = S(r, "name"),
+                Type = S(r, "type"),
+                CpCost = S(r, "cp_cost"),
+                Legend = S(r, "legend"),
+                Turn = S(r, "turn"),
+                Phase = S(r, "phase"),
+                Description = S(r, "description"),
+                Detachment = S(r, "detachment"),
+                DetachmentId = I(r, "detachment_id") ?? 0
+            });
+
+            // Filter Core Wargear Stratagems by unit keywords
+            var allKeywords = datasheet.Keywords.Concat(datasheet.FactionKeywords).ToList();
+            var filteredCoreStratagems = coreStratagems.Where(strat =>
+            {
+                // If it's a Core Wargear Stratagem, check if the unit has the matching keyword
+                if (StratagemHelper.IsCoreWargearStratagem(strat))
+                {
+                    return StratagemHelper.CanUnitUseCoreWargearStratagem(strat, allKeywords);
+                }
+                // All other Core stratagems are always available
+                return true;
+            }).ToList();
+
+            // Combine faction-specific and filtered Core stratagems
+            datasheet.Stratagems = factionStratagems.Concat(filteredCoreStratagems).ToList();
         }
 
         private async Task<List<string>> GetKeywordsForDatasheetAsync(int datasheetId)

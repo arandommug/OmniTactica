@@ -7,7 +7,7 @@
 <button class="btn btn-sm @(isBookmarked ? "btn-warning" : "btn-outline-warning")" 
         @onclick="ToggleBookmark"
         title="@(isBookmarked ? "Remove bookmark" : "Bookmark this")">
-    <i class="fa @(isBookmarked ? "fa-bookmark" : "fa-bookmark-o")"></i>
+    <i class="fa @(isBookmarked ? "fa-solid fa-bookmark" : "fa-regular fa-bookmark")"></i>
 </button>
 
 @code {

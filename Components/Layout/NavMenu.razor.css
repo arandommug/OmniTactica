@@ -3,11 +3,13 @@
 ========================= */
 
 .navMenu {
-    position: fixed;
-    left: 0;
-    top: 0;
-    bottom: 0;
     z-index: 1000;
+    contain: none;
+    pointer-events: none;
+}
+
+.navMenu > * {
+    pointer-events: auto;
 }
 
 /* =========================
@@ -18,13 +20,22 @@
     position: fixed;
     top: 0;
     bottom: 0;
-    width: var(--app-sidebar-width);
+    width: calc(var(--app-sidebar-width) - 1rem);
     display: flex;
     flex-direction: column;
 }
 
 .desktopNav .card-body {
     overflow-y: auto;
+}
+
+.desktopNav h1 {
+    font-size: 1.5rem;
+}
+
+.desktopNav .btn {
+    padding: 0.625rem 1rem;
+    font-size: 1rem;
 }
 
 /* =========================
@@ -42,14 +53,14 @@
     box-shadow: var(--bs-box-shadow);
     transition: height .25s ease;
     overflow: hidden;
-    height: 44px;
-    z-index: 1000;
+    height: 50px;
+    z-index: 10000;
 }
 
 .mobileDrawer.open {
     height: auto;
-    max-height: 40vh;
-    padding: 10px 15px 15px 15px;
+    max-height: 50vh;
+    padding: 12px 16px 16px 16px;
 }
 
 /* =========================
@@ -62,14 +73,23 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    height: inherit;
+    height: 50px;
     cursor: pointer;
     border-radius: var(--bs-border-radius);
     transition: background .15s ease;
+    /* Better touch target */
+    min-height: 48px;
+    touch-action: manipulation;
 }
 
-.drawerHandle:hover {
-    background: rgba(255,255,255,.05);
+.drawerHandle:active {
+    background: rgba(255,255,255,.08);
+}
+
+@media (hover: hover) {
+    .drawerHandle:hover {
+        background: rgba(255,255,255,.05);
+    }
 }
 
 /* =========================
@@ -78,11 +98,11 @@
 
 .drawerHandle::before {
     content: "";
-    width: 34px;
-    height: 4px;
+    width: 40px;
+    height: 5px;
     border-radius: 4px;
     background: var(--bs-secondary-color);
-    margin-bottom: 4px;
+    margin-bottom: 5px;
     opacity: .6;
 }
 
@@ -91,13 +111,13 @@
 ========================= */
 
 .drawerHandle i {
-    font-size: .85rem;
+    font-size: .9rem;
     color: var(--bs-primary);
-    line-height: .7rem;
+    line-height: .75rem;
 }
 
 .drawerHandle i:first-child {
-    margin-bottom: -3px;
+    margin-bottom: -4px;
 }
 
 .drawerArrows {
@@ -107,8 +127,6 @@
     transition: transform .25s ease;
 }
 
-/* rotate when open */
-
 .drawerArrows.open {
     transform: rotate(180deg);
 }
@@ -117,32 +135,22 @@
     BOLTS
 ========================= */
 
-.drawerHandle::after {
-    content: "";
-    position: absolute;
-    left: 10px;
-    right: 10px;
-    height: 0;
-}
-
-/* bolt circles */
-
 .drawerHandle span {
     position: absolute;
     top: 50%;
-    width: 6px;
-    height: 6px;
+    width: 7px;
+    height: 7px;
     border-radius: 50%;
     background: var(--bs-border-color);
     transform: translateY(-50%);
 }
 
 .drawerHandle span.left {
-    left: 8px;
+    left: 10px;
 }
 
 .drawerHandle span.right {
-    right: 8px;
+    right: 10px;
 }
 
 /* =========================
@@ -150,10 +158,10 @@
 ========================= */
 
 .drawerContent {
-    margin-top: .5rem;
+    margin-top: .75rem;
     display: flex;
     flex-direction: column;
-    gap: .5rem;
+    gap: .75rem;
     opacity: 0;
     transition: opacity .2s ease;
 }
@@ -162,23 +170,33 @@
     opacity: 1;
 }
 
+/* Mobile button sizing */
+.mobileDrawer .btn {
+    width: 100%;
+    padding: 0.65rem 1rem;
+    font-size: 0.95rem;
+    min-height: 48px;
+    font-weight: 500;
+}
+
+.mobileDrawer .btn i {
+    font-size: 1.1rem;
+}
+
 /* =========================
    BACKDROP
 ========================= */
 
 .mobileBackdrop {
     position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,.35);
-    z-index: 999;
-}
-
-/* =========================
-   MOBILE BUTTON WIDTH
-========================= */
-
-.mobileDrawer a {
-    width: 100%;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,.4);
+    z-index: 9999;
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
 }
 
 /* =========================
@@ -189,12 +207,6 @@
     .desktopNav {
         display: none;
     }
-
-    .navMenu {
-        width: 100%;
-        height: auto;
-        top: auto;
-    }
 }
 
 @media (min-width:641px) {
@@ -202,4 +214,25 @@
     .mobileBackdrop {
         display: none;
     }
+
+    .desktopNav {
+        position: fixed;
+    }
 }
+
+/* Tablet adjustments */
+@media (min-width: 641px) and (max-width: 1024px) {
+    .desktopNav {
+        width: 12rem;
+    }
+
+    .desktopNav h1 {
+        font-size: 1.35rem;
+    }
+
+    .desktopNav .btn {
+        font-size: 0.9rem;
+        padding: 0.5rem 0.75rem;
+    }
+}
+

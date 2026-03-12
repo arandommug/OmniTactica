@@ -2,29 +2,13 @@
 @using OmniTactica.AppCode.Models.Core
 
 @inject BookmarkService BookmarkService
-@inject VersusService VersusService
-@inject NavigationManager Navigation
 @implements IDisposable
 
-<div class="btn-group w-100" role="group">
-    <button class="btn @(isBookmarked ? "btn-warning" : "btn-outline-warning")" 
-            @onclick="ToggleBookmark"
-            title="@(isBookmarked ? "Remove bookmark" : "Add bookmark")">
-        <i class="fa @(isBookmarked ? "fa-solid fa-bookmark" : "fa-regular fa-bookmark") me-1"></i>
-    </button>
-
-    <button class="btn btn-outline-danger" 
-            @onclick="SetAsAttacker"
-            title="Set as attacker in mathhammer">
-        <i class="fa fa-gun me-1"></i>
-    </button>
-
-    <button class="btn btn-outline-primary" 
-            @onclick="SetAsDefender"
-            title="Set as defender in mathhammer">
-        <i class="fa fa-shield me-1"></i>
-    </button>
-</div>
+<button class="btn @(isBookmarked ? "btn-warning" : "btn-outline-warning") btn-sm" 
+        @onclick="ToggleBookmark"
+        title="@(isBookmarked ? "Remove bookmark" : "Add bookmark")">
+    <i class="fa @(isBookmarked ? "fa-solid fa-bookmark" : "fa-regular fa-bookmark")"></i>
+</button>
 
 @code {
     [Parameter] public int DatasheetId { get; set; }
@@ -61,18 +45,6 @@
                 FactionId = FactionId
             });
         }
-    }
-
-    private void SetAsAttacker()
-    {
-        VersusService.SetAttacker(DatasheetId, DatasheetName);
-        Navigation.NavigateTo("/versus");
-    }
-
-    private void SetAsDefender()
-    {
-        VersusService.SetDefender(DatasheetId, DatasheetName);
-        Navigation.NavigateTo("/versus");
     }
 
     public void Dispose()

@@ -71,10 +71,6 @@
                                 <div class="accordion-body rule-content">
                                     <div class="d-flex justify-content-between align-items-start mb-2">
                                         <div class="flex-grow-1">
-                                            @if (!string.IsNullOrEmpty(a.Legend))
-                                            {
-                                                <div class="text-muted mb-2"><small>@a.Legend</small></div>
-                                            }
                                             @((MarkupString)WahaDataImporter.CleanHtml(a.Description))
                                         </div>
                                         <AbilityBookmarkButton AbilityId="@a.Id" 
@@ -121,22 +117,12 @@
                     }
                     else if (selectedDetachment != null)
                     {
-                        <!-- Detachment Details -->
+@*                         <!-- Detachment Details -->
                         <div class="card mb-3">
                             <div class="card-header bg-primary text-white">
                                 <h5 class="mb-0">@selectedDetachment.Name</h5>
                             </div>
                             <div class="card-body">
-                                @if (!string.IsNullOrEmpty(selectedDetachment.Legend))
-                                {
-                                    <div class="mb-3">
-                                        <h6 class="text-secondary">Description</h6>
-                                        <div class="rule-content">
-                                            @((MarkupString)WahaDataImporter.CleanHtml(selectedDetachment.Legend))
-                                        </div>
-                                    </div>
-                                }
-
                                 @if (!string.IsNullOrEmpty(selectedDetachment.Type))
                                 {
                                     <div class="mb-2">
@@ -144,7 +130,7 @@
                                     </div>
                                 }
                             </div>
-                        </div>
+                        </div> *@
 
                         <!-- Detachment Abilities -->
                         @if (selectedDetachment.Abilities.Count > 0)
@@ -175,10 +161,6 @@
                                             <div class="accordion-body rule-content">
                                                 <div class="d-flex justify-content-between align-items-start mb-2">
                                                     <div class="flex-grow-1">
-                                                        @if (!string.IsNullOrEmpty(ability.Legend))
-                                                        {
-                                                            <div class="text-muted mb-2"><small>@ability.Legend</small></div>
-                                                        }
                                                         @((MarkupString)WahaDataImporter.CleanHtml(ability.Description))
                                                     </div>
                                                     <AbilityBookmarkButton AbilityId="@ability.Id" 
@@ -200,65 +182,78 @@
                         <!-- Stratagems -->
                         @if (selectedDetachment.Stratagems.Count > 0)
                         {
+                            var organizedStratagems = OrganizeStratagemsByPhase(selectedDetachment.Stratagems);
+
                             <div class="mb-4">
                                 <h5 class="text-primary">Stratagems</h5>
-                                <div class="accordion">
-                                @foreach (var strat in selectedDetachment.Stratagems)
-                                {
-                                    var combinedText = $"{strat.Legend} {strat.Description}";
-                                    var matchesFilter = KeywordFilterHelper.MatchesKeywordFilter(combinedText, includeKeywords, excludeKeywords, useAndLogic);
-                                    var matchedKeywords = matchesFilter ? KeywordFilterHelper.GetMatchedKeywords(combinedText, includeKeywords) : new List<string>();
-                                    var passesFilter = KeywordFilterHelper.PassesFilter(combinedText, includeKeywords, excludeKeywords, useAndLogic);
 
-                                    <div class="accordion-item">
-                                        <h2 class="accordion-header">
-                                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#strat-@(strat.Id)" aria-expanded="false">
-                                                @strat.Name
-                                                @if (!string.IsNullOrEmpty(strat.CpCost))
-                                                {
-                                                    <span class="badge bg-warning text-dark ms-2">@strat.CpCost CP</span>
-                                                }
-                                                @if (matchesFilter)
-                                                {
-                                                    <span class="badge bg-success ms-2" title="Matches: @string.Join(", ", matchedKeywords)">
-                                                        <i class="fa fa-filter me-1"></i>@matchedKeywords.Count keyword@(matchedKeywords.Count == 1 ? "" : "s")
-                                                    </span>
-                                                }
-                                            </button>
-                                        </h2>
-                                        <div id="strat-@(strat.Id)" class="accordion-collapse collapse">
-                                            <div class="accordion-body rule-content">
-                                                <div class="d-flex justify-content-between align-items-start">
-                                                    <div class="flex-grow-1">
-                                                        <div class="mb-2">
-                                                            @if (!string.IsNullOrEmpty(strat.Type))
-                                                            {
-                                                                <span class="badge bg-secondary me-1">@strat.Type</span>
-                                                            }
-                                                            @if (!string.IsNullOrEmpty(strat.Phase))
-                                                            {
-                                                                <span class="badge bg-info me-1">@strat.Phase</span>
-                                                            }
-                                                        </div>
-                                                        @if (!string.IsNullOrEmpty(strat.Legend))
+                                @foreach (var phaseGroup in organizedStratagems)
+                                {
+                                    <div class="mb-3">
+                                        <h6 class="text-secondary mb-2">@phaseGroup.Key</h6>
+                                        <div class="accordion">
+                                        @foreach (var strat in phaseGroup.Value)
+                                        {
+                                            var combinedText = $"{strat.Legend} {strat.Description}";
+                                            var matchesFilter = KeywordFilterHelper.MatchesKeywordFilter(combinedText, includeKeywords, excludeKeywords, useAndLogic);
+                                            var matchedKeywords = matchesFilter ? KeywordFilterHelper.GetMatchedKeywords(combinedText, includeKeywords) : new List<string>();
+                                            var turnBadgeClass = GetTurnBadgeClass(strat.Turn);
+
+                                            <div class="accordion-item">
+                                                <h2 class="accordion-header">
+                                                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#strat-@(strat.Id)" aria-expanded="false">
+                                                        @strat.Name
+                                                        @if (!string.IsNullOrEmpty(strat.CpCost))
                                                         {
-                                                            <div class="text-muted mb-2"><small>@strat.Legend</small></div>
+                                                            <span class="badge bg-warning text-dark ms-2">@strat.CpCost CP</span>
                                                         }
-                                                        @((MarkupString)WahaDataImporter.CleanHtml(strat.Description))
+                                                        @if (!string.IsNullOrEmpty(strat.Turn))
+                                                        {
+                                                            <span class="badge @turnBadgeClass ms-2">@strat.Turn</span>
+                                                        }
+                                                        @if (matchesFilter)
+                                                        {
+                                                            <span class="badge bg-success ms-2" title="Matches: @string.Join(", ", matchedKeywords)">
+                                                                <i class="fa fa-filter me-1"></i>@matchedKeywords.Count keyword@(matchedKeywords.Count == 1 ? "" : "s")
+                                                            </span>
+                                                        }
+                                                    </button>
+                                                </h2>
+                                                <div id="strat-@(strat.Id)" class="accordion-collapse collapse">
+                                                    <div class="accordion-body rule-content">
+                                                        <div class="d-flex justify-content-between align-items-start">
+                                                            <div class="flex-grow-1">
+                                                                <div class="mb-2">
+                                                                    @if (!string.IsNullOrEmpty(strat.Type))
+                                                                    {
+                                                                        <span class="badge bg-secondary me-1">@strat.Type</span>
+                                                                    }
+                                                                    @if (!string.IsNullOrEmpty(strat.Phase))
+                                                                    {
+                                                                        <span class="badge bg-info me-1">@strat.Phase</span>
+                                                                    }
+                                                                    @if (!string.IsNullOrEmpty(strat.Turn))
+                                                                    {
+                                                                        <span class="badge @turnBadgeClass me-1">@strat.Turn</span>
+                                                                    }
+                                                                </div>
+                                                                @((MarkupString)WahaDataImporter.CleanHtml(strat.Description))
+                                                            </div>
+                                                            <AbilityBookmarkButton AbilityId="@strat.Id" 
+                                                                                  AbilityName="@strat.Name" 
+                                                                                  FactionId="@FactionId"
+                                                                                  Type="BookmarkType.Stratagem"
+                                                                                  DetachmentId="@selectedDetachment.Id"
+                                                                                  Route="@($"/faction/{FactionId}")"
+                                                                                  AccordionId="@($"strat-{strat.Id}")" />
+                                                        </div>
                                                     </div>
-                                                    <AbilityBookmarkButton AbilityId="@strat.Id" 
-                                                                          AbilityName="@strat.Name" 
-                                                                          FactionId="@FactionId"
-                                                                          Type="BookmarkType.Stratagem"
-                                                                          DetachmentId="@selectedDetachment.Id"
-                                                                          Route="@($"/faction/{FactionId}")"
-                                                                          AccordionId="@($"strat-{strat.Id}")" />
                                                 </div>
                                             </div>
+                                        }
                                         </div>
                                     </div>
                                 }
-                                </div>
                             </div>
                         }
 
@@ -292,10 +287,6 @@
                                             <div class="accordion-body rule-content">
                                                 <div class="d-flex justify-content-between align-items-start mb-2">
                                                     <div class="flex-grow-1">
-                                                        @if (!string.IsNullOrEmpty(enhancement.Legend))
-                                                        {
-                                                            <div class="text-muted mb-2"><small>@enhancement.Legend</small></div>
-                                                        }
                                                         @((MarkupString)WahaDataImporter.CleanHtml(enhancement.Description))
                                                     </div>
                                                     <AbilityBookmarkButton AbilityId="@enhancement.Id" 
@@ -443,4 +434,20 @@
         loadingDetachment = false;
         StateHasChanged();
     }
+
+    private Dictionary<string, List<Stratagem>> OrganizeStratagemsByPhase(List<Stratagem> stratagems)
+    {
+        return StratagemHelper.OrganizeStratagemsByPhase(stratagems);
+    }
+
+    private List<string> DeterminePhases(string phase)
+    {
+        return StratagemHelper.DeterminePhases(phase);
+    }
+
+    private string GetTurnBadgeClass(string turn)
+    {
+        return StratagemHelper.GetTurnBadgeClass(turn);
+    }
 }
+

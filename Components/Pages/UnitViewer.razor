@@ -4,579 +4,626 @@
 @using OmniTactica.AppCode.Data.Import
 @using OmniTactica.AppCode.Services
 @using OmniTactica.AppCode.Models.Core
+@using OmniTactica.AppCode.Models.Rules
+@using OmniTactica.AppCode.Helpers
 
 @inject WahaSQLiteService DB
 @inject WahaDataService Data
 @inject NavigationManager Navigation
 @inject FactionViewerState ViewerState
-@inject VersusService VersusService
 
 <div class="p-2">
-    <div class="card bg-secondary-subtle">
-        <div class="card-header d-flex align-items-center">
-            @if (!string.IsNullOrEmpty(FactionId))
-            {
-                <NavLink class="btn btn-dark btn-sm w-auto" href="@($"/faction/{FactionId}/units")">
-                    <i class="fa fa-chevron-left" aria-hidden="true"></i>
-                </NavLink>
-            }
-            else
-            {
-                <NavLink class="btn btn-dark btn-sm w-auto" href="/">
-                    <i class="fa fa-chevron-left" aria-hidden="true"></i>
-                </NavLink>
-            }
-
-            <h1 class="text-primary m-0 ms-3">@(datasheet?.Name ?? "Unit")</h1>
-        </div>
-        <div class="card-body">
-            @if (loading)
-            {
-                <div class="d-flex align-items-center">
-                    <div class="spinner-border text-primary me-2" role="status" aria-hidden="true"></div>
-                    <div>Loading unit details...</div>
-                </div>
-            }
-            else if (datasheet == null)
-            {
-                <div class="alert alert-danger">Unit not found.</div>
-            }
-            else
-            {
-                <!-- Detachment Selector -->
-                @if (availableDetachments.Count > 0)
-                {
-                    <div class="mb-3">
-                        <label for="detachmentSelect" class="form-label">Filter by Detachment</label>
-                        <select id="detachmentSelect" class="form-select" @bind="selectedDetachmentId" @bind:after="OnDetachmentChanged">
-                            <option value="0">All Detachments</option>
-                            @foreach (var d in availableDetachments)
-                            {
-                                <option value="@d.Id">@d.Name</option>
-                            }
-                        </select>
-                    </div>
-                }
-
-                <!-- Action Buttons -->
-                <div class="mb-3">
-                    <DatasheetActionButtons DatasheetId="@datasheetId" 
-                                          DatasheetName="@datasheet.Name" 
-                                          FactionId="@FactionId" />
-                </div>
-
-                <!-- Legend/Description -->
-                @if (!string.IsNullOrEmpty(datasheet.Legend))
-                {
-                    <div class="alert alert-info">
-                        <div class="rule-content">@((MarkupString)WahaDataImporter.CleanHtml(datasheet.Legend))</div>
-                    </div>
-                }
-
-                <!-- Points Costs -->
-                @if (datasheet.Costs.Count > 0)
-                {
-                    <div class="mb-3">
-                        @foreach (var cost in datasheet.Costs)
+    <div class="row g-2">
+        <!-- Unit Details Card -->
+        <div class="col-12 col-xxl-6">
+            <div class="card bg-secondary-subtle">
+                <div class="card-header d-flex align-items-center justify-content-between">
+                    <div class="d-flex align-items-center">
+                        @if (!string.IsNullOrEmpty(FactionId))
                         {
-                            <div class="d-inline-block me-3">
-                                <span class="badge bg-success fs-6 me-2">@cost.Cost pts</span>
-                                @if (!string.IsNullOrEmpty(cost.Description))
+                            <NavLink class="btn btn-dark btn-sm w-auto" href="@($"/faction/{FactionId}/units")">
+                                <i class="fa fa-chevron-left" aria-hidden="true"></i>
+                            </NavLink>
+                        }
+                        else
+                        {
+                            <NavLink class="btn btn-dark btn-sm w-auto" href="/">
+                                <i class="fa fa-chevron-left" aria-hidden="true"></i>
+                            </NavLink>
+                        }
+
+                        @if (loading || datasheet == null)
+                        {
+                            <h1 class="text-primary m-0 ms-3">Unit</h1>
+                        }
+                        else
+                        {
+                            <h1 class="text-primary m-0 ms-3">@datasheet.Name</h1>
+
+                            <!-- Points Costs -->
+                            @if (datasheet.Costs.Count > 0)
+                            {
+                                <div class="ms-3">
+                                    @foreach (var cost in datasheet.Costs)
+                                    {
+                                        <div class="d-inline-block me-3 my-lg-0 my-1">
+                                            <span class="badge bg-success fs-6 me-2">@cost.Cost pts</span>
+                                            @if (!string.IsNullOrEmpty(cost.Description))
+                                            {
+                                                <span>@cost.Description</span>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        }
+                    </div>
+                    @if (!loading && datasheet != null)
+                    {
+                        <DatasheetBookmarkButton DatasheetId="@datasheetId" DatasheetName="@datasheet.Name" FactionId="@FactionId" />
+                    }
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        @if (loading)
+                        {
+                            <div class="d-flex align-items-center">
+                                <div class="spinner-border text-primary me-2" role="status" aria-hidden="true"></div>
+                                <div>Loading unit details...</div>
+                            </div>
+                        }
+                        else if (datasheet == null)
+                        {
+                            <div class="alert alert-danger">Unit not found.</div>
+                        }
+                        else
+                        {
+                            <!-- LEFT COLUMN: Models & Weapons -->
+                            <div class="p-1 col-12 col-lg-6">
+                                <!-- Models (Stat Line) -->
+                                @if (datasheet.Models.Count > 0)
                                 {
-                                    <span>@cost.Description</span>
+                                    var uniqueStatlines = datasheet.Models
+                                        .GroupBy(d => new { d.M, d.T, d.Sv, d.W, d.Ld, d.OC, d.InvSv, d.InvSvDescr })
+                                        .Select(grp => new
+                                        {
+                                            Names = string.Join(", ", grp.Select(m => m.Name)),
+                                            grp.Key.M,
+                                            grp.Key.T,
+                                            grp.Key.Sv,
+                                            grp.Key.W,
+                                            grp.Key.Ld,
+                                            grp.Key.OC,
+                                            grp.Key.InvSv,
+                                            grp.Key.InvSvDescr
+                                        }).AsEnumerable();
+
+                                    @foreach (var statline in uniqueStatlines)
+                                    {
+                                        var hasInvDesc = !string.IsNullOrEmpty(statline.InvSvDescr.Trim());
+                                        if (uniqueStatlines.Count() > 1)
+                                        {
+                                        <div class="card bg-primary mb-2">
+                                            <div class="card-header p-2 fw-bold">@statline.Names</div>
+                                        </div>
+                                        }
+                                        <table class="table table-borderless text-center mb-1">
+                                            <thead class="table-dark border-bottom-2 border-opacity-1">
+                                                <tr>
+                                                    <th class="rounded-top-3 rounded-end-0">M</th>
+                                                    <th>T</th>
+                                                    <th>SV</th>
+                                                    <th>W</th>
+                                                    <th>Ld</th>
+                                                    <th class="rounded-top-3 rounded-start-0">OC</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr class="rounded-3">
+                                                    <td class="@(hasInvDesc ? "" : "rounded-bottom-3 rounded-end-0")">@statline.M</td>
+                                                    <td>@statline.T</td>
+                                                    <td>
+                                                        @statline.Sv
+                                                        @if (!string.IsNullOrEmpty(statline.InvSv.Trim()) && statline.InvSv.Trim() != "-")
+                                                        {
+                                                            @("/" + statline.InvSv + "++" + (hasInvDesc ? "*" : ""))
+                                                        }
+                                                    </td>
+                                                    <td>@statline.W</td>
+                                                    <td>@statline.Ld</td>
+                                                    <td class="@(hasInvDesc ? "" : "rounded-bottom-3 rounded-start-0")">@statline.OC</td>
+                                                </tr>
+                                                @if (hasInvDesc)
+                                                {
+                                                <tr>
+                                                    <td colspan="6" class="text-start rounded-bottom-3">@("*" + statline.InvSvDescr)</td>
+                                                </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    }
+                                }
+
+                                <!-- Loadout -->
+                                @if (!string.IsNullOrEmpty(datasheet.Loadout))
+                                {
+                                    <div class="p-1">
+                                        <h5 class="text-primary">Loadout</h5>
+                                        <div class="rule-content">@((MarkupString)WahaDataImporter.CleanHtml(datasheet.Loadout))</div>
+                                    </div>
+                                }
+
+                                <!-- Wargear (Weapons) -->
+                                @if (datasheet.Wargear.Count > 0)
+                                {
+                                    var ranged = datasheet.Wargear.Where(wep => wep.Type == "Ranged").ToList();
+                                    var melee = datasheet.Wargear.Where(wep => wep.Type == "Melee").ToList();
+
+                                    <div class="accordion" id="weaponsAccordion">
+                                        @if (ranged.Any())
+                                        {
+                                            <div class="accordion-item">
+                                                <h2 class="accordion-header">
+                                                    <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#rangedWeapons" aria-expanded="true">
+                                                        Ranged Weapons
+                                                        <span class="badge bg-info ms-2">@ranged.Count</span>
+                                                    </button>
+                                                </h2>
+                                                <div id="rangedWeapons" class="accordion-collapse collapse show" data-bs-parent="#weaponsAccordion">
+                                                    <div class="accordion-body p-2">
+                                                        @foreach (var weapon in ranged)
+                                                        {
+                                                            <div class="card mb-2">
+                                                                <div class="card-body p-2">
+                                                                    <div class="mb-2">
+                                                                        <h6 class="card-title mb-0 d-inline m-1">@weapon.Name</h6>
+                                                                        @if (!string.IsNullOrEmpty(weapon.Description))
+                                                                        {
+                                                                            @((MarkupString)string.Join("", weapon.Description.Split(",").Select(desc => $"<span class='badge bg-secondary mx-1 mb-1'>{desc.Trim()}</span>")))
+                                                                        }
+                                                                    </div>
+                                                                    <div class="row g-2 text-center small mt-2 text-nowrap">
+                                                                        <div class="col-4 col-sm-2">
+                                                                            <div class="text-muted">Range</div>
+                                                                            <div class="fw-bold">@weapon.Range</div>
+                                                                        </div>
+                                                                        <div class="col-4 col-sm-2">
+                                                                            <div class="text-muted">A</div>
+                                                                            <div class="fw-bold">@weapon.A</div>
+                                                                        </div>
+                                                                        <div class="col-4 col-sm-2">
+                                                                            <div class="text-muted">BS</div>
+                                                                            <div class="fw-bold">@weapon.BsWs</div>
+                                                                        </div>
+                                                                        <div class="col-4 col-sm-2">
+                                                                            <div class="text-muted">S</div>
+                                                                            <div class="fw-bold">@weapon.S</div>
+                                                                        </div>
+                                                                        <div class="col-4 col-sm-2">
+                                                                            <div class="text-muted">AP</div>
+                                                                            <div class="fw-bold">@weapon.AP</div>
+                                                                        </div>
+                                                                        <div class="col-4 col-sm-2">
+                                                                            <div class="text-muted">D</div>
+                                                                            <div class="fw-bold">@weapon.D</div>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        }
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        }
+
+                                        @if (melee.Any())
+                                        {
+                                            <div class="accordion-item">
+                                                <h2 class="accordion-header">
+                                                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#meleeWeapons" aria-expanded="false">
+                                                        Melee Weapons
+                                                        <span class="badge bg-info ms-2">@melee.Count</span>
+                                                    </button>
+                                                </h2>
+                                                <div id="meleeWeapons" class="accordion-collapse collapse" data-bs-parent="#weaponsAccordion">
+                                                    <div class="accordion-body p-2">
+                                                        @foreach (var weapon in melee)
+                                                        {
+                                                            <div class="card mb-2">
+                                                                <div class="card-body p-2">
+                                                                    <div class="mb-2">
+                                                                        <h6 class="card-title mb-0 d-inline">@weapon.Name</h6>
+                                                                        @if (!string.IsNullOrEmpty(weapon.Description))
+                                                                        {
+                                                                            <span class="ms-2">@((MarkupString)string.Join("", weapon.Description.Split(",").Select(desc => $"<span class='badge bg-secondary me-1'>{desc.Trim()}</span>")))</span>
+                                                                        }
+                                                                    </div>
+                                                                    <div class="row g-2 text-center small mt-2">
+                                                                        <div class="col-4 col-sm-2">
+                                                                            <div class="text-muted">Range</div>
+                                                                            <div class="fw-bold">@weapon.Range</div>
+                                                                        </div>
+                                                                        <div class="col-4 col-sm-2">
+                                                                            <div class="text-muted">A</div>
+                                                                            <div class="fw-bold">@weapon.A</div>
+                                                                        </div>
+                                                                        <div class="col-4 col-sm-2">
+                                                                            <div class="text-muted">WS</div>
+                                                                            <div class="fw-bold">@weapon.BsWs</div>
+                                                                        </div>
+                                                                        <div class="col-4 col-sm-2">
+                                                                            <div class="text-muted">S</div>
+                                                                            <div class="fw-bold">@weapon.S</div>
+                                                                        </div>
+                                                                        <div class="col-4 col-sm-2">
+                                                                            <div class="text-muted">AP</div>
+                                                                            <div class="fw-bold">@weapon.AP</div>
+                                                                        </div>
+                                                                        <div class="col-4 col-sm-2">
+                                                                            <div class="text-muted">D</div>
+                                                                            <div class="fw-bold">@weapon.D</div>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        }
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+
+                            <!-- RIGHT COLUMN: Abilities -->
+                            <div class="p-1 col-12 col-lg-6">
+                                @if (datasheet.Abilities.Count > 0)
+                                {
+                                    <div class="accordion">
+                                        @foreach (var ability in datasheet.Abilities)
+                                        {
+                                            <div class="accordion-item">
+                                                <h2 class="accordion-header">
+                                                    <button class="accordion-button @("Datasheet|Wargear|Primarch|Fortification (левая колонка)".Contains(ability.Type) ? "" : "collapsed")" type="button" data-bs-toggle="collapse" data-bs-target="#ability-@(ability.Line)" aria-expanded="false">
+                                                        @ability.Name
+                                                        @if (!string.IsNullOrEmpty(ability.Type) && ability.Type != "Fortification (левая колонка)")
+                                                        {
+                                                            <span class="badge bg-secondary ms-2">@ability.Type</span>
+                                                        }
+                                                        @if (!string.IsNullOrEmpty(ability.Parameter))
+                                                        {
+                                                            <span class="badge bg-info ms-1">@ability.Parameter</span>
+                                                        }
+                                                    </button>
+                                                </h2>
+                                                <div id="ability-@(ability.Line)" class="accordion-collapse collapse @("Datasheet|Wargear|Primarch|Fortification (левая колонка)".Contains(ability.Type) ? "show" : "")">
+                                                    <div class="accordion-body rule-content">
+                                                        @((MarkupString)WahaDataImporter.CleanHtml(ability.Description))
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+
+                            <!-- Wargear Options & Leader (Side by Side) -->
+                            @if (datasheet.Options.Count > 0 || datasheet.CanLead.Count > 0 || datasheet.LeadBy.Count > 0)
+                            {
+                                <!-- Wargear Options -->
+                                @if (datasheet.Options.Count > 0)
+                                {
+                                    <div class="p-1 col-12 @(datasheet.CanLead.Count > 0 || datasheet.LeadBy.Count > 0 ? "col-lg-6" : "")">
+                                        <div class="accordion mb-2">
+                                            <div class="accordion-item">
+                                                <h2 class="accordion-header">
+                                                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#wargearOptions" aria-expanded="false">
+                                                        Wargear Options
+                                                        <span class="badge bg-info ms-2">@datasheet.Options.Count</span>
+                                                    </button>
+                                                </h2>
+                                                <div id="wargearOptions" class="accordion-collapse collapse">
+                                                    <div class="accordion-body p-2">
+                                                        <ul class="list-group list-group-flush">
+                                                            @foreach (var option in datasheet.Options)
+                                                            {
+                                                                <li class="list-group-item px-0">
+                                                                    @if (option.Button != "*")
+                                                                    {
+                                                                        <div class="rule-content">@((MarkupString)WahaDataImporter.CleanHtml(@option.Button + " " + option.Description))</div>
+                                                                    }
+                                                                    else
+                                                                    {
+                                                                        <div class="rule-content">@((MarkupString)WahaDataImporter.CleanHtml(option.Description + @option.Button))</div>
+                                                                    }
+                                                                </li>
+                                                            }
+                                                        </ul>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+
+                                <!-- Leader Relationships -->
+                                @if (datasheet.CanLead.Count > 0 || datasheet.LeadBy.Count > 0)
+                                {
+                                    <div class="p-1 col-12 @(datasheet.Options.Count > 0 ? "col-lg-6" : "")">
+                                        <div class="accordion mb-2">
+                                            <div class="accordion-item">
+                                                <h2 class="accordion-header">
+                                                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#leaderOptions" aria-expanded="false">
+                                                        Leader
+                                                        <span class="badge bg-info ms-2">@(datasheet.CanLead.Count + datasheet.LeadBy.Count)</span>
+                                                    </button>
+                                                </h2>
+                                                <div id="leaderOptions" class="accordion-collapse collapse">
+                                                    <div class="accordion-body p-2">
+                                                        @if (!string.IsNullOrEmpty(datasheet.LeaderHead))
+                                                        {
+                                                            <div class="rule-content mb-3">@((MarkupString)WahaDataImporter.CleanHtml(datasheet.LeaderHead))</div>
+                                                        }
+                                                        @if (datasheet.CanLead.Count > 0)
+                                                        {
+                                                            <div class="mb-3">
+                                                                <strong class="d-block mb-2">Can lead:</strong>
+                                                                <div class="d-flex flex-wrap gap-1">
+                                                                    @foreach (var unit in datasheet.CanLead)
+                                                                    {
+                                                                        <NavLink class="badge bg-primary text-decoration-none" href="@($"/faction/{FactionId}/unit/{unit.DatasheetId}")">@unit.Name</NavLink>
+                                                                    }
+                                                                </div>
+                                                            </div>
+                                                        }
+                                                        @if (datasheet.LeadBy.Count > 0)
+                                                        {
+                                                            <div class="mb-2">
+                                                                <strong class="d-block mb-2">Can be led by:</strong>
+                                                                <div class="d-flex flex-wrap gap-1">
+                                                                    @foreach (var unit in datasheet.LeadBy)
+                                                                    {
+                                                                        <NavLink class="badge bg-secondary text-decoration-none" href="@($"/faction/{FactionId}/unit/{unit.DatasheetId}")">@unit.Name</NavLink>
+                                                                    }
+                                                                </div>
+                                                            </div>
+                                                        }
+                                                        @if (!string.IsNullOrEmpty(datasheet.LeaderFooter))
+                                                        {
+                                                            <div class="rule-content mt-3">@((MarkupString)WahaDataImporter.CleanHtml(datasheet.LeaderFooter))</div>
+                                                        }
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                            }
+
+                            <!-- Transport -->
+                            @if (!string.IsNullOrEmpty(datasheet.Transport))
+                            {
+                                <div class="p-1 col-12">
+                                    <div class="accordion mb-2">
+                                        <div class="accordion-item">
+                                            <h2 class="accordion-header">
+                                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#transportInfo" aria-expanded="false">
+                                                    Transport
+                                                </button>
+                                            </h2>
+                                            <div id="transportInfo" class="accordion-collapse collapse">
+                                                <div class="accordion-body p-2 rule-content">
+                                                    @((MarkupString)WahaDataImporter.CleanHtml(datasheet.Transport))
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+
+                            <!-- Damaged -->
+                            @if (!string.IsNullOrEmpty(datasheet.DamagedW) || !string.IsNullOrEmpty(datasheet.DamagedDescription))
+                            {
+                                <div class="mb-4">
+                                    <h5 class="text-primary">Damaged</h5>
+                                    @if (!string.IsNullOrEmpty(datasheet.DamagedW))
+                                    {
+                                        <div><strong>Damaged:</strong> @datasheet.DamagedW</div>
+                                    }
+                                    @if (!string.IsNullOrEmpty(datasheet.DamagedDescription))
+                                    {
+                                        <div class="rule-content">@((MarkupString)WahaDataImporter.CleanHtml(datasheet.DamagedDescription))</div>
+                                    }
+                                </div>
+                            }
+
+                            <!-- Keywords at Bottom (Full Width) -->
+                            <div class="p-1 col-12">
+                                @if (datasheet.FactionKeywords.Count > 0)
+                                {
+                                    <div class="mb-2">
+                                        <span class="text-muted me-2">Faction Keyword(s):</span>
+                                        @foreach (var kw in datasheet.FactionKeywords.OrderBy(k => k))
+                                        {
+                                            <span class="badge bg-primary me-1">@kw</span>
+                                        }
+                                    </div>
+                                }
+                                @if (datasheet.Keywords.Count > 0)
+                                {
+                                    <div>
+                                        <span class="text-muted me-2">Keywords:</span>
+                                        @foreach (var kw in datasheet.Keywords.OrderBy(k => k))
+                                        {
+                                            <span class="badge bg-info me-1">@kw</span>
+                                        }
+                                    </div>
                                 }
                             </div>
                         }
                     </div>
-                }
-
-                <!-- Role and Keywords -->
-                <div class="mb-3">
-                    @if (datasheet.FactionKeywords.Count > 0)
-                    {
-                        <div class="mb-2">
-                            <span class="text-muted me-2">Faction Keywords:</span>
-                            @foreach (var kw in datasheet.FactionKeywords.OrderBy(k => k))
-                            {
-                                <span class="badge bg-primary me-1">@kw</span>
-                            }
-                        </div>
-                    }
-                    @if (datasheet.Keywords.Count > 0)
-                    {
-                        <div>
-                            <span class="text-muted me-2">Keywords:</span>
-                            @foreach (var kw in datasheet.Keywords.OrderBy(k => k))
-                            {
-                                <span class="badge bg-info me-1">@kw</span>
-                            }
-                        </div>
-                    }
                 </div>
-
-                <!-- Models (Stat Line) -->
-                @if (datasheet.Models.Count > 0)
-                {
-                    <div class="mb-4">
-                        <h5 class="text-primary">Stat Line</h5>
-                        <div class="table-responsive">
-                            <table class="table table-bordered table-sm">
-                                <thead class="table-dark">
-                                    <tr>
-                                        <th>Model</th>
-                                        <th>M</th>
-                                        <th>T</th>
-                                        <th>Sv</th>
-                                        <th>W</th>
-                                        <th>Ld</th>
-                                        <th>OC</th>
-                                        @if (VersusService.HasDefender() && VersusService.GetDefender()!.DatasheetId == datasheetId)
-                                        {
-                                            <th>Select</th>
-                                        }
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @foreach (var model in datasheet.Models)
-                                    {
-                                        var isSelected = VersusService.GetDefender()?.SelectedModel?.Line == model.Line;
-                                        <tr class="@(isSelected ? "table-active" : "")">
-                                            <td>
-                                                <div>@model.Name</div>
-                                                @if (!string.IsNullOrEmpty(model.InvSv))
-                                                {
-                                                    <div class="mt-1">
-                                                        <span class="badge bg-info text-dark">
-                                                            <i class="fa fa-shield" aria-hidden="true"></i>
-                                                            @model.InvSv INVULNERABLE SAVE
-                                                        </span>
-                                                        @if (!string.IsNullOrEmpty(model.InvSvDescr))
-                                                        {
-                                                            <small class="text-muted ms-1">(@model.InvSvDescr)</small>
-                                                        }
-                                                    </div>
-                                                }
-                                            </td>
-                                            <td>@model.M</td>
-                                            <td>@model.T</td>
-                                            <td>@model.Sv</td>
-                                            <td>@model.W</td>
-                                            <td>@model.Ld</td>
-                                            <td>@model.OC</td>
-                                            @if (VersusService.HasDefender() && VersusService.GetDefender()!.DatasheetId == datasheetId)
-                                            {
-                                                <td>
-                                                    <button class="btn btn-sm @(isSelected ? "btn-success" : "btn-outline-primary")" 
-                                                            @onclick="() => SelectModel(model)"
-                                                            title="@(isSelected ? "Selected as defender model" : "Select for Versus")">
-                                                        <i class="fa @(isSelected ? "fa-check-circle" : "fa-shield")"></i>
-                                                    </button>
-                                                </td>
-                                            }
-                                        </tr>
-                                    }
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                }
-
-                <!-- Wargear (Weapons) -->
-                @if (datasheet.Wargear.Count > 0)
-                {
-                    <div class="mb-4">
-                        <h5 class="text-primary">Weapons</h5>
-
-                        @if (datasheet.Wargear.Where(wep => wep.Type == "Ranged").Any())
-                        {
-                            <div class="mb-3">
-                                <h6 class="text-info">Ranged Weapons</h6>
-                                <div class="table-responsive">
-                                    <table class="table table-bordered table-sm">
-                                        <thead class="table-dark">
-                                            <tr>
-                                                <th>Weapon</th>
-                                                <th>Range</th>
-                                                <th>A</th>
-                                                <th>BS</th>
-                                                <th>S</th>
-                                                <th>AP</th>
-                                                <th>D</th>
-                                                @if (VersusService.HasAttacker() && VersusService.GetAttacker()!.DatasheetId == datasheetId)
-                                                {
-                                                    <th>Select</th>
-                                                }
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            @foreach (var weapon in datasheet.Wargear.Where(wep => wep.Type == "Ranged"))
-                                            {
-                                                var isSelected = VersusService.GetAttacker()?.SelectedWeaponLine == weapon.Line;
-                                                <tr class="@(isSelected ? "table-active" : "")">
-                                                    <td>
-                                                        @weapon.Name
-                                                        @if (!string.IsNullOrEmpty(weapon.Description))
-                                                        {
-                                                            @((MarkupString)string.Join("", weapon.Description.Split(",").Select(desc => $"<span class='badge bg-secondary me-1'>{desc.Trim()}</span>")))
-                                                        }
-                                                    </td>
-                                                    <td>@weapon.Range</td>
-                                                    <td>@weapon.A</td>
-                                                    <td>@weapon.BsWs</td>
-                                                    <td>@weapon.S</td>
-                                                    <td>@weapon.AP</td>
-                                                    <td>@weapon.D</td>
-                                                    @if (VersusService.HasAttacker() && VersusService.GetAttacker()!.DatasheetId == datasheetId)
-                                                    {
-                                                        <td>
-                                                            <button class="btn btn-sm @(isSelected ? "btn-success" : "btn-outline-danger")" 
-                                                                    @onclick="() => SelectWeapon(weapon)"
-                                                                    title="@(isSelected ? "Selected as attacker weapon" : "Select for Versus")">
-                                                                <i class="fa @(isSelected ? "fa-check-circle" : "fa-bullseye")"></i>
-                                                            </button>
-                                                        </td>
-                                                    }
-                                                </tr>
-                                            }
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        }
-
-                        @if (datasheet.Wargear.Where(wep => wep.Type == "Melee").Any())
-                        {
-                            <div class="mb-3">
-                                <h6 class="text-info">Melee Weapons</h6>
-                                <div class="table-responsive">
-                                    <table class="table table-bordered table-sm">
-                                        <thead class="table-dark">
-                                            <tr>
-                                                <th>Weapon</th>
-                                                <th>Range</th>
-                                                <th>A</th>
-                                                <th>WS</th>
-                                                <th>S</th>
-                                                <th>AP</th>
-                                                <th>D</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            @foreach (var weapon in datasheet.Wargear.Where(wep => wep.Type == "Melee"))
-                                            {
-                                                <tr>
-                                                    <td>
-                                                        @weapon.Name
-                                                        @if (!string.IsNullOrEmpty(weapon.Description))
-                                                        {
-                                                            @((MarkupString)string.Join("", weapon.Description.Split(",").Select(desc => $"<span class='badge bg-secondary ms-1'>{desc.Trim()}</span>")))
-                                                        }
-                                                    </td>
-                                                    <td>@weapon.Range</td>
-                                                    <td>@weapon.A</td>
-                                                    <td>@weapon.BsWs</td>
-                                                    <td>@weapon.S</td>
-                                                    <td>@weapon.AP</td>
-                                                    <td>@weapon.D</td>
-                                                </tr>
-                                            }
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        }
-                    </div>
-                }
-
-                <!-- Abilities -->
-                @if (datasheet.Abilities.Count > 0)
-                {
-                    <div class="mb-4">
-                        <h5 class="text-primary">Abilities</h5>
-                        <div class="accordion">
-                            @foreach (var ability in datasheet.Abilities)
-                            {
-                                <div class="accordion-item">
-                                    <h2 class="accordion-header">
-                                        <button class="accordion-button @("Datasheet|Wargear|Primarch|Fortification (левая колонка)".Contains(ability.Type) ? "" : "collapsed")" type="button" data-bs-toggle="collapse" data-bs-target="#ability-@(ability.Line)" aria-expanded="false">
-                                            @ability.Name
-                                            @if (!string.IsNullOrEmpty(ability.Type) && ability.Type != "Fortification (левая колонка)")
-                                            {
-                                                <span class="badge bg-secondary ms-2">@ability.Type</span>
-                                            }
-                                            @if (!string.IsNullOrEmpty(ability.Parameter))
-                                            {
-                                                <span class="badge bg-info ms-1">@ability.Parameter</span>
-                                            }
-                                        </button>
-                                    </h2>
-                                    <div id="ability-@(ability.Line)" class="accordion-collapse collapse @("Datasheet|Wargear|Primarch|Fortification (левая колонка)".Contains(ability.Type) ? "show" : "")">
-                                        <div class="accordion-body rule-content">
-                                            <div class="d-flex justify-content-between align-items-start mb-2">
-                                                <div class="flex-grow-1">
-                                                    @((MarkupString)WahaDataImporter.CleanHtml(ability.Description))
-                                                </div>
-                                                @if (ability.AbilityId.HasValue)
-                                                {
-                                                    <AbilityBookmarkButton AbilityId="@ability.AbilityId.Value" 
-                                                                          AbilityName="@ability.Name" 
-                                                                          FactionId="@FactionId"
-                                                                          Type="BookmarkType.Ability"
-                                                                          DatasheetId="@datasheetId"
-                                                                          Route="@($"/faction/{FactionId}/unit/{DatasheetIdStr}")"
-                                                                          AccordionId="@($"ability-{ability.Line}")" />
-                                                }
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            }
-                        </div>
-                    </div>
-                }
-
-                <!-- Loadout -->
-                @if (!string.IsNullOrEmpty(datasheet.Loadout))
-                {
-                    <div class="mb-4">
-                        <h5 class="text-primary">Loadout</h5>
-                        <div class="rule-content">@((MarkupString)WahaDataImporter.CleanHtml(datasheet.Loadout))</div>
-                    </div>
-                }
-
-                <!-- Wargear Options -->
-                @if (datasheet.Options.Count > 0)
-                {
-                    <div class="mb-4">
-                        <h5 class="text-primary">Wargear Options</h5>
-                        <ul class="list-group">
-                            @foreach (var option in datasheet.Options)
-                            {
-                                <li class="list-group-item">
-                                    @if (option.Button != "*")
-                                    {
-                                        <div class="rule-content d-inline">@((MarkupString)WahaDataImporter.CleanHtml(@option.Button + " " + option.Description))</div>
-                                    }
-                                    else
-                                    {
-                                        <div class="rule-content d-inline">@((MarkupString)WahaDataImporter.CleanHtml(option.Description + @option.Button))</div>
-                                    }
-                                </li>
-                            }
-                        </ul>
-                    </div>
-                }
-
-                <!-- Transport -->
-                @if (!string.IsNullOrEmpty(datasheet.Transport))
-                {
-                    <div class="mb-4">
-                        <h5 class="text-primary">Transport</h5>
-                        <div class="rule-content">@((MarkupString)WahaDataImporter.CleanHtml(datasheet.Transport))</div>
-                    </div>
-                }
-
-                <!-- Leader Relationships -->
-                @if (datasheet.CanLead.Count > 0 || datasheet.LeadBy.Count > 0)
-                {
-                    <div class="mb-4">
-                        <h5 class="text-primary">Leader</h5>
-                        @if (!string.IsNullOrEmpty(datasheet.LeaderHead))
-                        {
-                            <div class="rule-content mb-2">@((MarkupString)WahaDataImporter.CleanHtml(datasheet.LeaderHead))</div>
-                        }
-                        @if (datasheet.CanLead.Count > 0)
-                        {
-                            <div class="mb-2">
-                                <strong>Can lead:</strong>
-                                <ul class="list-unstyled ms-3">
-                                    @foreach (var unit in datasheet.CanLead)
-                                    {
-                                        <li>
-                                            <NavLink href="@($"/faction/{FactionId}/unit/{unit.DatasheetId}")">@unit.Name</NavLink>
-                                        </li>
-                                    }
-                                </ul>
-                            </div>
-                        }
-                        @if (datasheet.LeadBy.Count > 0)
-                        {
-                            <div class="mb-2">
-                                <strong>Can be led by:</strong>
-                                <ul class="list-unstyled ms-3">
-                                    @foreach (var unit in datasheet.LeadBy)
-                                    {
-                                        <li>
-                                            <NavLink href="@($"/faction/{FactionId}/unit/{unit.DatasheetId}")">@unit.Name</NavLink>
-                                        </li>
-                                    }
-                                </ul>
-                            </div>
-                        }
-                        @if (!string.IsNullOrEmpty(datasheet.LeaderFooter))
-                        {
-                            <div class="rule-content mt-2">@((MarkupString)WahaDataImporter.CleanHtml(datasheet.LeaderFooter))</div>
-                        }
-                    </div>
-                }
-
-                <!-- Damaged -->
-                @if (!string.IsNullOrEmpty(datasheet.DamagedW) || !string.IsNullOrEmpty(datasheet.DamagedDescription))
-                {
-                    <div class="mb-4">
-                        <h5 class="text-primary">Damaged</h5>
-                        @if (!string.IsNullOrEmpty(datasheet.DamagedW))
-                        {
-                            <div><strong>Damaged:</strong> @datasheet.DamagedW</div>
-                        }
-                        @if (!string.IsNullOrEmpty(datasheet.DamagedDescription))
-                        {
-                            <div class="rule-content">@((MarkupString)WahaDataImporter.CleanHtml(datasheet.DamagedDescription))</div>
-                        }
-                    </div>
-                }
-
-                <!-- Detachment Abilities -->
-                @if (datasheet.DetachmentAbilities.Count > 0)
-                {
-                    <div class="mb-4">
-                        <h5 class="text-primary">Detachment Abilities</h5>
-                        <div class="accordion">
-                            @foreach (var ability in datasheet.DetachmentAbilities)
-                            {
-                                <div class="accordion-item">
-                                    <h2 class="accordion-header">
-                                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#det-ability-@(ability.Id)" aria-expanded="false">
-                                            @ability.Name
-                                        </button>
-                                    </h2>
-                                     <div id="det-ability-@(ability.Id)" class="accordion-collapse collapse">
-                                        <div class="accordion-body rule-content">
-                                            <div class="d-flex justify-content-between align-items-start mb-2">
-                                                <div class="flex-grow-1">
-                                                    @if (!string.IsNullOrEmpty(ability.Legend))
-                                                    {
-                                                        <div class="text-muted mb-2"><small>@ability.Legend</small></div>
-                                                    }
-                                                    @((MarkupString)WahaDataImporter.CleanHtml(ability.Description))
-                                                </div>
-                                                <AbilityBookmarkButton AbilityId="@ability.Id" 
-                                                                      AbilityName="@ability.Name" 
-                                                                      FactionId="@FactionId"
-                                                                      Type="BookmarkType.Ability" />
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            }
-                        </div>
-                    </div>
-                }
-
-                <!-- Enhancements -->
-                @if (datasheet.Enhancements.Count > 0)
-                {
-                    <div class="mb-4">
-                        <h5 class="text-primary">Enhancements</h5>
-                        <div class="accordion">
-                            @foreach (var enhancement in datasheet.Enhancements)
-                            {
-                                <div class="accordion-item">
-                                    <h2 class="accordion-header">
-                                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#enh-@(enhancement.Id)" aria-expanded="false">
-                                            @enhancement.Name
-                                            <span class="badge bg-success text-white ms-2">@enhancement.Cost pts</span>
-                                        </button>
-                                    </h2>
-                                    <div id="enh-@(enhancement.Id)" class="accordion-collapse collapse">
-                                        <div class="accordion-body rule-content">
-                                            @if (!string.IsNullOrEmpty(enhancement.Legend))
-                                            {
-                                                <div class="text-muted mb-2"><small>@enhancement.Legend</small></div>
-                                            }
-                                            @((MarkupString)WahaDataImporter.CleanHtml(enhancement.Description))
-                                        </div>
-                                    </div>
-                                </div>
-                            }
-                        </div>
-                    </div>
-                }
-
-                <!-- Stratagems -->
-                @if (datasheet.Stratagems.Count > 0)
-                {
-                    var groupedStratagems = datasheet.Stratagems
-                        .GroupBy(s => new { s.Name, s.Description, s.CpCost, s.Type, s.Phase, s.Legend })
-                        .Select(g => new {
-                            Stratagem = g.First(),
-                            Detachments = g.Select(s => s.Detachment).Distinct().ToList(),
-                            Count = g.Select(s => s.Detachment).Distinct().Count()
-                        })
-                        .ToList();
-
-                    <div class="mb-4">
-                        <h5 class="text-primary">Stratagems</h5>
-                        <div class="accordion">
-                            @foreach (var group in groupedStratagems)
-                            {
-                                var strat = group.Stratagem;
-                                <div class="accordion-item">
-                                    <h2 class="accordion-header">
-                                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#strat-@(strat.Id)" aria-expanded="false">
-                                            @strat.Name
-                                            @if (!string.IsNullOrEmpty(strat.CpCost))
-                                            {
-                                                <span class="badge bg-warning text-dark ms-2">@strat.CpCost CP</span>
-                                            }
-                                            @if (group.Count > 1)
-                                            {
-                                                <span class="badge bg-secondary ms-2">@group.Count detachments</span>
-                                            }
-                                            else if (!string.IsNullOrEmpty(strat.Detachment))
-                                            {
-                                                <span class="badge bg-secondary ms-2">@strat.Detachment</span>
-                                            }
-                                        </button>
-                                    </h2>
-                                    <div id="strat-@(strat.Id)" class="accordion-collapse collapse">
-                                        <div class="accordion-body rule-content">
-                                            <div class="d-flex justify-content-between align-items-start">
-                                                <div class="flex-grow-1">
-                                                    <div class="mb-2">
-                                                        @if (!string.IsNullOrEmpty(strat.Type))
-                                                        {
-                                                            <span class="badge bg-secondary me-1">@strat.Type</span>
-                                                        }
-                                                        @if (!string.IsNullOrEmpty(strat.Phase))
-                                                        {
-                                                            <span class="badge bg-info me-1">@strat.Phase</span>
-                                                        }
-                                                    </div>
-                                                    @if (!string.IsNullOrEmpty(strat.Legend))
-                                                    {
-                                                        <div class="text-muted mb-2"><small>@strat.Legend</small></div>
-                                                    }
-                                                    @((MarkupString)WahaDataImporter.CleanHtml(strat.Description))
-                                                </div>
-                                                <AbilityBookmarkButton AbilityId="@strat.Id" 
-                                                                      AbilityName="@strat.Name" 
-                                                                      FactionId="@FactionId"
-                                                                      Type="BookmarkType.Stratagem"
-                                                                      DatasheetId="@datasheetId"
-                                                                      Route="@($"/faction/{FactionId}/unit/{DatasheetIdStr}")"
-                                                                      AccordionId="@($"strat-{strat.Id}")" />
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            }
-                        </div>
-                    </div>
-                }
-            }
+            </div>
         </div>
+
+    <!-- Detachment Card -->
+    @if (datasheet != null && (availableDetachments.Count > 0 || datasheet.DetachmentAbilities.Count > 0 || datasheet.Enhancements.Count > 0 || datasheet.Stratagems.Count > 0))
+    {
+        <div class="col-12 col-xxl-6">
+            <div class="card bg-secondary-subtle">
+                <div class="card-header">
+                    <h5 class="text-primary m-0">Detachment Rules</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                <!-- Detachment Selector -->
+                    @if (availableDetachments.Count > 0)
+                    {
+                        <div class="p-1 col-12">
+                            <select id="detachmentSelect" class="form-select" @bind="selectedDetachmentId" @bind:after="OnDetachmentChanged">
+                                <option value="0">All Detachments</option>
+                                @foreach (var d in availableDetachments)
+                                {
+                                    <option value="@d.Id">@d.Name</option>
+                                }
+                            </select>
+                        </div>
+                    }
+
+                        <!-- LEFT COLUMN: Detachment Abilities & Enhancements -->
+                        <div class="p-1 col-12 col-lg-6">
+                            <!-- Detachment Abilities -->
+                            @if (datasheet.DetachmentAbilities.Count > 0)
+                            {
+                                <div class="mb-4">
+                                    <div class="accordion">
+                                        @foreach (var ability in datasheet.DetachmentAbilities)
+                                        {
+                                            <div class="accordion-item">
+                                                <h2 class="accordion-header">
+                                                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#det-ability-@(ability.Id)" aria-expanded="false">
+                                                        @ability.Name
+                                                    </button>
+                                                </h2>
+                                                 <div id="det-ability-@(ability.Id)" class="accordion-collapse collapse">
+                                                    <div class="accordion-body rule-content">
+                                                        @((MarkupString)WahaDataImporter.CleanHtml(ability.Description))
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+
+                            <!-- Enhancements -->
+                            @if (datasheet.Enhancements.Count > 0)
+                            {
+                                <div class="mb-4">
+                                    <div class="accordion">
+                                        @foreach (var enhancement in datasheet.Enhancements)
+                                        {
+                                            <div class="accordion-item">
+                                                <h2 class="accordion-header">
+                                                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#enh-@(enhancement.Id)" aria-expanded="false">
+                                                        @enhancement.Name
+                                                        <span class="badge bg-success text-white ms-2">@enhancement.Cost pts</span>
+                                                    </button>
+                                                </h2>
+                                                <div id="enh-@(enhancement.Id)" class="accordion-collapse collapse">
+                                                    <div class="accordion-body rule-content">
+                                                        @((MarkupString)WahaDataImporter.CleanHtml(enhancement.Description))
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        </div>
+
+                        <!-- RIGHT COLUMN: Stratagems -->
+                        <div class="p-1 col-12 col-lg-6">
+                            @if (datasheet.Stratagems.Count > 0)
+                            {
+                                var groupedStratagems = datasheet.Stratagems
+                                    .GroupBy(s => new { 
+                                        Name = s.Name?.Trim().ToUpperInvariant() ?? "",
+                                        CpCost = s.CpCost?.Trim() ?? "",
+                                        Phase = s.Phase?.Trim().ToUpperInvariant() ?? ""
+                                    })
+                                    .Select(g => new {
+                                        Stratagem = g.First(),
+                                        Detachments = g.Select(s => s.Detachment).Distinct().Where(d => !string.IsNullOrEmpty(d)).OrderBy(d => d).ToList(),
+                                        AllStratagems = g.ToList()
+                                    })
+                                    .ToList();
+
+                                var organizedStratagems = OrganizeStratagemsByPhase(groupedStratagems.Select(g => g.Stratagem).ToList());
+
+                                <div class="mb-4">
+                                    @foreach (var phaseGroup in organizedStratagems)
+                                    {
+                                        <div class="mb-3">
+                                            <h6 class="text-secondary mb-2">@phaseGroup.Key</h6>
+                                            <div class="accordion">
+                                            @foreach (var strat in phaseGroup.Value)
+                                            {
+                                                var group = groupedStratagems.First(g => g.Stratagem.Id == strat.Id);
+                                                var turnBadgeClass = GetTurnBadgeClass(strat.Turn);
+
+                                                <div class="accordion-item">
+                                                    <h2 class="accordion-header">
+                                                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#strat-@(strat.Id)" aria-expanded="false">
+                                                            @strat.Name
+                                                            @if (!string.IsNullOrEmpty(strat.CpCost))
+                                                            {
+                                                                <span class="badge bg-warning text-dark ms-2">@strat.CpCost CP</span>
+                                                            }
+                                                            @if (!string.IsNullOrEmpty(strat.Turn))
+                                                            {
+                                                                <span class="badge @turnBadgeClass ms-2">@strat.Turn</span>
+                                                            }
+                                                        </button>
+                                                    </h2>
+                                                    <div id="strat-@(strat.Id)" class="accordion-collapse collapse">
+                                                        <div class="accordion-body rule-content">
+                                                            <div class="mb-2">
+                                                                @if (group.Detachments.Count > 1)
+                                                                {
+                                                                    <span class="badge bg-secondary me-1 mb-1">Found in @group.Detachments.Count detachments</span>
+                                                                }
+                                                                else if (!string.IsNullOrEmpty(strat.Type))
+                                                                {
+                                                                    <span class="badge bg-secondary me-1 mb-1">@strat.Type</span>
+                                                                }
+                                                                @if (!string.IsNullOrEmpty(strat.Phase))
+                                                                {
+                                                                    <span class="badge bg-info me-1">@strat.Phase</span>
+                                                                }
+                                                                @if (!string.IsNullOrEmpty(strat.Turn))
+                                                                {
+                                                                    <span class="badge @turnBadgeClass me-1">@strat.Turn</span>
+                                                                }
+                                                            </div>
+                                                            @((MarkupString)WahaDataImporter.CleanHtml(strat.Description))
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            }
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
     </div>
+
     <ScrollToTopButton />
 </div>
 
@@ -694,15 +741,19 @@
         StateHasChanged();
     }
 
-    private void SelectWeapon(DatasheetWargear weapon)
+    private Dictionary<string, List<Stratagem>> OrganizeStratagemsByPhase(List<Stratagem> stratagems)
     {
-        VersusService.SetAttackerWeapon(weapon, weapon.Line);
-        StateHasChanged();
+        return StratagemHelper.OrganizeStratagemsByPhase(stratagems);
     }
 
-    private void SelectModel(DatasheetModel model)
+    private List<string> DeterminePhases(string phase)
     {
-        VersusService.SetDefenderModel(model);
-        StateHasChanged();
+        return StratagemHelper.DeterminePhases(phase);
+    }
+
+    private string GetTurnBadgeClass(string turn)
+    {
+        return StratagemHelper.GetTurnBadgeClass(turn);
     }
 }
+
