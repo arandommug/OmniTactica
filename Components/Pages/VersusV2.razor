@@ -1,0 +1,698 @@
+@page "/versus-v2"
+@using OmniTactica.AppCode.Services
+@using OmniTactica.AppCode.Models.Core
+
+@inject VersusServiceV2 VersusService
+@inject BookmarkService BookmarkService
+@inject WahaDataService DataService
+@inject NavigationManager Navigation
+@implements IDisposable
+
+<div class="p-2">
+    <div class="card bg-secondary-subtle">
+        <div class="card-header">
+            <div class="d-flex align-items-center">
+                <h1 class="text-primary mb-0">
+                    <i class="fa fa-fist-raised me-2"></i>Versus (Enhanced)
+                </h1>
+                <button class="btn btn-sm btn-outline-secondary ms-auto" @onclick="ClearAll">
+                    <i class="fa fa-trash me-1"></i>Clear All
+                </button>
+            </div>
+        </div>
+
+        <div class="card-body">
+
+            <!-- Global Configuration -->
+            <div class="row g-3 mb-4">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0"><i class="fa fa-cog me-2"></i>Combat Configuration</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <label class="form-label">Firing Order:</label>
+                                    <select class="form-select" @bind="firingOrderType" @bind:after="UpdateFiringOrder">
+                                        <option value="@FiringOrderType.ByUnit">By Unit</option>
+                                        <option value="@FiringOrderType.ByPriority">By Priority</option>
+                                        <option value="@FiringOrderType.Simultaneous">Simultaneous</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Wound Allocation:</label>
+                                    <select class="form-select" @bind="woundAllocationMethod" @bind:after="UpdateFiringOrder">
+                                        <option value="@WoundAllocationMethod.EvenDistribution">Even Distribution</option>
+                                        <option value="@WoundAllocationMethod.TargetWeakest">Target Weakest</option>
+                                        <option value="@WoundAllocationMethod.TargetStrongest">Target Strongest</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Attackers and Defenders -->
+            <div class="row g-3">
+
+                <!-- Attackers -->
+                <div class="col-12 col-lg-5">
+                    <div class="card border-danger">
+                        <div class="card-header bg-danger-subtle">
+                            <div class="d-flex align-items-center">
+                                <h5 class="mb-0">
+                                    <i class="fa fa-crosshairs me-2"></i>Attackers
+                                </h5>
+                                <button class="btn btn-sm btn-outline-primary ms-auto" @onclick="@(() => { selectingFor = "attacker"; })">
+                                    <i class="fa fa-plus me-1"></i>Add Unit
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            @if (context.AttackingUnits.Any())
+                            {
+                                foreach (var unit in context.AttackingUnits)
+                                {
+                                    <div class="card mb-3 border-secondary">
+                                        <div class="card-header">
+                                            <div class="d-flex align-items-center">
+                                                <strong>@unit.DatasheetName</strong>
+                                                <button class="btn btn-sm btn-outline-secondary ms-auto me-1" 
+                                                        @onclick="() => ToggleUnitExpansion(unit.Id)">
+                                                    <i class="fa fa-@(expandedUnits.Contains(unit.Id) ? "chevron-up" : "chevron-down")"></i>
+                                                </button>
+                                                <button class="btn btn-sm btn-outline-danger" 
+                                                        @onclick="() => VersusService.RemoveAttackingUnit(unit.Id)">
+                                                    <i class="fa fa-times"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        @if (expandedUnits.Contains(unit.Id))
+                                        {
+                                            <div class="card-body">
+                                                <!-- Load Datasheet -->
+                                                @if (unit.Datasheet == null)
+                                                {
+                                                    <button class="btn btn-sm btn-primary w-100 mb-2" 
+                                                            @onclick="async () => await LoadUnitDatasheet(unit)">
+                                                        <i class="fa fa-download me-1"></i>Load Weapons
+                                                    </button>
+                                                }
+                                                else
+                                                {
+                                                    <!-- Add Models -->
+                                                    <div class="mb-2">
+                                                        <label class="form-label">Add Models:</label>
+                                                        @foreach (var modelProfile in unit.Datasheet.Models)
+                                                        {
+                                                            <button class="btn btn-sm btn-outline-primary w-100 mb-1" 
+                                                                    @onclick="() => VersusService.AddModelToUnit(unit.Id, modelProfile, 1)">
+                                                                <i class="fa fa-plus me-1"></i>@modelProfile.Name
+                                                            </button>
+                                                        }
+                                                    </div>
+
+                                                    <!-- Display Models -->
+                                                    @if (unit.Models.Any())
+                                                    {
+                                                        <hr />
+                                                        <label class="form-label">Models (@unit.Models.Count):</label>
+                                                        @foreach (var model in unit.Models)
+                                                        {
+                                                            <div class="card mb-2 border-light-subtle">
+                                                                <div class="card-body p-2">
+                                                                    <div class="d-flex align-items-center">
+                                                                        <small>@model.ModelProfile?.Name</small>
+                                                                        <button class="btn btn-xs btn-outline-secondary ms-auto me-1" 
+                                                                                @onclick="() => ToggleModelExpansion(model.Id)">
+                                                                            <i class="fa fa-@(expandedModels.Contains(model.Id) ? "chevron-up" : "chevron-down")"></i>
+                                                                        </button>
+                                                                        <button class="btn btn-xs btn-outline-danger" 
+                                                                                @onclick="() => VersusService.RemoveModelFromUnit(unit.Id, model.Id)">
+                                                                            <i class="fa fa-times"></i>
+                                                                        </button>
+                                                                    </div>
+
+                                                                    @if (expandedModels.Contains(model.Id))
+                                                                    {
+                                                                        <!-- Add Weapons -->
+                                                                        <div class="mt-2">
+                                                                            <small class="text-muted">Add Weapons:</small>
+                                                                            @foreach (var weapon in unit.Datasheet.Wargear)
+                                                                            {
+                                                                                <button class="btn btn-xs btn-outline-success w-100 mb-1" 
+                                                                                        @onclick="() => VersusService.AddWeaponToModel(unit.Id, model.Id, weapon)">
+                                                                                    <i class="fa fa-plus me-1"></i>@weapon.Name
+                                                                                </button>
+                                                                            }
+                                                                        </div>
+
+                                                                        <!-- Display Weapons -->
+                                                                        @if (model.Weapons.Any())
+                                                                        {
+                                                                            <div class="mt-2">
+                                                                                <small class="text-muted">Weapons:</small>
+                                                                                @foreach (var weapon in model.Weapons)
+                                                                                {
+                                                                                    <div class="card mb-1 @(weapon.IsSelected ? "border-success" : "")">
+                                                                                        <div class="card-body p-1">
+                                                                                            <div class="d-flex align-items-center">
+                                                                                                <small>
+                                                                                                    <strong>@weapon.WeaponProfile?.Name</strong>
+                                                                                                    @if (weapon.WeaponProfile != null)
+                                                                                                    {
+                                                                                                        <br />
+                                                                                                        <text>A:@weapon.WeaponProfile.A S:@weapon.WeaponProfile.S AP:@weapon.WeaponProfile.AP D:@weapon.WeaponProfile.D</text>
+                                                                                                    }
+                                                                                                </small>
+                                                                                                <button class="btn btn-xs @(weapon.IsSelected ? "btn-success" : "btn-outline-secondary") ms-auto me-1" 
+                                                                                                        @onclick="() => VersusService.ToggleWeaponSelection(unit.Id, model.Id, weapon.Id)">
+                                                                                                    <i class="fa fa-check"></i>
+                                                                                                </button>
+                                                                                                <button class="btn btn-xs btn-outline-primary me-1" 
+                                                                                                        @onclick="() => { editingWeapon = weapon; editingUnit = unit; editingModel = model; }">
+                                                                                                    <i class="fa fa-edit"></i>
+                                                                                                </button>
+                                                                                                <button class="btn btn-xs btn-outline-danger" 
+                                                                                                        @onclick="() => VersusService.RemoveWeaponFromModel(unit.Id, model.Id, weapon.Id)">
+                                                                                                    <i class="fa fa-times"></i>
+                                                                                                </button>
+                                                                                            </div>
+                                                                                        </div>
+                                                                                    </div>
+                                                                                }
+                                                                            </div>
+                                                                        }
+                                                                    }
+                                                                </div>
+                                                            </div>
+                                                        }
+                                                    }
+
+                                                    <!-- Unit Modifiers Button -->
+                                                    <button class="btn btn-sm btn-outline-warning w-100 mt-2" 
+                                                            @onclick="() => { editingUnitModifiers = unit; }">
+                                                        <i class="fa fa-magic me-1"></i>Unit Modifiers
+                                                    </button>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                }
+
+                                <!-- Global Attacker Modifiers -->
+                                <button class="btn btn-sm btn-warning w-100" 
+                                        @onclick="() => editingGlobalAttackerModifiers = true">
+                                    <i class="fa fa-magic me-1"></i>Global Attacker Modifiers
+                                </button>
+                            }
+                            else
+                            {
+                                <p class="text-muted text-center">No attacking units</p>
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-12 col-lg-2 d-flex align-items-center justify-content-center">
+                    <div class="text-center">
+                        <h2 class="text-muted">VS</h2>
+                    </div>
+                </div>
+
+                <!-- Defenders -->
+                <div class="col-12 col-lg-5">
+                    <div class="card border-primary">
+                        <div class="card-header bg-primary-subtle">
+                            <div class="d-flex align-items-center">
+                                <h5 class="mb-0">
+                                    <i class="fa fa-shield-alt me-2"></i>Defenders
+                                </h5>
+                                <button class="btn btn-sm btn-outline-primary ms-auto" @onclick="@(() => { selectingFor = "defender"; })">
+                                    <i class="fa fa-plus me-1"></i>Add Unit
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            @if (context.DefendingUnits.Any())
+                            {
+                                foreach (var unit in context.DefendingUnits)
+                                {
+                                    <div class="card mb-3 border-secondary">
+                                        <div class="card-header">
+                                            <div class="d-flex align-items-center">
+                                                <strong>@unit.DatasheetName</strong>
+                                                <button class="btn btn-sm btn-outline-secondary ms-auto me-1" 
+                                                        @onclick="() => ToggleUnitExpansion(unit.Id)">
+                                                    <i class="fa fa-@(expandedUnits.Contains(unit.Id) ? "chevron-up" : "chevron-down")"></i>
+                                                </button>
+                                                <button class="btn btn-sm btn-outline-danger" 
+                                                        @onclick="() => VersusService.RemoveDefendingUnit(unit.Id)">
+                                                    <i class="fa fa-times"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        @if (expandedUnits.Contains(unit.Id))
+                                        {
+                                            <div class="card-body">
+                                                @if (unit.Datasheet == null)
+                                                {
+                                                    <button class="btn btn-sm btn-primary w-100 mb-2" 
+                                                            @onclick="async () => await LoadUnitDatasheet(unit)">
+                                                        <i class="fa fa-download me-1"></i>Load Models
+                                                    </button>
+                                                }
+                                                else
+                                                {
+                                                    <!-- Add Models -->
+                                                    <div class="mb-2">
+                                                        <label class="form-label">Add Models:</label>
+                                                        @foreach (var modelProfile in unit.Datasheet.Models)
+                                                        {
+                                                            <button class="btn btn-sm btn-outline-primary w-100 mb-1" 
+                                                                    @onclick="() => VersusService.AddModelToUnit(unit.Id, modelProfile, 1)">
+                                                                <i class="fa fa-plus me-1"></i>@modelProfile.Name (W: @modelProfile.W, Sv: @modelProfile.Sv+, T: @modelProfile.T)
+                                                            </button>
+                                                        }
+                                                    </div>
+
+                                                    <!-- Display Models -->
+                                                    @if (unit.Models.Any())
+                                                    {
+                                                        <hr />
+                                                        <label class="form-label">Models (@unit.Models.Count):</label>
+                                                        @foreach (var model in unit.Models)
+                                                        {
+                                                            <div class="card mb-2 border-light-subtle">
+                                                                <div class="card-body p-2">
+                                                                    <div class="d-flex align-items-center">
+                                                                        <small>
+                                                                            @model.ModelProfile?.Name
+                                                                            <br />
+                                                                            <span class="text-muted">W: @model.CurrentWounds/@model.MaxWounds</span>
+                                                                        </small>
+                                                                        <button class="btn btn-xs btn-outline-primary ms-auto me-1" 
+                                                                                @onclick="() => { editingModelModifiers = model; editingUnit = unit; }">
+                                                                            <i class="fa fa-magic"></i>
+                                                                        </button>
+                                                                        <button class="btn btn-xs btn-outline-danger" 
+                                                                                @onclick="() => VersusService.RemoveModelFromUnit(unit.Id, model.Id)">
+                                                                            <i class="fa fa-times"></i>
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        }
+                                                    }
+
+                                                    <!-- Unit Modifiers Button -->
+                                                    <button class="btn btn-sm btn-outline-warning w-100 mt-2" 
+                                                            @onclick="() => { editingUnitModifiers = unit; }">
+                                                        <i class="fa fa-magic me-1"></i>Unit Modifiers
+                                                    </button>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                }
+
+                                <!-- Global Defender Modifiers -->
+                                <button class="btn btn-sm btn-warning w-100" 
+                                        @onclick="() => editingGlobalDefenderModifiers = true">
+                                    <i class="fa fa-magic me-1"></i>Global Defender Modifiers
+                                </button>
+                            }
+                            else
+                            {
+                                <p class="text-muted text-center">No defending units</p>
+                            }
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Calculate Button -->
+            @if (VersusService.CanCalculate())
+            {
+                <div class="mt-4">
+                    <button class="btn btn-lg btn-success w-100" @onclick="Calculate" disabled="@calculating">
+                        @if (calculating)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2"></span>
+                            <text>Running @simulationCount simulations...</text>
+                        }
+                        else
+                        {
+                            <i class="fa fa-calculator me-2"></i>
+                            <text>Calculate (@simulationCount simulations)</text>
+                        }
+                    </button>
+                </div>
+
+                @if (result != null)
+                {
+                    <div class="card mt-4 border-success">
+                        <div class="card-header bg-success-subtle">
+                            <h5 class="mb-0">
+                                <i class="fa fa-chart-bar me-2"></i>Results (Monte Carlo Simulation)
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row g-3 mb-3">
+                                <div class="col-6 col-md-3">
+                                    <div class="text-center">
+                                        <h2 class="text-primary mb-0">@result.AverageTotalDamage.ToString("F2")</h2>
+                                        <small class="text-muted">Avg Total Damage</small>
+                                    </div>
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <div class="text-center">
+                                        <h2 class="text-danger mb-0">@result.AverageModelsKilled.ToString("F2")</h2>
+                                        <small class="text-muted">Models Killed</small>
+                                    </div>
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <div class="text-center">
+                                        <h2 class="text-info mb-0">@result.MedianDamage</h2>
+                                        <small class="text-muted">Median Damage</small>
+                                    </div>
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <div class="text-center">
+                                        <h2 class="text-success mb-0">@result.WipeoutProbability.ToString("F1")%</h2>
+                                        <small class="text-muted">Wipeout Probability</small>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <hr />
+
+                            <h6>Per-Weapon Statistics:</h6>
+                            @if (result.WeaponStats.Any())
+                            {
+                                <div class="table-responsive">
+                                    <table class="table table-sm">
+                                        <thead>
+                                            <tr>
+                                                <th>Weapon</th>
+                                                <th>Avg Hits</th>
+                                                <th>Avg Wounds</th>
+                                                <th>Avg Damage</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var stat in result.WeaponStats.Values.OrderByDescending(s => s.AverageDamage))
+                                            {
+                                                <tr>
+                                                    <td>@stat.WeaponName</td>
+                                                    <td>@stat.AverageHits.ToString("F2")</td>
+                                                    <td>@stat.AverageWounds.ToString("F2")</td>
+                                                    <td>@stat.AverageDamage.ToString("F2")</td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            }
+
+                            <hr />
+
+                            <h6>Per-Unit Statistics:</h6>
+                            @if (result.UnitStats.Any())
+                            {
+                                <div class="table-responsive">
+                                    <table class="table table-sm">
+                                        <thead>
+                                            <tr>
+                                                <th>Unit</th>
+                                                <th>Avg Damage Dealt</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var stat in result.UnitStats.Values)
+                                            {
+                                                <tr>
+                                                    <td>@stat.UnitName</td>
+                                                    <td>@stat.AverageDamageDealt.ToString("F2")</td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            }
+
+                            <small class="text-muted">Based on @result.SimulationCount Monte Carlo simulations</small>
+                        </div>
+                    </div>
+                }
+            }
+            else
+            {
+                <div class="alert alert-info mt-4">
+                    <i class="fa fa-info-circle me-2"></i>
+                    Add attacking units with weapons and defending units with models to calculate results.
+                </div>
+            }
+
+        </div>
+    </div>
+</div>
+
+<!-- Unit Selector Modal -->
+@if (!string.IsNullOrEmpty(selectingFor))
+{
+    <UnitSelectorModal OnSelect="HandleUnitSelected" OnClose="CloseSelector" />
+}
+
+<!-- Weapon Modifiers Modal -->
+@if (editingWeapon != null && editingUnit != null && editingModel != null)
+{
+    <WeaponModifiersModal 
+        Weapon="editingWeapon" 
+        Unit="editingUnit" 
+        Model="editingModel"
+        OnSave="SaveWeaponModifiers"
+        OnClose="CloseWeaponModifiers" />
+}
+
+<!-- Unit Modifiers Modal -->
+@if (editingUnitModifiers != null)
+{
+    <UnitModifiersModal 
+        Unit="editingUnitModifiers"
+        OnSave="SaveUnitModifiers"
+        OnClose="CloseUnitModifiers" />
+}
+
+<!-- Model Modifiers Modal -->
+@if (editingModelModifiers != null && editingUnit != null)
+{
+    <ModelModifiersModal 
+        Model="editingModelModifiers"
+        Unit="editingUnit"
+        OnSave="SaveModelModifiers"
+        OnClose="CloseModelModifiers" />
+}
+
+<!-- Global Modifiers Modals -->
+@if (editingGlobalAttackerModifiers)
+{
+    <GlobalModifiersModal 
+        Modifiers="context.AttackerGlobalModifiers"
+        Title="Global Attacker Modifiers"
+        OnSave="SaveGlobalAttackerModifiers"
+        OnClose="CloseGlobalAttackerModifiers" />
+}
+
+@if (editingGlobalDefenderModifiers)
+{
+    <GlobalModifiersModal 
+        Modifiers="context.DefenderGlobalModifiers"
+        Title="Global Defender Modifiers"
+        OnSave="SaveGlobalDefenderModifiers"
+        OnClose="CloseGlobalDefenderModifiers" />
+}
+
+@code {
+    private VersusContextV2 context = new();
+    private VersusResultV2? result;
+    private string selectingFor = string.Empty;
+    private int simulationCount = 10000;
+    private bool calculating = false;
+
+    private FiringOrderType firingOrderType = FiringOrderType.ByUnit;
+    private WoundAllocationMethod woundAllocationMethod = WoundAllocationMethod.EvenDistribution;
+
+    private HashSet<string> expandedUnits = new();
+    private HashSet<string> expandedModels = new();
+
+    private CombatWeapon? editingWeapon;
+    private CombatUnit? editingUnit;
+    private CombatModel? editingModel;
+    private CombatUnit? editingUnitModifiers;
+    private CombatModel? editingModelModifiers;
+    private bool editingGlobalAttackerModifiers = false;
+    private bool editingGlobalDefenderModifiers = false;
+
+    protected override void OnInitialized()
+    {
+        context = VersusService.GetContext();
+        VersusService.OnContextChanged += OnContextChanged;
+    }
+
+    private void OnContextChanged()
+    {
+        context = VersusService.GetContext();
+        result = null;
+        StateHasChanged();
+    }
+
+    private async Task LoadUnitDatasheet(CombatUnit unit)
+    {
+        var datasheet = await DataService.GetDatasheetDetailAsync(unit.DatasheetId);
+        unit.Datasheet = datasheet;
+        StateHasChanged();
+    }
+
+    private async Task Calculate()
+    {
+        calculating = true;
+        StateHasChanged();
+
+        await Task.Delay(1);
+
+        result = VersusCalculatorV2.Calculate(context, simulationCount);
+
+        calculating = false;
+        StateHasChanged();
+    }
+
+    private void UpdateFiringOrder()
+    {
+        VersusService.UpdateFiringOrder(new FiringOrderConfig
+        {
+            OrderType = firingOrderType,
+            AllocationMethod = woundAllocationMethod
+        });
+    }
+
+    private void ClearAll()
+    {
+        VersusService.ClearAll();
+        expandedUnits.Clear();
+        expandedModels.Clear();
+        result = null;
+    }
+
+    private void ToggleUnitExpansion(string unitId)
+    {
+        if (expandedUnits.Contains(unitId))
+            expandedUnits.Remove(unitId);
+        else
+            expandedUnits.Add(unitId);
+    }
+
+    private void ToggleModelExpansion(string modelId)
+    {
+        if (expandedModels.Contains(modelId))
+            expandedModels.Remove(modelId);
+        else
+            expandedModels.Add(modelId);
+    }
+
+    private async Task HandleUnitSelected((int datasheetId, string datasheetName) unit)
+    {
+        if (selectingFor == "attacker")
+        {
+            VersusService.AddAttackingUnit(unit.datasheetId, unit.datasheetName);
+        }
+        else if (selectingFor == "defender")
+        {
+            VersusService.AddDefendingUnit(unit.datasheetId, unit.datasheetName);
+        }
+
+        selectingFor = string.Empty;
+    }
+
+    private void CloseSelector()
+    {
+        selectingFor = string.Empty;
+    }
+
+    private void SaveWeaponModifiers(WeaponModifiers modifiers)
+    {
+        if (editingWeapon != null && editingUnit != null && editingModel != null)
+        {
+            VersusService.UpdateWeaponModifiers(editingUnit.Id, editingModel.Id, editingWeapon.Id, modifiers);
+        }
+        CloseWeaponModifiers();
+    }
+
+    private void CloseWeaponModifiers()
+    {
+        editingWeapon = null;
+        editingUnit = null;
+        editingModel = null;
+    }
+
+    private void SaveUnitModifiers(UnitModifiers modifiers)
+    {
+        if (editingUnitModifiers != null)
+        {
+            VersusService.UpdateUnitModifiers(editingUnitModifiers.Id, modifiers);
+        }
+        CloseUnitModifiers();
+    }
+
+    private void CloseUnitModifiers()
+    {
+        editingUnitModifiers = null;
+    }
+
+    private void SaveModelModifiers(ModelModifiers modifiers)
+    {
+        if (editingModelModifiers != null && editingUnit != null)
+        {
+            VersusService.UpdateModelModifiers(editingUnit.Id, editingModelModifiers.Id, modifiers);
+        }
+        CloseModelModifiers();
+    }
+
+    private void CloseModelModifiers()
+    {
+        editingModelModifiers = null;
+        editingUnit = null;
+    }
+
+    private void SaveGlobalAttackerModifiers(GlobalModifiers modifiers)
+    {
+        VersusService.UpdateGlobalAttackerModifiers(modifiers);
+        CloseGlobalAttackerModifiers();
+    }
+
+    private void CloseGlobalAttackerModifiers()
+    {
+        editingGlobalAttackerModifiers = false;
+    }
+
+    private void SaveGlobalDefenderModifiers(GlobalModifiers modifiers)
+    {
+        VersusService.UpdateGlobalDefenderModifiers(modifiers);
+        CloseGlobalDefenderModifiers();
+    }
+
+    private void CloseGlobalDefenderModifiers()
+    {
+        editingGlobalDefenderModifiers = false;
+    }
+
+    public void Dispose()
+    {
+        VersusService.OnContextChanged -= OnContextChanged;
+    }
+}

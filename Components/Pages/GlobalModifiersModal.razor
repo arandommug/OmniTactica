@@ -1,0 +1,90 @@
+@using OmniTactica.AppCode.Models.Core
+
+<div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">@Title</h5>
+                <button type="button" class="btn-close" @onclick="OnClose"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3">
+
+                    <div class="col-12">
+                        <p class="text-muted">
+                            These modifiers apply to all units on this side of the battle.
+                        </p>
+                    </div>
+
+                    <div class="col-md-12">
+                        <label class="form-label">Hit Modifier:</label>
+                        <input type="number" class="form-control" @bind="modifiers.HitModifier" min="-3" max="3" />
+                        <small class="text-muted">Positive values make hits easier (for attackers)</small>
+                    </div>
+
+                    <div class="col-md-12">
+                        <label class="form-label">Wound Modifier:</label>
+                        <input type="number" class="form-control" @bind="modifiers.WoundModifier" min="-3" max="3" />
+                        <small class="text-muted">Positive values make wounds easier (for attackers)</small>
+                    </div>
+
+                    <div class="col-md-12">
+                        <label class="form-label">Save Modifier:</label>
+                        <input type="number" class="form-control" @bind="modifiers.SaveModifier" min="-3" max="3" />
+                        <small class="text-muted">Bonus to saves (for defenders)</small>
+                    </div>
+
+                    <div class="col-md-12">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" @bind="modifiers.Cover" id="globalCover" />
+                            <label class="form-check-label" for="globalCover">
+                                In Cover (+1 to saves for defenders)
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="col-md-12">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" @bind="modifiers.IgnoreCover" id="globalIgnoreCover" />
+                            <label class="form-check-label" for="globalIgnoreCover">
+                                Ignore Cover (for attackers)
+                            </label>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" @onclick="OnClose">Cancel</button>
+                <button type="button" class="btn btn-primary" @onclick="Save">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public GlobalModifiers Modifiers { get; set; } = null!;
+    [Parameter] public string Title { get; set; } = "Global Modifiers";
+    [Parameter] public EventCallback<GlobalModifiers> OnSave { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private GlobalModifiers modifiers = new();
+
+    protected override void OnInitialized()
+    {
+        // Clone the current modifiers
+        modifiers = new GlobalModifiers
+        {
+            HitModifier = Modifiers.HitModifier,
+            WoundModifier = Modifiers.WoundModifier,
+            SaveModifier = Modifiers.SaveModifier,
+            Cover = Modifiers.Cover,
+            IgnoreCover = Modifiers.IgnoreCover
+        };
+    }
+
+    private async Task Save()
+    {
+        await OnSave.InvokeAsync(modifiers);
+    }
+}

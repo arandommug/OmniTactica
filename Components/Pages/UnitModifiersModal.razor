@@ -1,0 +1,172 @@
+@using OmniTactica.AppCode.Models.Core
+
+<div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Unit Modifiers: @Unit.DatasheetName</h5>
+                <button type="button" class="btn-close" @onclick="OnClose"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3">
+
+                    <!-- Hit & Wound Modifiers -->
+                    <div class="col-12">
+                        <h6 class="border-bottom pb-2">Attack Modifiers</h6>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label class="form-label">Hit Modifier:</label>
+                        <input type="number" class="form-control" @bind="modifiers.HitModifier" min="-3" max="3" />
+                        <small class="text-muted">Positive values make hits easier</small>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label class="form-label">Wound Modifier:</label>
+                        <input type="number" class="form-control" @bind="modifiers.WoundModifier" min="-3" max="3" />
+                        <small class="text-muted">Positive values make wounds easier</small>
+                    </div>
+
+                    <div class="col-md-4">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" @bind="modifiers.RerollHits" id="unitRerollHits" />
+                            <label class="form-check-label" for="unitRerollHits">
+                                Re-roll All Hits
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="col-md-4">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" @bind="modifiers.RerollOnes" id="unitRerollOnes" />
+                            <label class="form-check-label" for="unitRerollOnes">
+                                Re-roll Hit 1s
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="col-md-4">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" @bind="modifiers.RerollWounds" id="unitRerollWounds" />
+                            <label class="form-check-label" for="unitRerollWounds">
+                                Re-roll Wounds
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Defense Modifiers -->
+                    <div class="col-12 mt-3">
+                        <h6 class="border-bottom pb-2">Defense Modifiers</h6>
+                    </div>
+
+                    <div class="col-md-4">
+                        <label class="form-label">Save Modifier:</label>
+                        <input type="number" class="form-control" @bind="modifiers.SaveModifier" min="-3" max="3" />
+                        <small class="text-muted">Bonus to armor saves</small>
+                    </div>
+
+                    <div class="col-md-4">
+                        <label class="form-label">Invuln Modifier:</label>
+                        <input type="number" class="form-control" @bind="modifiers.InvulnerableSaveModifier" min="-3" max="3" />
+                        <small class="text-muted">Bonus to invulnerable saves</small>
+                    </div>
+
+                    <div class="col-md-4">
+                        <label class="form-label">Toughness Modifier:</label>
+                        <input type="number" class="form-control" @bind="modifiers.ToughnessModifier" min="-3" max="3" />
+                        <small class="text-muted">Bonus to toughness</small>
+                    </div>
+
+                    <div class="col-md-6">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" @bind="modifiers.Cover" id="unitCover" />
+                            <label class="form-check-label" for="unitCover">
+                                In Cover (+1 to saves)
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Damage Reduction -->
+                    <div class="col-12 mt-3">
+                        <h6 class="border-bottom pb-2">Damage Reduction</h6>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label class="form-label">Damage Reduction:</label>
+                        <input type="number" class="form-control" @bind="modifiers.DamageReduction" min="0" max="10" />
+                        <small class="text-muted">Reduce each damage by this amount (min 1)</small>
+                    </div>
+
+                    <div class="col-md-6">
+                        <div class="form-check mt-4">
+                            <input class="form-check-input" type="checkbox" @bind="modifiers.HalveDamage" id="unitHalveDamage" />
+                            <label class="form-check-label" for="unitHalveDamage">
+                                Halve Damage (Round up, min 1)
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Feel No Pain -->
+                    <div class="col-12 mt-3">
+                        <h6 class="border-bottom pb-2">Feel No Pain</h6>
+                    </div>
+
+                    <div class="col-md-6">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" @bind="modifiers.FeelNoPain" id="unitFNP" />
+                            <label class="form-check-label" for="unitFNP">
+                                Has Feel No Pain
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label class="form-label">FNP Roll Value:</label>
+                        <input type="number" class="form-control" @bind="modifiers.FeelNoPainValue" min="2" max="6" 
+                               disabled="@(!modifiers.FeelNoPain)" />
+                        <small class="text-muted">Roll needed on D6 to ignore damage</small>
+                    </div>
+
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" @onclick="OnClose">Cancel</button>
+                <button type="button" class="btn btn-primary" @onclick="Save">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public CombatUnit Unit { get; set; } = null!;
+    [Parameter] public EventCallback<UnitModifiers> OnSave { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private UnitModifiers modifiers = new();
+
+    protected override void OnInitialized()
+    {
+        // Clone the current modifiers
+        modifiers = new UnitModifiers
+        {
+            HitModifier = Unit.UnitModifiers.HitModifier,
+            WoundModifier = Unit.UnitModifiers.WoundModifier,
+            SaveModifier = Unit.UnitModifiers.SaveModifier,
+            InvulnerableSaveModifier = Unit.UnitModifiers.InvulnerableSaveModifier,
+            ToughnessModifier = Unit.UnitModifiers.ToughnessModifier,
+            RerollHits = Unit.UnitModifiers.RerollHits,
+            RerollOnes = Unit.UnitModifiers.RerollOnes,
+            RerollWounds = Unit.UnitModifiers.RerollWounds,
+            FeelNoPain = Unit.UnitModifiers.FeelNoPain,
+            FeelNoPainValue = Unit.UnitModifiers.FeelNoPainValue,
+            Cover = Unit.UnitModifiers.Cover,
+            DamageReduction = Unit.UnitModifiers.DamageReduction,
+            HalveDamage = Unit.UnitModifiers.HalveDamage
+        };
+    }
+
+    private async Task Save()
+    {
+        await OnSave.InvokeAsync(modifiers);
+    }
+}
