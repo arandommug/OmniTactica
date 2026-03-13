@@ -24,5 +24,13 @@ namespace OmniTactica.AppCode.Utilities
             // If using older .NET frameworks, you might need System.Web.HttpUtility.HtmlDecode
             return WebUtility.HtmlDecode(plainText);
         }
+
+        public static string StripHtml(string html)
+        {
+            if (string.IsNullOrEmpty(html))
+                return string.Empty;
+
+            return ConvertHtmlToPlainText(html);
+        }
     }
 }

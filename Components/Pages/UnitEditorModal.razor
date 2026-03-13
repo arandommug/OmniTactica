@@ -1,0 +1,786 @@
+@using OmniTactica.AppCode.Services
+@using OmniTactica.AppCode.Models.Core
+@using OmniTactica.AppCode.Data.Import
+@using Microsoft.JSInterop
+@using System.Text.RegularExpressions
+
+@inject VersusService VersusService
+@inject IJSRuntime JS
+
+<div class="modal fade" id="unitEditorModal" tabindex="-1">
+    <div class="modal-dialog modal-fullscreen">
+        <div class="modal-content">
+            <div class="modal-header @(isAttacker ? "bg-danger" : "bg-primary") bg-opacity-10">
+                <h5 class="modal-title">
+                    <i class="fa fa-edit"></i> Edit @(editingUnit?.DatasheetName ?? "Unit")
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                @if (editingUnit != null && editingUnit.DatasheetDetail != null)
+                {
+                    <div class="row g-3">
+                        <!-- LEFT COLUMN: Datasheet Reference -->
+                        <div class="col-lg-5">
+                            <div class="card">
+                                <div class="card-header bg-dark text-white">
+                                    <h6 class="mb-0"><i class="fa fa-book"></i> Datasheet Reference</h6>
+                                </div>
+                                <div class="card-body" style="max-height: calc(100vh - 200px); overflow-y: auto;">
+                                    <!-- Model Stats -->
+                                    @if (editingUnit.DatasheetDetail.Models.Any())
+                                    {
+                                        var uniqueStatlines = editingUnit.DatasheetDetail.Models
+                                            .GroupBy(m => new { m.M, m.T, m.Sv, m.W, m.Ld, m.OC, m.InvSv })
+                                            .Select(g => new
+                                            {
+                                                Names = string.Join(", ", g.Select(m => m.Name)),
+                                                g.Key.M,
+                                                g.Key.T,
+                                                g.Key.Sv,
+                                                g.Key.W,
+                                                g.Key.Ld,
+                                                g.Key.OC,
+                                                g.Key.InvSv
+                                            });
+
+                                        @foreach (var statline in uniqueStatlines)
+                                        {
+                                            @if (uniqueStatlines.Count() > 1)
+                                            {
+                                                <h6 class="text-primary">@statline.Names</h6>
+                                            }
+                                            <table class="table table-sm table-bordered text-center mb-3">
+                                                <thead class="table-dark">
+                                                    <tr>
+                                                        <th>M</th>
+                                                        <th>T</th>
+                                                        <th>SV</th>
+                                                        <th>W</th>
+                                                        <th>Ld</th>
+                                                        <th>OC</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <tr>
+                                                        <td>@statline.M</td>
+                                                        <td>@statline.T</td>
+                                                        <td>@statline.Sv@(string.IsNullOrEmpty(statline.InvSv) || statline.InvSv == "-" ? "" : "/" + statline.InvSv + "++")</td>
+                                                        <td>@statline.W</td>
+                                                        <td>@statline.Ld</td>
+                                                        <td>@statline.OC</td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        }
+                                    }
+
+                                    <!-- Unit Composition -->
+                                    @if (editingUnit.DatasheetDetail.UnitComposition.Any())
+                                    {
+                                        <h6 class="text-primary">Unit Composition</h6>
+                                        <ul class="list-group mb-3">
+                                            @foreach (var comp in editingUnit.DatasheetDetail.UnitComposition)
+                                            {
+                                                <li class="list-group-item">@((MarkupString)WahaDataImporter.CleanHtml(comp.Description))</li>
+                                            }
+                                        </ul>
+                                    }
+
+                                    <!-- Loadout -->
+                                    @if (!string.IsNullOrEmpty(editingUnit.DatasheetDetail.Loadout))
+                                    {
+                                        <h6 class="text-primary">Loadout</h6>
+                                        <div class="alert alert-info small">
+                                            @((MarkupString)WahaDataImporter.CleanHtml(editingUnit.DatasheetDetail.Loadout))
+                                        </div>
+                                    }
+
+                                    <!-- Available Weapons -->
+                                    <h6 class="text-primary">Available Weapons</h6>
+                                    <div class="accordion mb-3" id="weaponsAccordion">
+                                        @{
+                                            var rangedWeapons = editingUnit.DatasheetDetail.Wargear.Where(w => w.Type == "Ranged").ToList();
+                                            var meleeWeapons = editingUnit.DatasheetDetail.Wargear.Where(w => w.Type == "Melee").ToList();
+                                        }
+
+                                        @if (rangedWeapons.Any())
+                                        {
+                                            <div class="accordion-item">
+                                                <h2 class="accordion-header">
+                                                    <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#rangedWeapons">
+                                                        Ranged Weapons (@rangedWeapons.Count)
+                                                    </button>
+                                                </h2>
+                                                <div id="rangedWeapons" class="accordion-collapse collapse show">
+                                                    <div class="accordion-body p-2">
+                                                        @foreach (var weapon in rangedWeapons)
+                                                        {
+                                                            <div class="card mb-2">
+                                                                <div class="card-body p-2">
+                                                                    <div class="d-flex justify-content-between align-items-center">
+                                                                        <div>
+                                                                            <strong>@weapon.Name</strong>
+                                                                            @if (!string.IsNullOrEmpty(weapon.Description))
+                                                                            {
+                                                                                <div class="small">
+                                                                                    @foreach (var ability in weapon.Description.Split(','))
+                                                                                    {
+                                                                                        <span class="badge bg-secondary me-1">@ability.Trim()</span>
+                                                                                    }
+                                                                                </div>
+                                                                            }
+                                                                        </div>
+                                                                    </div>
+                                                                    <div class="d-flex justify-content-around small mt-2">
+                                                                        <div><span class="text-muted">Range:</span> <strong>@weapon.Range</strong></div>
+                                                                        <div><span class="text-muted">A:</span> <strong>@weapon.A</strong></div>
+                                                                        <div><span class="text-muted">BS:</span> <strong>@weapon.BsWs</strong></div>
+                                                                        <div><span class="text-muted">S:</span> <strong>@weapon.S</strong></div>
+                                                                        <div><span class="text-muted">AP:</span> <strong>@weapon.AP</strong></div>
+                                                                        <div><span class="text-muted">D:</span> <strong>@weapon.D</strong></div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        }
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        }
+
+                                        @if (meleeWeapons.Any())
+                                        {
+                                            <div class="accordion-item">
+                                                <h2 class="accordion-header">
+                                                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#meleeWeapons">
+                                                        Melee Weapons (@meleeWeapons.Count)
+                                                    </button>
+                                                </h2>
+                                                <div id="meleeWeapons" class="accordion-collapse collapse">
+                                                    <div class="accordion-body p-2">
+                                                        @foreach (var weapon in meleeWeapons)
+                                                        {
+                                                            <div class="card mb-2">
+                                                                <div class="card-body p-2">
+                                                                    <div class="d-flex justify-content-between align-items-center">
+                                                                        <div>
+                                                                            <strong>@weapon.Name</strong>
+                                                                            @if (!string.IsNullOrEmpty(weapon.Description))
+                                                                            {
+                                                                                <div class="small">
+                                                                                    @foreach (var ability in weapon.Description.Split(','))
+                                                                                    {
+                                                                                        <span class="badge bg-secondary me-1">@ability.Trim()</span>
+                                                                                    }
+                                                                                </div>
+                                                                            }
+                                                                        </div>
+                                                                    </div>
+                                                                    <div class="d-flex justify-content-around small mt-2">
+                                                                        <div><span class="text-muted">Range:</span> <strong>@weapon.Range</strong></div>
+                                                                        <div><span class="text-muted">A:</span> <strong>@weapon.A</strong></div>
+                                                                        <div><span class="text-muted">WS:</span> <strong>@weapon.BsWs</strong></div>
+                                                                        <div><span class="text-muted">S:</span> <strong>@weapon.S</strong></div>
+                                                                        <div><span class="text-muted">AP:</span> <strong>@weapon.AP</strong></div>
+                                                                        <div><span class="text-muted">D:</span> <strong>@weapon.D</strong></div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        }
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+
+                                    <!-- Keywords -->
+                                    @if (editingUnit.DatasheetDetail.Keywords.Any())
+                                    {
+                                        <h6 class="text-primary">Keywords</h6>
+                                        <div class="mb-3">
+                                            @foreach (var keyword in editingUnit.DatasheetDetail.Keywords)
+                                            {
+                                                <span class="badge bg-info me-1">@keyword</span>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- RIGHT COLUMN: Unit Configuration -->
+                        <div class="col-lg-7">
+                            <div class="card">
+                                <div class="card-header @(isAttacker ? "bg-danger" : "bg-primary") bg-opacity-10">
+                                    <h6 class="mb-0"><i class="fa fa-users"></i> Unit Configuration</h6>
+                                </div>
+                                <div class="card-body" style="max-height: calc(100vh - 200px); overflow-y: auto;">
+
+                                    <!-- Models Section -->
+                                    <div class="mb-4">
+                                        <div class="d-flex justify-content-between align-items-center mb-2">
+                                            <h6 class="text-primary mb-0">Models</h6>
+                                            <button class="btn btn-sm btn-success" @onclick="() => showAddModelModal = true">
+                                                <i class="fa fa-plus"></i> Add Model
+                                            </button>
+                                        </div>
+
+                                        @if (!editingUnit.Models.Any())
+                                        {
+                                            <div class="alert alert-warning">No models added. Click "Add Model" to begin.</div>
+                                        }
+                                        else
+                                        {
+                                            @foreach (var model in editingUnit.Models)
+                                            {
+                                                <div class="card mb-3 border-secondary">
+                                                    <div class="card-header bg-secondary bg-opacity-10 d-flex justify-content-between align-items-center">
+                                                        <div>
+                                                            <strong>@model.Name</strong>
+                                                            <span class="badge bg-info ms-2">x@model.Quantity</span>
+                                                        </div>
+                                                        <div class="btn-group btn-group-sm">
+                                                            <button class="btn btn-outline-primary" @onclick="() => EditModelQuantity(model)" title="Edit Quantity">
+                                                                <i class="fa fa-sort-numeric-up"></i>
+                                                            </button>
+                                                            <button class="btn btn-outline-success" @onclick="() => AddWeaponToModel(model)" title="Add Weapon">
+                                                                <i class="fa fa-plus"></i>
+                                                            </button>
+                                                            <button class="btn btn-outline-warning" @onclick="() => ShowModifierModal(model, null, null, ModifierTarget.Model)" title="Add Modifier">
+                                                                <i class="fa fa-magic"></i>
+                                                            </button>
+                                                            <button class="btn btn-outline-danger" @onclick="() => RemoveModel(model)" title="Remove">
+                                                                <i class="fa fa-times"></i>
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                    <div class="card-body p-2">
+                                                        <!-- Model Stats Summary -->
+                                                        <div class="small mb-2">
+                                                            <span class="badge bg-light text-dark me-1">T: @model.T</span>
+                                                            <span class="badge bg-light text-dark me-1">Sv: @model.Sv+</span>
+                                                            @if (model.InvSv > 0)
+                                                            {
+                                                                <span class="badge bg-light text-dark me-1">Inv: @model.InvSv++</span>
+                                                            }
+                                                            <span class="badge bg-light text-dark me-1">W: @model.W</span>
+                                                        </div>
+
+                                                        <!-- Weapons -->
+                                                        @if (model.Weapons.Any())
+                                                        {
+                                                            <div class="mb-2">
+                                                                <strong class="small">Weapons:</strong>
+                                                                @foreach (var weapon in model.Weapons)
+                                                                {
+                                                                    <div class="d-flex align-items-center justify-content-between mb-1 p-1 border rounded @(weapon.IsSelected ? "bg-success bg-opacity-10" : "bg-light")">
+                                                                        <div class="d-flex align-items-center flex-grow-1">
+                                                                            <input type="checkbox" class="form-check-input me-2" @bind="weapon.IsSelected" />
+                                                                            <span class="small">@weapon.Name</span>
+                                                                            <span class="badge bg-secondary ms-2 small">@weapon.Type</span>
+                                                                            @if (weapon.Modifiers.Any(m => m.IsActive))
+                                                                            {
+                                                                                <span class="badge bg-warning ms-1 small">@weapon.Modifiers.Count(m => m.IsActive) mods</span>
+                                                                            }
+                                                                        </div>
+                                                                        <div class="btn-group btn-group-sm">
+                                                                            <button class="btn btn-sm btn-outline-warning" @onclick="() => ShowModifierModal(model, weapon, null, ModifierTarget.Weapon)" title="Add Modifier">
+                                                                                <i class="fa fa-magic"></i>
+                                                                            </button>
+                                                                            <button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveWeapon(model, weapon)" title="Remove">
+                                                                                <i class="fa fa-times"></i>
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                }
+                                                            </div>
+                                                        }
+
+                                                        <!-- Model Modifiers -->
+                                                        @if (model.Modifiers.Any(m => m.IsActive))
+                                                        {
+                                                            <div>
+                                                                <strong class="small">Model Modifiers:</strong>
+                                                                <div class="d-flex flex-wrap gap-1">
+                                                                    @foreach (var modifier in model.Modifiers.Where(m => m.IsActive))
+                                                                    {
+                                                                        <span class="badge bg-warning" @onclick="() => RemoveModifier(model, modifier, ModifierTarget.Model)" style="cursor: pointer;" title="Click to remove">
+                                                                            @modifier.Name <i class="fa fa-times ms-1"></i>
+                                                                        </span>
+                                                                    }
+                                                                </div>
+                                                            </div>
+                                                        }
+                                                    </div>
+                                                </div>
+                                            }
+                                        }
+                                    </div>
+
+                                    <!-- Unit-Level Modifiers -->
+                                    <div class="mb-4">
+                                        <div class="d-flex justify-content-between align-items-center mb-2">
+                                            <h6 class="text-primary mb-0">Unit Modifiers</h6>
+                                            <button class="btn btn-sm btn-warning" @onclick="() => ShowModifierModal(null, null, null, ModifierTarget.Unit)">
+                                                <i class="fa fa-plus"></i> Add Modifier
+                                            </button>
+                                        </div>
+
+                                        @if (!editingUnit.Modifiers.Any(m => m.IsActive))
+                                        {
+                                            <div class="alert alert-secondary small">No unit-level modifiers applied.</div>
+                                        }
+                                        else
+                                        {
+                                            <div class="d-flex flex-wrap gap-2">
+                                                @foreach (var modifier in editingUnit.Modifiers.Where(m => m.IsActive))
+                                                {
+                                                    <span class="badge bg-warning p-2" @onclick="() => RemoveModifier(null, modifier, ModifierTarget.Unit)" style="cursor: pointer;" title="Click to remove">
+                                                        @modifier.Name
+                                                        <div class="small">@GetModifierDescription(modifier)</div>
+                                                        <i class="fa fa-times ms-1"></i>
+                                                    </span>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Model Modal -->
+@if (showAddModelModal && editingUnit?.DatasheetDetail != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add Model</h5>
+                    <button type="button" class="btn-close" @onclick="() => showAddModelModal = false"></button>
+                </div>
+                <div class="modal-body">
+                    <label class="form-label">Select Model Type</label>
+                    @foreach (var modelProfile in editingUnit.DatasheetDetail.Models)
+                    {
+                        <button class="btn btn-outline-primary w-100 mb-2" @onclick="() => AddModelFromProfile(modelProfile)">
+                            @modelProfile.Name
+                        </button>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Add Weapon Modal -->
+@if (showAddWeaponModal && editingUnit?.DatasheetDetail != null && selectedModel != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add Weapon to @selectedModel.Name</h5>
+                    <button type="button" class="btn-close" @onclick="() => showAddWeaponModal = false"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-2">
+                        @foreach (var weapon in editingUnit.DatasheetDetail.Wargear)
+                        {
+                            <div class="col-12">
+                                <button class="btn btn-outline-primary w-100 text-start" @onclick="() => AddWeaponFromWargear(selectedModel, weapon)">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <strong>@weapon.Name</strong>
+                                            <span class="badge bg-secondary ms-2">@weapon.Type</span>
+                                        </div>
+                                        <div class="small">
+                                            A:@weapon.A | S:@weapon.S | AP:@weapon.AP | D:@weapon.D
+                                        </div>
+                                    </div>
+                                </button>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Edit Quantity Modal -->
+@if (showQuantityModal && selectedModel != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered modal-sm">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Edit Quantity</h5>
+                    <button type="button" class="btn-close" @onclick="() => showQuantityModal = false"></button>
+                </div>
+                <div class="modal-body">
+                    <label class="form-label">Number of @selectedModel.Name models</label>
+                    <input type="number" class="form-control" @bind="selectedModel.Quantity" min="1" max="20" />
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="() => showQuantityModal = false">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="() => { showQuantityModal = false; StateHasChanged(); }">Done</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Modifier Modal -->
+<ModifierEditorModal @ref="modifierModal" OnModifierAdded="HandleModifierAdded" />
+
+@code {
+    private CombatUnit? editingUnit;
+    private bool isAttacker;
+    private bool showAddModelModal = false;
+    private bool showAddWeaponModal = false;
+    private bool showQuantityModal = false;
+    private CombatModel? selectedModel;
+    private ModifierEditorModal modifierModal = null!;
+    private ModifierTarget currentModifierTarget;
+    private CombatModel? modifierTargetModel;
+    private CombatWeapon? modifierTargetWeapon;
+
+    public async Task Show(CombatUnit unit, bool isAttacker)
+    {
+        this.editingUnit = unit;
+        this.isAttacker = isAttacker;
+        StateHasChanged();
+        await JS.InvokeVoidAsync("eval", "new bootstrap.Modal(document.getElementById('unitEditorModal')).show()");
+    }
+
+    private void AddModelFromProfile(DatasheetModel profile)
+    {
+        if (editingUnit == null) return;
+
+        var model = new CombatModel
+        {
+            Name = profile.Name,
+            Quantity = 1,
+            M = ParseStatValue(profile.M),
+            T = ParseStatValue(profile.T),
+            Sv = ParseStatValue(profile.Sv),
+            InvSv = ParseStatValue(profile.InvSv),
+            W = ParseStatValue(profile.W),
+            Ld = ParseStatValue(profile.Ld),
+            OC = ParseStatValue(profile.OC),
+            DatasheetModel = profile
+        };
+
+        model.MaxWounds = model.W;
+        model.CurrentWounds = model.W;
+
+        VersusService.AddModelToUnit(editingUnit.Id, model);
+        showAddModelModal = false;
+        StateHasChanged();
+    }
+
+    private void RemoveModel(CombatModel model)
+    {
+        if (editingUnit == null) return;
+        VersusService.RemoveModelFromUnit(editingUnit.Id, model.Id);
+        StateHasChanged();
+    }
+
+    private void EditModelQuantity(CombatModel model)
+    {
+        selectedModel = model;
+        showQuantityModal = true;
+    }
+
+    private void AddWeaponToModel(CombatModel model)
+    {
+        selectedModel = model;
+        showAddWeaponModal = true;
+    }
+
+    private void AddWeaponFromWargear(CombatModel model, DatasheetWargear wargear)
+    {
+        if (editingUnit == null) return;
+
+        var weapon = new CombatWeapon
+        {
+            Name = wargear.Name,
+            Range = wargear.Range,
+            Type = wargear.Type,
+            A = wargear.A,
+            BsWs = ParseStatValue(wargear.BsWs),
+            S = ParseStatValue(wargear.S),
+            AP = ParseStatValue(wargear.AP),
+            D = wargear.D,
+            DatasheetWargear = wargear,
+            Abilities = ParseWeaponAbilities(wargear.Description),
+            IsSelected = true
+        };
+
+        // Auto-apply built-in modifiers from abilities
+        ApplyBuiltInModifiers(weapon);
+
+        VersusService.AddWeaponToModel(editingUnit.Id, model.Id, weapon);
+        showAddWeaponModal = false;
+        StateHasChanged();
+    }
+
+    private void RemoveWeapon(CombatModel model, CombatWeapon weapon)
+    {
+        if (editingUnit == null) return;
+        VersusService.RemoveWeaponFromModel(editingUnit.Id, model.Id, weapon.Id);
+        StateHasChanged();
+    }
+
+    private async Task ShowModifierModal(CombatModel? model, CombatWeapon? weapon, ConditionalModifier? existingModifier, ModifierTarget target)
+    {
+        currentModifierTarget = target;
+        modifierTargetModel = model;
+        modifierTargetWeapon = weapon;
+        await modifierModal.Show(existingModifier);
+    }
+
+    private void HandleModifierAdded(ConditionalModifier modifier)
+    {
+        if (editingUnit == null) return;
+
+        switch (currentModifierTarget)
+        {
+            case ModifierTarget.Unit:
+                VersusService.AddUnitModifier(editingUnit.Id, modifier);
+                break;
+            case ModifierTarget.Model when modifierTargetModel != null:
+                VersusService.AddModelModifier(editingUnit.Id, modifierTargetModel.Id, modifier);
+                break;
+            case ModifierTarget.Weapon when modifierTargetModel != null && modifierTargetWeapon != null:
+                VersusService.AddWeaponModifier(editingUnit.Id, modifierTargetModel.Id, modifierTargetWeapon.Id, modifier);
+                break;
+        }
+
+        StateHasChanged();
+    }
+
+    private void RemoveModifier(CombatModel? model, ConditionalModifier modifier, ModifierTarget target)
+    {
+        if (editingUnit == null) return;
+
+        switch (target)
+        {
+            case ModifierTarget.Unit:
+                VersusService.RemoveUnitModifier(editingUnit.Id, modifier.Id);
+                break;
+            case ModifierTarget.Model when model != null:
+                VersusService.RemoveModelModifier(editingUnit.Id, model.Id, modifier.Id);
+                break;
+        }
+
+        StateHasChanged();
+    }
+
+    private void ApplyBuiltInModifiers(CombatWeapon weapon)
+    {
+        // Apply modifiers that are built into the weapon abilities
+        if (weapon.Abilities.Torrent)
+        {
+            weapon.Modifiers.Add(new ConditionalModifier
+            {
+                Name = "Torrent (Built-in)",
+                Condition = new ModifierCondition { Type = ConditionType.Always },
+                Effect = new ModifierEffect { Type = EffectType.AddHitModifier, IntValue = 100 },
+                IsActive = true,
+                IsCustom = false
+            });
+        }
+
+        if (weapon.Abilities.TwinLinked)
+        {
+            weapon.Modifiers.Add(new ConditionalModifier
+            {
+                Name = "Twin-Linked (Built-in)",
+                Condition = new ModifierCondition { Type = ConditionType.Always },
+                Effect = new ModifierEffect { Type = EffectType.RerollWounds },
+                IsActive = true,
+                IsCustom = false
+            });
+        }
+
+        if (weapon.Abilities.LethalHits)
+        {
+            weapon.Modifiers.Add(new ConditionalModifier
+            {
+                Name = "Lethal Hits (Built-in)",
+                Condition = new ModifierCondition { Type = ConditionType.CriticalHit },
+                Effect = new ModifierEffect { Type = EffectType.AutoWoundOnCrit },
+                IsActive = true,
+                IsCustom = false
+            });
+        }
+
+        if (weapon.Abilities.DevastatingWounds)
+        {
+            weapon.Modifiers.Add(new ConditionalModifier
+            {
+                Name = "Devastating Wounds (Built-in)",
+                Condition = new ModifierCondition { Type = ConditionType.CriticalWound },
+                Effect = new ModifierEffect { Type = EffectType.ConvertToMortalWounds },
+                IsActive = true,
+                IsCustom = false
+            });
+        }
+
+        if (weapon.Abilities.SustainedHits.HasValue)
+        {
+            weapon.Modifiers.Add(new ConditionalModifier
+            {
+                Name = $"Sustained Hits {weapon.Abilities.SustainedHits} (Built-in)",
+                Condition = new ModifierCondition { Type = ConditionType.CriticalHit },
+                Effect = new ModifierEffect { Type = EffectType.AddExtraHitsOnCrit, IntValue = weapon.Abilities.SustainedHits.Value },
+                IsActive = true,
+                IsCustom = false
+            });
+        }
+
+        if (weapon.Abilities.RapidFire.HasValue)
+        {
+            weapon.Modifiers.Add(new ConditionalModifier
+            {
+                Name = $"Rapid Fire {weapon.Abilities.RapidFire} (Built-in)",
+                Condition = new ModifierCondition { Type = ConditionType.TargetWithinHalfRange },
+                Effect = new ModifierEffect { Type = EffectType.AddAttacks, IntValue = weapon.Abilities.RapidFire.Value },
+                IsActive = true,
+                IsCustom = false
+            });
+        }
+
+        if (weapon.Abilities.Melta.HasValue)
+        {
+            weapon.Modifiers.Add(new ConditionalModifier
+            {
+                Name = $"Melta {weapon.Abilities.Melta} (Built-in)",
+                Condition = new ModifierCondition { Type = ConditionType.TargetWithinHalfRange },
+                Effect = new ModifierEffect { Type = EffectType.AddDamageModifier, IntValue = weapon.Abilities.Melta.Value },
+                IsActive = true,
+                IsCustom = false
+            });
+        }
+
+        if (weapon.Abilities.IgnoresCover)
+        {
+            weapon.Modifiers.Add(new ConditionalModifier
+            {
+                Name = "Ignores Cover (Built-in)",
+                Condition = new ModifierCondition { Type = ConditionType.Always },
+                Effect = new ModifierEffect { Type = EffectType.IgnoreCover },
+                IsActive = true,
+                IsCustom = false
+            });
+        }
+    }
+
+    private WeaponAbilities ParseWeaponAbilities(string description)
+    {
+        if (string.IsNullOrEmpty(description))
+            return new WeaponAbilities();
+
+        var abilities = new WeaponAbilities();
+        var lower = description.ToLower();
+
+        abilities.Assault = lower.Contains("assault");
+        abilities.Blast = lower.Contains("blast");
+        abilities.DevastatingWounds = lower.Contains("devastating wounds");
+        abilities.Hazardous = lower.Contains("hazardous");
+        abilities.Heavy = lower.Contains("heavy");
+        abilities.IgnoresCover = lower.Contains("ignores cover");
+        abilities.IndirectFire = lower.Contains("indirect fire");
+        abilities.LethalHits = lower.Contains("lethal hits");
+        abilities.Pistol = lower.Contains("pistol");
+        abilities.Precision = lower.Contains("precision");
+        abilities.Torrent = lower.Contains("torrent");
+        abilities.TwinLinked = lower.Contains("twin-linked");
+
+        var rapidFireMatch = Regex.Match(description, @"rapid fire (\d+)", RegexOptions.IgnoreCase);
+        if (rapidFireMatch.Success)
+            abilities.RapidFire = int.Parse(rapidFireMatch.Groups[1].Value);
+
+        var sustainedHitsMatch = Regex.Match(description, @"sustained hits (\d+)", RegexOptions.IgnoreCase);
+        if (sustainedHitsMatch.Success)
+            abilities.SustainedHits = int.Parse(sustainedHitsMatch.Groups[1].Value);
+
+        var meltaMatch = Regex.Match(description, @"melta (\d+)", RegexOptions.IgnoreCase);
+        if (meltaMatch.Success)
+            abilities.Melta = int.Parse(meltaMatch.Groups[1].Value);
+
+        var antiInfantryMatch = Regex.Match(description, @"anti-infantry (\d+)\+", RegexOptions.IgnoreCase);
+        if (antiInfantryMatch.Success)
+        {
+            abilities.AntiInfantry = true;
+            abilities.AntiInfantryValue = int.Parse(antiInfantryMatch.Groups[1].Value);
+        }
+
+        var antiVehicleMatch = Regex.Match(description, @"anti-vehicle (\d+)\+", RegexOptions.IgnoreCase);
+        if (antiVehicleMatch.Success)
+        {
+            abilities.AntiVehicle = true;
+            abilities.AntiVehicleValue = int.Parse(antiVehicleMatch.Groups[1].Value);
+        }
+
+        var antiMonsterMatch = Regex.Match(description, @"anti-monster (\d+)\+", RegexOptions.IgnoreCase);
+        if (antiMonsterMatch.Success)
+        {
+            abilities.AntiMonster = true;
+            abilities.AntiMonsterValue = int.Parse(antiMonsterMatch.Groups[1].Value);
+        }
+
+        return abilities;
+    }
+
+    private int ParseStatValue(string value)
+    {
+        if (string.IsNullOrEmpty(value) || value == "-" || value == "N/A")
+            return 0;
+
+        value = value.Replace("+", "").Replace("\"", "").Replace("'", "").Replace("'", "").Trim();
+
+        if (int.TryParse(value, out var result))
+            return result;
+
+        return 0;
+    }
+
+    private string GetModifierDescription(ConditionalModifier modifier)
+    {
+        var condition = modifier.Condition.Type switch
+        {
+            ConditionType.Always => "Always",
+            ConditionType.UnitCharged => "When charged",
+            ConditionType.TargetWithinHalfRange => "Within half range",
+            ConditionType.TargetUnitSize5Plus => "Target 5+ models",
+            ConditionType.TargetUnitSize10Plus => "Target 10+ models",
+            ConditionType.CriticalHit => "On critical hit",
+            ConditionType.CriticalWound => "On critical wound",
+            _ => modifier.Condition.Type.ToString()
+        };
+
+        var effect = modifier.Effect.Type.ToString();
+        if (modifier.Effect.IntValue.HasValue)
+            effect += $" {(modifier.Effect.IntValue.Value > 0 ? "+" : "")}{modifier.Effect.IntValue.Value}";
+
+        return $"{condition} → {effect}";
+    }
+
+    private enum ModifierTarget
+    {
+        Unit,
+        Model,
+        Weapon
+    }
+}

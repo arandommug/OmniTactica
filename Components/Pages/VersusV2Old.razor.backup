@@ -1,0 +1,1098 @@
+@page "/versus-v2"
+@using OmniTactica.AppCode.Services
+@using OmniTactica.AppCode.Models.Core
+
+@inject VersusServiceV2 VersusService
+@inject BookmarkService BookmarkService
+@inject WahaDataService DataService
+@inject NavigationManager Navigation
+@implements IDisposable
+
+<div class="p-2">
+    <div class="card bg-secondary-subtle">
+        <div class="card-header">
+            <div class="d-flex align-items-center flex-wrap gap-2">
+                <h1 class="text-primary mb-0">
+                    <i class="fa fa-fist-raised me-2"></i>Versus (Enhanced)
+                </h1>
+
+                <!-- Global Modifier Indicators -->
+                @{
+                    var attackerGlobalMods = GetGlobalModifiers(context.AttackerGlobalModifiers, true);
+                    var defenderGlobalMods = GetGlobalModifiers(context.DefenderGlobalModifiers, false);
+                }
+                @if (attackerGlobalMods.Any())
+                {
+                    <div class="d-flex gap-1 flex-wrap">
+                        @foreach (var mod in attackerGlobalMods)
+                        {
+                            <span class="badge bg-danger">
+                                <i class="fa fa-crosshairs"></i> @mod
+                            </span>
+                        }
+                    </div>
+                }
+                @if (defenderGlobalMods.Any())
+                {
+                    <div class="d-flex gap-1 flex-wrap">
+                        @foreach (var mod in defenderGlobalMods)
+                        {
+                            <span class="badge bg-primary">
+                                <i class="fa fa-shield-alt"></i> @mod
+                            </span>
+                        }
+                    </div>
+                }
+
+                <div class="ms-auto d-flex gap-2">
+                    <button class="btn btn-sm btn-warning" @onclick="OpenGlobalAttackerMods">
+                        <i class="fa fa-magic me-1"></i>Attacker Mods
+                    </button>
+                    <button class="btn btn-sm btn-info" @onclick="OpenGlobalDefenderMods">
+                        <i class="fa fa-shield-alt me-1"></i>Defender Mods
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="ClearAll">
+                        <i class="fa fa-trash me-1"></i>Clear All
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="card-body">
+
+            <!-- Tabs -->
+            <ul class="nav nav-tabs mb-3" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link @(activeTab == "attackers" ? "active" : "")" 
+                            @onclick="ShowAttackers" 
+                            type="button">
+                        <i class="fa fa-crosshairs me-1"></i>Attackers (@context.AttackingUnits.Count)
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link @(activeTab == "defenders" ? "active" : "")" 
+                            @onclick="ShowDefenders" 
+                            type="button">
+                        <i class="fa fa-shield-alt me-1"></i>Defenders (@context.DefendingUnits.Count)
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link @(activeTab == "config" ? "active" : "")" 
+                            @onclick="ShowConfig" 
+                            type="button">
+                        <i class="fa fa-cog me-1"></i>Config
+                    </button>
+                </li>
+            </ul>
+
+            <!-- Tab Content -->
+            <div class="tab-content">
+
+                <!-- Attackers Tab -->
+                @if (activeTab == "attackers")
+                {
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="mb-0">Attacking Force</h5>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-primary" @onclick="AddAttacker">
+                                <i class="fa fa-plus me-1"></i>Add Unit
+                            </button>
+                            @if (BookmarkService.GetBookmarksByType(BookmarkType.Datasheet).Any())
+                            {
+                                <div class="dropdown">
+                                    <button class="btn btn-outline-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                        <i class="fa fa-bookmark me-1"></i>From Bookmarks
+                                    </button>
+                                    <ul class="dropdown-menu">
+                                        @foreach (var bookmark in BookmarkService.GetBookmarksByType(BookmarkType.Datasheet))
+                                        {
+                                            <li>
+                                                <a class="dropdown-item" @onclick="async () => await AddAttackerFromBookmark(bookmark)">
+                                                    @bookmark.Name
+                                                </a>
+                                            </li>
+                                        }
+                                    </ul>
+                                </div>
+                            }
+                        </div>
+                    </div>
+
+                    @if (context.AttackingUnits.Any())
+                    {
+                        foreach (var unit in context.AttackingUnits)
+                        {
+                            <div class="card mb-3 border-danger">
+                                <div class="card-header bg-danger-subtle">
+                                    <div class="d-flex align-items-center flex-wrap">
+                                        <strong>@unit.DatasheetName</strong>
+                                        <small class="ms-2 text-muted">
+                                            (@unit.Models.Count models, @unit.Models.Sum(m => m.Weapons.Count(w => w.IsSelected)) weapons)
+                                        </small>
+
+                                        <!-- Active Modifier Badges -->
+                                        @{
+                                            var modifiers = GetActiveModifiers(unit);
+                                            if (modifiers.Any())
+                                            {
+                                                <div class="ms-2 d-flex gap-1 flex-wrap">
+                                                    @foreach (var mod in modifiers)
+                                                    {
+                                                        <span class="badge bg-warning text-dark" title="@mod">
+                                                            <i class="fa fa-magic"></i> @mod
+                                                        </span>
+                                                    }
+                                                </div>
+                                            }
+                                        }
+
+                                        <div class="ms-auto d-flex gap-1">
+                                            @if (unit.Datasheet != null)
+                                            {
+                                                <button class="btn btn-sm btn-outline-info" 
+                                                        @onclick="() => ViewDatasheet(unit.DatasheetId)"
+                                                        title="View Datasheet">
+                                                    <i class="fa fa-file-alt"></i>
+                                                </button>
+                                                <button class="btn btn-sm btn-outline-warning" 
+                                                        @onclick="() => EditUnitMods(unit)"
+                                                        title="Edit Modifiers">
+                                                    <i class="fa fa-magic"></i>
+                                                </button>
+                                            }
+                                            <button class="btn btn-sm btn-outline-danger" 
+                                                    @onclick="() => VersusService.RemoveAttackingUnit(unit.Id)">
+                                                <i class="fa fa-times"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="card-body p-2">
+                                    @if (unit.Datasheet == null)
+                                    {
+                                        <button class="btn btn-sm btn-primary w-100" 
+                                                @onclick="async () => await LoadUnitDatasheet(unit)">
+                                            <i class="fa fa-download me-1"></i>Load Weapons
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <!-- Quick Actions Row -->
+                                        <div class="d-flex gap-2 mb-2">
+                                            @foreach (var modelProfile in unit.Datasheet.Models)
+                                            {
+                                                <button type="button" class="btn btn-sm btn-outline-secondary flex-fill" 
+                                                        @onclick="() => VersusService.AddModelToUnit(unit.Id, modelProfile, 1)">
+                                                    +1 @modelProfile.Name
+                                                </button>
+                                            }
+                                        </div>
+
+                                        <!-- Auto-Equip if models exist -->
+                                        @if (unit.Models.Any() && unit.Datasheet.Wargear.Any())
+                                        {
+                                            <div class="d-flex gap-2 mb-2">
+                                                <button class="btn btn-sm btn-success flex-fill" 
+                                                        @onclick="() => AutoEquipWeapons(unit)">
+                                                    <i class="fa fa-bolt me-1"></i>Auto-Equip All
+                                                </button>
+                                                <button class="btn btn-sm btn-outline-success flex-fill" 
+                                                        @onclick="() => SelectAllWeapons(unit, true)">
+                                                    <i class="fa fa-check-double me-1"></i>Select All
+                                                </button>
+                                                <button class="btn btn-sm btn-outline-secondary flex-fill" 
+                                                        @onclick="() => SelectAllWeapons(unit, false)">
+                                                    <i class="fa fa-times me-1"></i>Deselect All
+                                                </button>
+                                            </div>
+                                        }
+
+                                        <!-- Models Table -->
+                                        @if (unit.Models.Any())
+                                        {
+                                            <div class="table-responsive">
+                                                <table class="table table-sm table-hover mb-0">
+                                                    <thead>
+                                                        <tr>
+                                                            <th>Model</th>
+                                                            <th>Weapons</th>
+                                                            <th style="width: 120px;">Actions</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        @foreach (var model in unit.Models)
+                                                        {
+                                                            <tr>
+                                                                <td>
+                                                                    <small>@model.ModelProfile?.Name</small>
+                                                                </td>
+                                                                <td>
+                                                                    @if (model.Weapons.Any())
+                                                                    {
+                                                                        <div class="d-flex flex-wrap gap-1">
+                                                                            @foreach (var weapon in model.Weapons)
+                                                                            {
+                                                                                var weaponMods = GetWeaponModifierBadges(weapon);
+                                                                                var tooltipText = $"{weapon.WeaponProfile?.Name}: A:{weapon.WeaponProfile?.A} S:{weapon.WeaponProfile?.S} AP:{weapon.WeaponProfile?.AP} D:{weapon.WeaponProfile?.D}";
+                                                                                if (weaponMods.Any())
+                                                                                {
+                                                                                    tooltipText += $"\nModifiers: {string.Join(", ", weaponMods)}";
+                                                                                }
+
+                                                                                <div class="position-relative">
+                                                                                    <button class="btn btn-xs @(weapon.IsSelected ? "btn-success" : "btn-outline-secondary")" 
+                                                                                            @onclick="() => VersusService.ToggleWeaponSelection(unit.Id, model.Id, weapon.Id)"
+                                                                                            title="@tooltipText">
+                                                                                        @(weapon.WeaponProfile?.Name ?? "?")
+                                                                                        @if (weaponMods.Any())
+                                                                                        {
+                                                                                            <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-warning text-dark" 
+                                                                                                  style="font-size: 0.6em; padding: 2px 4px;">
+                                                                                                @weaponMods.Count
+                                                                                            </span>
+                                                                                        }
+                                                                                    </button>
+                                                                                </div>
+                                                                            }
+                                                                        </div>
+                                                                    }
+                                                                    else
+                                                                    {
+                                                                        @foreach (var weapon in unit.Datasheet.Wargear.Take(3))
+                                                                        {
+                                                                            <button class="btn btn-xs btn-outline-primary" 
+                                                                                    @onclick="() => VersusService.AddWeaponToModel(unit.Id, model.Id, weapon)">
+                                                                                + @weapon.Name
+                                                                            </button>
+                                                                        }
+                                                                    }
+                                                                </td>
+                                                                <td>
+                                                                    <div class="btn-group btn-group-sm">
+                                                                        @if (model.Weapons.Any())
+                                                                        {
+                                                                            <button class="btn btn-xs btn-outline-warning" 
+                                                                                    @onclick="() => EditWeaponMods(unit, model, model.Weapons.First())"
+                                                                                    title="Edit weapon modifiers">
+                                                                                <i class="fa fa-magic"></i>
+                                                                            </button>
+                                                                        }
+                                                                        <button class="btn btn-xs btn-outline-danger" 
+                                                                                @onclick="() => VersusService.RemoveModelFromUnit(unit.Id, model.Id)">
+                                                                            <i class="fa fa-times"></i>
+                                                                        </button>
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        }
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        }
+                                    }
+                                </div>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <div class="alert alert-info">
+                            <i class="fa fa-info-circle me-2"></i>
+                            No attacking units. Click "Add Unit" to get started.
+                        </div>
+                    }
+                }
+
+                <!-- Defenders Tab -->
+                @if (activeTab == "defenders")
+                {
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="mb-0">Defending Force</h5>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-primary" @onclick="AddDefender">
+                                <i class="fa fa-plus me-1"></i>Add Unit
+                            </button>
+                            @if (BookmarkService.GetBookmarksByType(BookmarkType.Datasheet).Any())
+                            {
+                                <div class="dropdown">
+                                    <button class="btn btn-outline-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                        <i class="fa fa-bookmark me-1"></i>From Bookmarks
+                                    </button>
+                                    <ul class="dropdown-menu">
+                                        @foreach (var bookmark in BookmarkService.GetBookmarksByType(BookmarkType.Datasheet))
+                                        {
+                                            <li>
+                                                <a class="dropdown-item" @onclick="async () => await AddDefenderFromBookmark(bookmark)">
+                                                    @bookmark.Name
+                                                </a>
+                                            </li>
+                                        }
+                                    </ul>
+                                </div>
+                            }
+                        </div>
+                    </div>
+
+                    @if (context.DefendingUnits.Any())
+                    {
+                        foreach (var unit in context.DefendingUnits)
+                        {
+                            <div class="card mb-3 border-primary">
+                                <div class="card-header bg-primary-subtle">
+                                    <div class="d-flex align-items-center flex-wrap">
+                                        <strong>@unit.DatasheetName</strong>
+                                        <small class="ms-2 text-muted">(@unit.Models.Count models)</small>
+
+                                        <!-- Active Modifier Badges -->
+                                        @{
+                                            var modifiers = GetActiveModifiers(unit);
+                                            if (modifiers.Any())
+                                            {
+                                                <div class="ms-2 d-flex gap-1 flex-wrap">
+                                                    @foreach (var mod in modifiers)
+                                                    {
+                                                        <span class="badge bg-info text-dark" title="@mod">
+                                                            <i class="fa fa-shield-alt"></i> @mod
+                                                        </span>
+                                                    }
+                                                </div>
+                                            }
+                                        }
+
+                                        <div class="ms-auto d-flex gap-1">
+                                            @if (unit.Datasheet != null)
+                                            {
+                                                <button class="btn btn-sm btn-outline-info" 
+                                                        @onclick="() => ViewDatasheet(unit.DatasheetId)"
+                                                        title="View Datasheet">
+                                                    <i class="fa fa-file-alt"></i>
+                                                </button>
+                                                <button class="btn btn-sm btn-outline-warning" 
+                                                        @onclick="() => EditUnitMods(unit)"
+                                                        title="Edit Modifiers">
+                                                    <i class="fa fa-magic"></i>
+                                                </button>
+                                            }
+                                            <button class="btn btn-sm btn-outline-danger" 
+                                                    @onclick="() => VersusService.RemoveDefendingUnit(unit.Id)">
+                                                <i class="fa fa-times"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="card-body p-2">
+                                    @if (unit.Datasheet == null)
+                                    {
+                                        <button class="btn btn-sm btn-primary w-100" 
+                                                @onclick="async () => await LoadUnitDatasheet(unit)">
+                                            <i class="fa fa-download me-1"></i>Load Models
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <!-- Quick Add Models -->
+                                        <div class="mb-2">
+                                            <div class="btn-group btn-group-sm w-100" role="group">
+                                                @foreach (var modelProfile in unit.Datasheet.Models)
+                                                {
+                                                    <button type="button" class="btn btn-outline-secondary" 
+                                                            @onclick="() => VersusService.AddModelToUnit(unit.Id, modelProfile, 1)">
+                                                        +1 @modelProfile.Name
+                                                    </button>
+                                                }
+                                            </div>
+                                        </div>
+
+                                        <!-- Models Table -->
+                                        @if (unit.Models.Any())
+                                        {
+                                            <div class="table-responsive">
+                                                <table class="table table-sm table-hover mb-0">
+                                                    <thead>
+                                                        <tr>
+                                                            <th>Model</th>
+                                                            <th>Profile</th>
+                                                            <th style="width: 100px;">Actions</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        @foreach (var model in unit.Models)
+                                                        {
+                                                            <tr>
+                                                                <td>
+                                                                    <small>@model.ModelProfile?.Name</small>
+                                                                </td>
+                                                                <td>
+                                                                    <small class="text-muted">
+                                                                        W:@model.CurrentWounds/@model.MaxWounds 
+                                                                        T:@model.ModelProfile?.T 
+                                                                        Sv:@model.ModelProfile?.Sv+
+                                                                        @if (!string.IsNullOrEmpty(model.ModelProfile?.InvSv))
+                                                                        {
+                                                                            <text> Inv:@model.ModelProfile?.InvSv+</text>
+                                                                        }
+                                                                    </small>
+                                                                </td>
+                                                                <td>
+                                                                    <div class="btn-group btn-group-sm">
+                                                                        <button class="btn btn-xs btn-outline-warning" 
+                                                                                @onclick="() => EditModelMods(unit, model)"
+                                                                                title="Edit model modifiers">
+                                                                            <i class="fa fa-magic"></i>
+                                                                        </button>
+                                                                        <button class="btn btn-xs btn-outline-danger" 
+                                                                                @onclick="() => VersusService.RemoveModelFromUnit(unit.Id, model.Id)">
+                                                                            <i class="fa fa-times"></i>
+                                                                        </button>
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        }
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        }
+                                    }
+                                </div>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <div class="alert alert-info">
+                            <i class="fa fa-info-circle me-2"></i>
+                            No defending units. Click "Add Unit" to get started.
+                        </div>
+                    }
+                }
+
+                <!-- Config Tab -->
+                @if (activeTab == "config")
+                {
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0">Firing Order</h6>
+                                </div>
+                                <div class="card-body">
+                                    <select class="form-select" @bind="firingOrderType" @bind:after="UpdateFiringOrder">
+                                        <option value="@FiringOrderType.ByUnit">By Unit (sequential)</option>
+                                        <option value="@FiringOrderType.ByPriority">By Priority</option>
+                                        <option value="@FiringOrderType.Simultaneous">Simultaneous</option>
+                                    </select>
+                                    <small class="text-muted mt-2 d-block">
+                                        @if (firingOrderType == FiringOrderType.ByUnit)
+                                        {
+                                            <text>Fire all weapons from one unit before the next.</text>
+                                        }
+                                        else if (firingOrderType == FiringOrderType.ByPriority)
+                                        {
+                                            <text>Fire weapons in order of assigned priority.</text>
+                                        }
+                                        else
+                                        {
+                                            <text>All weapons fire at once (standard).</text>
+                                        }
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0">Wound Allocation</h6>
+                                </div>
+                                <div class="card-body">
+                                    <select class="form-select" @bind="woundAllocationMethod" @bind:after="UpdateFiringOrder">
+                                        <option value="@WoundAllocationMethod.EvenDistribution">Even Distribution</option>
+                                        <option value="@WoundAllocationMethod.TargetWeakest">Target Weakest</option>
+                                        <option value="@WoundAllocationMethod.TargetStrongest">Target Strongest</option>
+                                    </select>
+                                    <small class="text-muted mt-2 d-block">
+                                        @if (woundAllocationMethod == WoundAllocationMethod.EvenDistribution)
+                                        {
+                                            <text>Spread wounds evenly across models.</text>
+                                        }
+                                        else if (woundAllocationMethod == WoundAllocationMethod.TargetWeakest)
+                                        {
+                                            <text>Target wounded models first.</text>
+                                        }
+                                        else
+                                        {
+                                            <text>Target full-health models first.</text>
+                                        }
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-12">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0">Simulation Settings</h6>
+                                </div>
+                                <div class="card-body">
+                                    <label class="form-label">Number of Simulations:</label>
+                                    <input type="number" class="form-control" @bind="simulationCount" min="1000" max="100000" step="1000" />
+                                    <small class="text-muted">More simulations = more accurate, but slower (default: 10,000)</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                }
+
+            </div>
+
+            <!-- Calculate Button and Results -->
+            <div class="row g-3 mt-3">
+
+                @if (VersusService.CanCalculate())
+                {
+                    <div class="col-12">
+                        <button class="btn btn-lg btn-success w-100" @onclick="Calculate" disabled="@calculating">
+                            @if (calculating)
+                            {
+                                <span class="spinner-border spinner-border-sm me-2"></span>
+                                <text>Running @simulationCount simulations...</text>
+                            }
+                            else
+                            {
+                                <i class="fa fa-calculator me-2"></i>
+                                <text>Calculate (@simulationCount simulations)</text>
+                            }
+                        </button>
+                    </div>
+
+                    @if (result != null)
+                    {
+                        <div class="col-12">
+                            <div class="card border-success">
+                                <div class="card-header bg-success-subtle">
+                                    <h5 class="mb-0">
+                                        <i class="fa fa-chart-bar me-2"></i>Results
+                                    </h5>
+                                </div>
+                                <div class="card-body">
+
+                                    <!-- Key Metrics -->
+                                    <div class="row g-3 mb-3">
+                                        <div class="col-6 col-md-3">
+                                            <div class="text-center p-3 bg-light rounded">
+                                                <h3 class="text-primary mb-0">@result.AverageTotalDamage.ToString("F2")</h3>
+                                                <small class="text-muted">Avg Damage</small>
+                                            </div>
+                                        </div>
+                                        <div class="col-6 col-md-3">
+                                            <div class="text-center p-3 bg-light rounded">
+                                                <h3 class="text-danger mb-0">@result.AverageModelsKilled.ToString("F2")</h3>
+                                                <small class="text-muted">Models Killed</small>
+                                            </div>
+                                        </div>
+                                        <div class="col-6 col-md-3">
+                                            <div class="text-center p-3 bg-light rounded">
+                                                <h3 class="text-info mb-0">@result.MedianDamage</h3>
+                                                <small class="text-muted">Median</small>
+                                            </div>
+                                        </div>
+                                        <div class="col-6 col-md-3">
+                                            <div class="text-center p-3 bg-light rounded">
+                                                <h3 class="text-success mb-0">@result.WipeoutProbability.ToString("F1")%</h3>
+                                                <small class="text-muted">Wipeout</small>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Tabs for detailed results -->
+                                    <ul class="nav nav-pills mb-3" role="tablist">
+                                        <li class="nav-item" role="presentation">
+                                            <button class="nav-link @(resultTab == "weapons" ? "active" : "")" 
+                                                    @onclick="ShowWeaponResults" 
+                                                    type="button">
+                                                Weapons
+                                            </button>
+                                        </li>
+                                        <li class="nav-item" role="presentation">
+                                            <button class="nav-link @(resultTab == "units" ? "active" : "")" 
+                                                    @onclick="ShowUnitResults" 
+                                                    type="button">
+                                                Units
+                                            </button>
+                                        </li>
+                                        <li class="nav-item" role="presentation">
+                                            <button class="nav-link @(resultTab == "breakdown" ? "active" : "")" 
+                                                    @onclick="ShowBreakdown" 
+                                                    type="button">
+                                                Breakdown
+                                            </button>
+                                        </li>
+                                    </ul>
+
+                                    @if (resultTab == "weapons" && result.WeaponStats.Any())
+                                    {
+                                        <div class="table-responsive">
+                                            <table class="table table-sm table-hover">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Weapon</th>
+                                                        <th class="text-end">Hits</th>
+                                                        <th class="text-end">Wounds</th>
+                                                        <th class="text-end">Damage</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    @foreach (var stat in result.WeaponStats.Values.OrderByDescending(s => s.AverageDamage))
+                                                    {
+                                                        <tr>
+                                                            <td>@stat.WeaponName</td>
+                                                            <td class="text-end">@stat.AverageHits.ToString("F2")</td>
+                                                            <td class="text-end">@stat.AverageWounds.ToString("F2")</td>
+                                                            <td class="text-end"><strong>@stat.AverageDamage.ToString("F2")</strong></td>
+                                                        </tr>
+                                                    }
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    }
+
+                                    @if (resultTab == "units" && result.UnitStats.Any())
+                                    {
+                                        <div class="table-responsive">
+                                            <table class="table table-sm table-hover">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Unit</th>
+                                                        <th class="text-end">Damage Dealt</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    @foreach (var stat in result.UnitStats.Values.OrderByDescending(s => s.AverageDamageDealt))
+                                                    {
+                                                        <tr>
+                                                            <td>@stat.UnitName</td>
+                                                            <td class="text-end"><strong>@stat.AverageDamageDealt.ToString("F2")</strong></td>
+                                                        </tr>
+                                                    }
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    }
+
+                                    @if (resultTab == "breakdown")
+                                    {
+                                        <div class="table-responsive">
+                                            <table class="table table-sm">
+                                                <tbody>
+                                                    @foreach (var stage in result.StageBreakdown)
+                                                    {
+                                                        <tr>
+                                                            <td>@stage.Key</td>
+                                                            <td class="text-end">@stage.Value.ToString("F2")</td>
+                                                        </tr>
+                                                    }
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    }
+
+                                    <small class="text-muted d-block mt-3">Based on @result.SimulationCount simulations</small>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div class="col-12">
+                        <div class="alert alert-info">
+                            <i class="fa fa-info-circle me-2"></i>
+                            Add attacking units with weapons and defending units to calculate.
+                        </div>
+                    </div>
+                }
+
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<!-- Modals -->
+@if (!string.IsNullOrEmpty(selectingFor))
+{
+    <UnitSelectorModal OnSelect="HandleUnitSelected" OnClose="CloseSelector" />
+}
+
+@if (editingWeapon != null && editingUnit != null && editingModel != null)
+{
+    <WeaponModifiersModal 
+        Weapon="editingWeapon" 
+        Unit="editingUnit" 
+        Model="editingModel"
+        OnSave="SaveWeaponModifiers"
+        OnClose="CloseWeaponModifiers" />
+}
+
+@if (editingUnitModifiers != null)
+{
+    <UnitModifiersModal 
+        Unit="editingUnitModifiers"
+        OnSave="SaveUnitModifiers"
+        OnClose="CloseUnitModifiers" />
+}
+
+@if (editingModelModifiers != null && editingUnit != null)
+{
+    <ModelModifiersModal 
+        Model="editingModelModifiers"
+        Unit="editingUnit"
+        OnSave="SaveModelModifiers"
+        OnClose="CloseModelModifiers" />
+}
+
+@if (editingGlobalAttackerModifiers)
+{
+    <GlobalModifiersModal 
+        Modifiers="context.AttackerGlobalModifiers"
+        Title="Global Attacker Modifiers"
+        OnSave="SaveGlobalAttackerModifiers"
+        OnClose="CloseGlobalAttackerModifiers" />
+}
+
+@if (editingGlobalDefenderModifiers)
+{
+    <GlobalModifiersModal 
+        Modifiers="context.DefenderGlobalModifiers"
+        Title="Global Defender Modifiers"
+        OnSave="SaveGlobalDefenderModifiers"
+        OnClose="CloseGlobalDefenderModifiers" />
+}
+
+@code {
+    private VersusContextV2 context = new();
+    private VersusResultV2? result;
+    private string selectingFor = string.Empty;
+    private int simulationCount = 10000;
+    private bool calculating = false;
+
+    private string activeTab = "attackers";
+    private string resultTab = "weapons";
+
+    private FiringOrderType firingOrderType = FiringOrderType.ByUnit;
+    private WoundAllocationMethod woundAllocationMethod = WoundAllocationMethod.EvenDistribution;
+
+    private CombatWeapon? editingWeapon;
+    private CombatUnit? editingUnit;
+    private CombatModel? editingModel;
+    private CombatUnit? editingUnitModifiers;
+    private CombatModel? editingModelModifiers;
+    private bool editingGlobalAttackerModifiers = false;
+    private bool editingGlobalDefenderModifiers = false;
+
+    protected override void OnInitialized()
+    {
+        context = VersusService.GetContext();
+        VersusService.OnContextChanged += OnContextChanged;
+    }
+
+    private void OnContextChanged()
+    {
+        context = VersusService.GetContext();
+        result = null;
+        StateHasChanged();
+    }
+
+    private async Task LoadUnitDatasheet(CombatUnit unit)
+    {
+        var datasheet = await DataService.GetDatasheetDetailAsync(unit.DatasheetId);
+        unit.Datasheet = datasheet;
+        StateHasChanged();
+    }
+
+    private async Task Calculate()
+    {
+        calculating = true;
+        StateHasChanged();
+
+        await Task.Delay(1);
+
+        result = VersusCalculatorV2.Calculate(context, simulationCount);
+
+        calculating = false;
+        resultTab = "weapons";
+        StateHasChanged();
+    }
+
+    private void UpdateFiringOrder()
+    {
+        VersusService.UpdateFiringOrder(new FiringOrderConfig
+        {
+            OrderType = firingOrderType,
+            AllocationMethod = woundAllocationMethod
+        });
+    }
+
+    private void ClearAll()
+    {
+        VersusService.ClearAll();
+        result = null;
+    }
+
+    // Tab navigation methods
+    private void ShowAttackers() => activeTab = "attackers";
+    private void ShowDefenders() => activeTab = "defenders";
+    private void ShowConfig() => activeTab = "config";
+    private void ShowWeaponResults() => resultTab = "weapons";
+    private void ShowUnitResults() => resultTab = "units";
+    private void ShowBreakdown() => resultTab = "breakdown";
+
+    // Dialog opening methods
+    private void AddAttacker() => selectingFor = "attacker";
+    private void AddDefender() => selectingFor = "defender";
+    private void OpenGlobalAttackerMods() => editingGlobalAttackerModifiers = true;
+    private void OpenGlobalDefenderMods() => editingGlobalDefenderModifiers = true;
+
+    private void EditUnitMods(CombatUnit unit) => editingUnitModifiers = unit;
+
+    private void EditModelMods(CombatUnit unit, CombatModel model)
+    {
+        editingUnit = unit;
+        editingModelModifiers = model;
+    }
+
+    private void EditWeaponMods(CombatUnit unit, CombatModel model, CombatWeapon weapon)
+    {
+        editingUnit = unit;
+        editingModel = model;
+        editingWeapon = weapon;
+    }
+
+    private async Task HandleUnitSelected((int datasheetId, string datasheetName) unit)
+    {
+        if (selectingFor == "attacker")
+        {
+            var addedUnit = VersusService.AddAttackingUnit(unit.datasheetId, unit.datasheetName);
+            await AutoSetupUnit(addedUnit);
+        }
+        else if (selectingFor == "defender")
+        {
+            var addedUnit = VersusService.AddDefendingUnit(unit.datasheetId, unit.datasheetName);
+            await AutoSetupUnit(addedUnit);
+        }
+
+        selectingFor = string.Empty;
+    }
+
+    private async Task AddAttackerFromBookmark(Bookmark bookmark)
+    {
+        if (int.TryParse(bookmark.EntityId, out var id))
+        {
+            var unit = VersusService.AddAttackingUnit(id, bookmark.Name);
+            await AutoSetupUnit(unit);
+        }
+    }
+
+    private async Task AddDefenderFromBookmark(Bookmark bookmark)
+    {
+        if (int.TryParse(bookmark.EntityId, out var id))
+        {
+            var unit = VersusService.AddDefendingUnit(id, bookmark.Name);
+            await AutoSetupUnit(unit);
+        }
+    }
+
+    private async Task AutoSetupUnit(CombatUnit unit)
+    {
+        // Load datasheet
+        await LoadUnitDatasheet(unit);
+
+        if (unit.Datasheet == null) return;
+
+        // Add default models (1 of each type)
+        foreach (var modelProfile in unit.Datasheet.Models)
+        {
+            VersusService.AddModelToUnit(unit.Id, modelProfile, 1);
+        }
+
+        // Auto-equip with weapons (attackers only)
+        var isAttacker = context.AttackingUnits.Contains(unit);
+        if (isAttacker && unit.Datasheet.Wargear.Any())
+        {
+            var defaultWeapon = unit.Datasheet.Wargear.First();
+            foreach (var model in unit.Models)
+            {
+                VersusService.AddWeaponToModel(unit.Id, model.Id, defaultWeapon);
+            }
+        }
+    }
+
+    private void ViewDatasheet(int datasheetId)
+    {
+        Navigation.NavigateTo($"/datasheet/{datasheetId}");
+    }
+
+    private List<string> GetActiveModifiers(CombatUnit unit)
+    {
+        var modifiers = new List<string>();
+        var m = unit.UnitModifiers;
+
+        if (m.HitModifier != 0) modifiers.Add($"Hit {(m.HitModifier > 0 ? "+" : "")}{m.HitModifier}");
+        if (m.WoundModifier != 0) modifiers.Add($"Wound {(m.WoundModifier > 0 ? "+" : "")}{m.WoundModifier}");
+        if (m.SaveModifier != 0) modifiers.Add($"Save {(m.SaveModifier > 0 ? "+" : "")}{m.SaveModifier}");
+        if (m.RerollHits) modifiers.Add("Reroll Hits");
+        if (m.RerollOnes) modifiers.Add("Reroll 1s");
+        if (m.RerollWounds) modifiers.Add("Reroll Wounds");
+        if (m.FeelNoPain) modifiers.Add($"FNP {m.FeelNoPainValue}+");
+        if (m.Cover) modifiers.Add("Cover");
+        if (m.DamageReduction > 0) modifiers.Add($"-{m.DamageReduction} Dmg");
+        if (m.HalveDamage) modifiers.Add("½ Dmg");
+        if (m.InvulnerableSaveModifier != 0) modifiers.Add($"Inv {(m.InvulnerableSaveModifier > 0 ? "+" : "")}{m.InvulnerableSaveModifier}");
+        if (m.ToughnessModifier != 0) modifiers.Add($"T {(m.ToughnessModifier > 0 ? "+" : "")}{m.ToughnessModifier}");
+
+        return modifiers;
+    }
+
+    private List<string> GetWeaponModifierBadges(CombatWeapon weapon)
+    {
+        var modifiers = new List<string>();
+        var m = weapon.WeaponModifiers;
+
+        if (m.HitModifier != 0) modifiers.Add($"Hit {(m.HitModifier > 0 ? "+" : "")}{m.HitModifier}");
+        if (m.WoundModifier != 0) modifiers.Add($"Wound {(m.WoundModifier > 0 ? "+" : "")}{m.WoundModifier}");
+        if (m.APModifier != 0) modifiers.Add($"AP {(m.APModifier > 0 ? "+" : "")}{m.APModifier}");
+        if (m.DamageModifier != 0) modifiers.Add($"Dmg {(m.DamageModifier > 0 ? "+" : "")}{m.DamageModifier}");
+        if (m.ExtraAttacks > 0) modifiers.Add($"+{m.ExtraAttacks}A");
+        if (m.RerollHits) modifiers.Add("Reroll Hits");
+        if (m.RerollOnes) modifiers.Add("Reroll 1s");
+        if (m.RerollWounds) modifiers.Add("Reroll Wounds");
+        if (m.SustainedHits > 0) modifiers.Add($"Sustained {m.SustainedHits}");
+        if (m.LethalHits > 0) modifiers.Add("Lethal Hits");
+        if (m.DevastatingWounds > 0) modifiers.Add("Dev Wounds");
+        if (m.TwinLinked) modifiers.Add("Twin-Linked");
+        if (m.Torrent) modifiers.Add("Torrent");
+        if (m.IgnoreInvulnerable) modifiers.Add("Ignore Inv");
+        if (m.IgnoreCover) modifiers.Add("Ignore Cover");
+
+        return modifiers;
+    }
+
+    private List<string> GetGlobalModifiers(GlobalModifiers mods, bool isAttacker)
+    {
+        var modifiers = new List<string>();
+
+        if (mods.HitModifier != 0) modifiers.Add($"Hit {(mods.HitModifier > 0 ? "+" : "")}{mods.HitModifier}");
+        if (mods.WoundModifier != 0) modifiers.Add($"Wound {(mods.WoundModifier > 0 ? "+" : "")}{mods.WoundModifier}");
+        if (mods.SaveModifier != 0) modifiers.Add($"Save {(mods.SaveModifier > 0 ? "+" : "")}{mods.SaveModifier}");
+        if (mods.Cover) modifiers.Add("Cover");
+        if (mods.IgnoreCover) modifiers.Add("Ignore Cover");
+
+        return modifiers;
+    }
+
+    private void CloseSelector() => selectingFor = string.Empty;
+
+    private void SaveWeaponModifiers(WeaponModifiers modifiers)
+    {
+        if (editingWeapon != null && editingUnit != null && editingModel != null)
+        {
+            VersusService.UpdateWeaponModifiers(editingUnit.Id, editingModel.Id, editingWeapon.Id, modifiers);
+        }
+        CloseWeaponModifiers();
+    }
+
+    private void CloseWeaponModifiers()
+    {
+        editingWeapon = null;
+        editingUnit = null;
+        editingModel = null;
+    }
+
+    private void SaveUnitModifiers(UnitModifiers modifiers)
+    {
+        if (editingUnitModifiers != null)
+        {
+            VersusService.UpdateUnitModifiers(editingUnitModifiers.Id, modifiers);
+        }
+        CloseUnitModifiers();
+    }
+
+    private void CloseUnitModifiers() => editingUnitModifiers = null;
+
+    private void SaveModelModifiers(ModelModifiers modifiers)
+    {
+        if (editingModelModifiers != null && editingUnit != null)
+        {
+            VersusService.UpdateModelModifiers(editingUnit.Id, editingModelModifiers.Id, modifiers);
+        }
+        CloseModelModifiers();
+    }
+
+    private void CloseModelModifiers()
+    {
+        editingModelModifiers = null;
+        editingUnit = null;
+    }
+
+    private void SaveGlobalAttackerModifiers(GlobalModifiers modifiers)
+    {
+        VersusService.UpdateGlobalAttackerModifiers(modifiers);
+        CloseGlobalAttackerModifiers();
+    }
+
+    private void CloseGlobalAttackerModifiers() => editingGlobalAttackerModifiers = false;
+
+    private void SaveGlobalDefenderModifiers(GlobalModifiers modifiers)
+    {
+        VersusService.UpdateGlobalDefenderModifiers(modifiers);
+        CloseGlobalDefenderModifiers();
+    }
+
+    private void CloseGlobalDefenderModifiers() => editingGlobalDefenderModifiers = false;
+
+    // Helper methods
+    private Dictionary<string, int> modelCounters = new();
+
+    private void AddMultipleModels(CombatUnit unit, DatasheetModel modelProfile)
+    {
+        var key = unit.Id + modelProfile.Line;
+        if (modelCounters.TryGetValue(key, out var count) && count > 0)
+        {
+            VersusService.AddModelToUnit(unit.Id, modelProfile, count);
+            modelCounters[key] = 1; // Reset to 1
+        }
+    }
+
+    private void AutoEquipWeapons(CombatUnit unit)
+    {
+        if (unit.Datasheet == null || !unit.Datasheet.Wargear.Any()) return;
+
+        var defaultWeapon = unit.Datasheet.Wargear.First();
+        foreach (var model in unit.Models)
+        {
+            if (!model.Weapons.Any())
+            {
+                VersusService.AddWeaponToModel(unit.Id, model.Id, defaultWeapon);
+            }
+        }
+    }
+
+    private void SelectAllWeapons(CombatUnit unit, bool selected)
+    {
+        foreach (var model in unit.Models)
+        {
+            foreach (var weapon in model.Weapons)
+            {
+                if (weapon.IsSelected != selected)
+                {
+                    VersusService.ToggleWeaponSelection(unit.Id, model.Id, weapon.Id);
+                }
+            }
+        }
+    }
+
+    public void Dispose()
+    {
+        VersusService.OnContextChanged -= OnContextChanged;
+    }
+}

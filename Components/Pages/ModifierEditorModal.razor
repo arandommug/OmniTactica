@@ -1,0 +1,379 @@
+@using OmniTactica.AppCode.Models.Core
+@using Microsoft.JSInterop
+
+@inject IJSRuntime JS
+
+<div class="modal fade" id="modifierEditorModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fa fa-magic"></i> @(editingModifier == null ? "Add Modifier" : "Edit Modifier")
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Preset Modifiers -->
+                @if (editingModifier == null)
+                {
+                    <div class="mb-3">
+                        <label class="form-label"><strong>Common Modifiers (Quick Add)</strong></label>
+                        <div class="d-grid gap-2">
+                            @foreach (var preset in GetPresetModifiers())
+                            {
+                                <button class="btn btn-outline-primary text-start" @onclick="() => ApplyPreset(preset)">
+                                    <strong>@preset.Name</strong>
+                                    <div class="small text-muted">@GetModifierDescription(preset)</div>
+                                </button>
+                            }
+                        </div>
+                    </div>
+
+                    <hr />
+
+                    <h6 class="text-primary">Or Create Custom Modifier</h6>
+                }
+
+                <!-- Custom Modifier Builder -->
+                <div class="mb-3">
+                    <label class="form-label">Modifier Name</label>
+                    <input type="text" class="form-control" @bind="modifierName" placeholder="e.g., Doctrine Bonus" />
+                </div>
+
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">When (Condition)</label>
+                        <select class="form-select" @bind="conditionType">
+                            <option value="@ConditionType.Always">Always Active</option>
+                            <option value="@ConditionType.UnitCharged">Unit Charged This Turn</option>
+                            <option value="@ConditionType.TargetWithinHalfRange">Target Within Half Range</option>
+                            <option value="@ConditionType.TargetWithinEngagementRange">Within Engagement Range</option>
+                            <option value="@ConditionType.UnitRemainedStationary">Unit Remained Stationary</option>
+                            <option value="@ConditionType.TargetIsInfantry">Target is Infantry</option>
+                            <option value="@ConditionType.TargetIsVehicle">Target is Vehicle</option>
+                            <option value="@ConditionType.TargetIsMonster">Target is Monster</option>
+                            <option value="@ConditionType.TargetIsCharacter">Target is Character</option>
+                            <option value="@ConditionType.TargetUnitSize5Plus">Target Unit 5+ Models</option>
+                            <option value="@ConditionType.TargetUnitSize10Plus">Target Unit 10+ Models</option>
+                            <option value="@ConditionType.CriticalHit">On Critical Hit (6)</option>
+                            <option value="@ConditionType.CriticalWound">On Critical Wound (6)</option>
+                        </select>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label class="form-label">Then (Effect)</label>
+                        <select class="form-select" @bind="effectType">
+                            <option value="@EffectType.AddHitModifier">Hit Modifier</option>
+                            <option value="@EffectType.AddWoundModifier">Wound Modifier</option>
+                            <option value="@EffectType.AddSaveModifier">Save Modifier</option>
+                            <option value="@EffectType.AddAPModifier">AP Modifier</option>
+                            <option value="@EffectType.AddDamageModifier">Damage Modifier</option>
+                            <option value="@EffectType.AddAttacks">Add Attacks</option>
+                            <option value="@EffectType.AddExtraHitsOnCrit">Extra Hits (Sustained Hits)</option>
+                            <option value="@EffectType.AutoWoundOnCrit">Auto-Wound (Lethal Hits)</option>
+                            <option value="@EffectType.ConvertToMortalWounds">Mortal Wounds (Dev Wounds)</option>
+                            <option value="@EffectType.RerollHits">Reroll Hit Rolls</option>
+                            <option value="@EffectType.RerollWounds">Reroll Wound Rolls</option>
+                            <option value="@EffectType.RerollOnes">Reroll 1s</option>
+                            <option value="@EffectType.IgnoreInvulnerable">Ignore Invulnerable Saves</option>
+                            <option value="@EffectType.IgnoreCover">Ignore Cover</option>
+                            <option value="@EffectType.HalveDamage">Halve Damage</option>
+                            <option value="@EffectType.ReduceDamage">Reduce Damage</option>
+                            <option value="@EffectType.FeelNoPain">Feel No Pain</option>
+                            <option value="@EffectType.CriticalHitOn">Critical Hit On</option>
+                            <option value="@EffectType.CriticalWoundOn">Critical Wound On</option>
+                        </select>
+                    </div>
+                </div>
+
+                @if (RequiresValue(effectType))
+                {
+                    <div class="mt-3">
+                        <label class="form-label">Value</label>
+                        <input type="number" class="form-control" @bind="effectValue" placeholder="Enter numeric value" />
+                        <div class="form-text">
+                            @GetValueHint(effectType)
+                        </div>
+                    </div>
+                }
+
+                <div class="mt-3">
+                    <div class="alert alert-info small">
+                        <strong>Preview:</strong><br />
+                        When <em>@GetConditionText(conditionType)</em>,<br />
+                        Then <em>@GetEffectText(effectType, effectValue)</em>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" @onclick="SaveModifier" disabled="@(!IsValid())">
+                    <i class="fa fa-check"></i> @(editingModifier == null ? "Add" : "Save")
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public EventCallback<ConditionalModifier> OnModifierAdded { get; set; }
+
+    private ConditionalModifier? editingModifier;
+    private string modifierName = "";
+    private ConditionType conditionType = ConditionType.Always;
+    private EffectType effectType = EffectType.AddHitModifier;
+    private int effectValue = 1;
+
+    public async Task Show(ConditionalModifier? existingModifier = null)
+    {
+        editingModifier = existingModifier;
+
+        if (existingModifier != null)
+        {
+            modifierName = existingModifier.Name;
+            conditionType = existingModifier.Condition.Type;
+            effectType = existingModifier.Effect.Type;
+            effectValue = existingModifier.Effect.IntValue ?? 1;
+        }
+        else
+        {
+            modifierName = "";
+            conditionType = ConditionType.Always;
+            effectType = EffectType.AddHitModifier;
+            effectValue = 1;
+        }
+
+        StateHasChanged();
+        await JS.InvokeVoidAsync("eval", "new bootstrap.Modal(document.getElementById('modifierEditorModal')).show()");
+    }
+
+    private async Task SaveModifier()
+    {
+        var modifier = new ConditionalModifier
+        {
+            Name = string.IsNullOrWhiteSpace(modifierName) ? $"{effectType} Modifier" : modifierName,
+            Condition = new ModifierCondition { Type = conditionType },
+            Effect = new ModifierEffect
+            {
+                Type = effectType,
+                IntValue = RequiresValue(effectType) ? effectValue : null
+            },
+            IsActive = true,
+            IsCustom = true
+        };
+
+        await OnModifierAdded.InvokeAsync(modifier);
+        await JS.InvokeVoidAsync("eval", "bootstrap.Modal.getInstance(document.getElementById('modifierEditorModal')).hide()");
+    }
+
+    private void ApplyPreset(ConditionalModifier preset)
+    {
+        modifierName = preset.Name;
+        conditionType = preset.Condition.Type;
+        effectType = preset.Effect.Type;
+        effectValue = preset.Effect.IntValue ?? 1;
+        StateHasChanged();
+    }
+
+    private List<ConditionalModifier> GetPresetModifiers()
+    {
+        return new List<ConditionalModifier>
+        {
+            new ConditionalModifier
+            {
+                Name = "Reroll All Hits",
+                Condition = new ModifierCondition { Type = ConditionType.Always },
+                Effect = new ModifierEffect { Type = EffectType.RerollHits }
+            },
+            new ConditionalModifier
+            {
+                Name = "Reroll All Wounds",
+                Condition = new ModifierCondition { Type = ConditionType.Always },
+                Effect = new ModifierEffect { Type = EffectType.RerollWounds }
+            },
+            new ConditionalModifier
+            {
+                Name = "Reroll 1s to Hit",
+                Condition = new ModifierCondition { Type = ConditionType.Always },
+                Effect = new ModifierEffect { Type = EffectType.RerollOnes }
+            },
+            new ConditionalModifier
+            {
+                Name = "+1 to Hit",
+                Condition = new ModifierCondition { Type = ConditionType.Always },
+                Effect = new ModifierEffect { Type = EffectType.AddHitModifier, IntValue = 1 }
+            },
+            new ConditionalModifier
+            {
+                Name = "+1 to Wound",
+                Condition = new ModifierCondition { Type = ConditionType.Always },
+                Effect = new ModifierEffect { Type = EffectType.AddWoundModifier, IntValue = 1 }
+            },
+            new ConditionalModifier
+            {
+                Name = "+1 to Save",
+                Condition = new ModifierCondition { Type = ConditionType.Always },
+                Effect = new ModifierEffect { Type = EffectType.AddSaveModifier, IntValue = 1 }
+            },
+            new ConditionalModifier
+            {
+                Name = "Feel No Pain 5+",
+                Condition = new ModifierCondition { Type = ConditionType.Always },
+                Effect = new ModifierEffect { Type = EffectType.FeelNoPain, IntValue = 5 }
+            },
+            new ConditionalModifier
+            {
+                Name = "Feel No Pain 6+",
+                Condition = new ModifierCondition { Type = ConditionType.Always },
+                Effect = new ModifierEffect { Type = EffectType.FeelNoPain, IntValue = 6 }
+            },
+            new ConditionalModifier
+            {
+                Name = "Halve Damage",
+                Condition = new ModifierCondition { Type = ConditionType.Always },
+                Effect = new ModifierEffect { Type = EffectType.HalveDamage }
+            },
+            new ConditionalModifier
+            {
+                Name = "Reduce Damage by 1",
+                Condition = new ModifierCondition { Type = ConditionType.Always },
+                Effect = new ModifierEffect { Type = EffectType.ReduceDamage, IntValue = 1 }
+            },
+            new ConditionalModifier
+            {
+                Name = "Lance (+1 Wound on Charge)",
+                Condition = new ModifierCondition { Type = ConditionType.UnitCharged },
+                Effect = new ModifierEffect { Type = EffectType.AddWoundModifier, IntValue = 1 }
+            },
+            new ConditionalModifier
+            {
+                Name = "Heavy (+1 Hit if Stationary)",
+                Condition = new ModifierCondition { Type = ConditionType.UnitRemainedStationary },
+                Effect = new ModifierEffect { Type = EffectType.AddHitModifier, IntValue = 1 }
+            },
+            new ConditionalModifier
+            {
+                Name = "Ignore Invulnerable Saves",
+                Condition = new ModifierCondition { Type = ConditionType.Always },
+                Effect = new ModifierEffect { Type = EffectType.IgnoreInvulnerable }
+            },
+            new ConditionalModifier
+            {
+                Name = "Ignore Cover",
+                Condition = new ModifierCondition { Type = ConditionType.Always },
+                Effect = new ModifierEffect { Type = EffectType.IgnoreCover }
+            },
+            new ConditionalModifier
+            {
+                Name = "Critical Hit on 5+",
+                Condition = new ModifierCondition { Type = ConditionType.Always },
+                Effect = new ModifierEffect { Type = EffectType.CriticalHitOn, IntValue = 5 }
+            },
+            new ConditionalModifier
+            {
+                Name = "Critical Wound on 5+",
+                Condition = new ModifierCondition { Type = ConditionType.Always },
+                Effect = new ModifierEffect { Type = EffectType.CriticalWoundOn, IntValue = 5 }
+            }
+        };
+    }
+
+    private bool RequiresValue(EffectType type)
+    {
+        return type switch
+        {
+            EffectType.AddHitModifier or
+            EffectType.AddWoundModifier or
+            EffectType.AddSaveModifier or
+            EffectType.AddAPModifier or
+            EffectType.AddDamageModifier or
+            EffectType.AddAttacks or
+            EffectType.AddExtraHitsOnCrit or
+            EffectType.ReduceDamage or
+            EffectType.FeelNoPain or
+            EffectType.CriticalHitOn or
+            EffectType.CriticalWoundOn => true,
+            _ => false
+        };
+    }
+
+    private string GetValueHint(EffectType type)
+    {
+        return type switch
+        {
+            EffectType.AddHitModifier => "+1 for easier hits, -1 for harder hits",
+            EffectType.AddWoundModifier => "+1 for easier wounds, -1 for harder wounds",
+            EffectType.AddSaveModifier => "+1 for better saves, -1 for worse saves",
+            EffectType.AddAPModifier => "Extra AP to add (e.g., 1 for +1 AP)",
+            EffectType.AddDamageModifier => "Extra damage per attack",
+            EffectType.AddAttacks => "Number of extra attacks",
+            EffectType.AddExtraHitsOnCrit => "Extra hits generated on crit (Sustained Hits)",
+            EffectType.ReduceDamage => "Amount to reduce each damage by",
+            EffectType.FeelNoPain => "Roll needed to ignore damage (e.g., 5 for 5+)",
+            EffectType.CriticalHitOn => "Unmodified roll for crit (e.g., 5 for 5+)",
+            EffectType.CriticalWoundOn => "Unmodified roll for crit (e.g., 5 for 5+)",
+            _ => ""
+        };
+    }
+
+    private string GetConditionText(ConditionType type)
+    {
+        return type switch
+        {
+            ConditionType.Always => "always active",
+            ConditionType.UnitCharged => "unit charged this turn",
+            ConditionType.TargetWithinHalfRange => "target within half range",
+            ConditionType.TargetWithinEngagementRange => "within engagement range",
+            ConditionType.UnitRemainedStationary => "unit remained stationary",
+            ConditionType.TargetIsInfantry => "target is Infantry",
+            ConditionType.TargetIsVehicle => "target is Vehicle",
+            ConditionType.TargetIsMonster => "target is Monster",
+            ConditionType.TargetIsCharacter => "target is Character",
+            ConditionType.TargetUnitSize5Plus => "target unit has 5+ models",
+            ConditionType.TargetUnitSize10Plus => "target unit has 10+ models",
+            ConditionType.CriticalHit => "on critical hit (unmodified 6)",
+            ConditionType.CriticalWound => "on critical wound (unmodified 6)",
+            _ => type.ToString()
+        };
+    }
+
+    private string GetEffectText(EffectType type, int value)
+    {
+        return type switch
+        {
+            EffectType.AddHitModifier => $"{(value > 0 ? "+" : "")}{value} to hit rolls",
+            EffectType.AddWoundModifier => $"{(value > 0 ? "+" : "")}{value} to wound rolls",
+            EffectType.AddSaveModifier => $"{(value > 0 ? "+" : "")}{value} to save rolls",
+            EffectType.AddAPModifier => $"+{value} AP",
+            EffectType.AddDamageModifier => $"+{value} damage",
+            EffectType.AddAttacks => $"+{value} attacks",
+            EffectType.AddExtraHitsOnCrit => $"+{value} extra hits on critical hit",
+            EffectType.AutoWoundOnCrit => "automatic wound on critical hit",
+            EffectType.ConvertToMortalWounds => "convert to mortal wounds on critical wound",
+            EffectType.RerollHits => "reroll all hit rolls",
+            EffectType.RerollWounds => "reroll all wound rolls",
+            EffectType.RerollOnes => "reroll 1s",
+            EffectType.IgnoreInvulnerable => "ignore invulnerable saves",
+            EffectType.IgnoreCover => "ignore cover bonus",
+            EffectType.HalveDamage => "halve all damage (minimum 1)",
+            EffectType.ReduceDamage => $"reduce damage by {value}",
+            EffectType.FeelNoPain => $"Feel No Pain {value}+",
+            EffectType.CriticalHitOn => $"critical hit on unmodified {value}+",
+            EffectType.CriticalWoundOn => $"critical wound on unmodified {value}+",
+            _ => type.ToString()
+        };
+    }
+
+    private string GetModifierDescription(ConditionalModifier modifier)
+    {
+        var when = GetConditionText(modifier.Condition.Type);
+        var then = GetEffectText(modifier.Effect.Type, modifier.Effect.IntValue ?? 0);
+        return $"When {when}, then {then}";
+    }
+
+    private bool IsValid()
+    {
+        return true; // Basic validation - could be expanded
+    }
+}

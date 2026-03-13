@@ -1,0 +1,132 @@
+@using OmniTactica.AppCode.Services
+@using OmniTactica.AppCode.Models.Core
+@using Microsoft.JSInterop
+
+@inject WahaDataService DataService
+@inject IJSRuntime JS
+
+<!-- Modal for selecting a unit -->
+<div class="modal fade" id="unitPickerModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fa fa-search"></i> Select Unit
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Faction Filter -->
+                <div class="mb-3">
+                    <label class="form-label">Filter by Faction</label>
+                    <select class="form-select" @bind="selectedFactionId" @bind:after="LoadUnitsForFaction">
+                        <option value="">All Factions</option>
+                        @foreach (var faction in factions)
+                        {
+                            <option value="@faction.Id">@faction.Name</option>
+                        }
+                    </select>
+                </div>
+
+                <!-- Search Box -->
+                <div class="mb-3">
+                    <input type="text" class="form-control" placeholder="Search units..." @bind="searchTerm" @bind:event="oninput" />
+                </div>
+
+                <!-- Unit List -->
+                @if (loading)
+                {
+                    <div class="text-center p-3">
+                        <div class="spinner-border text-primary" role="status"></div>
+                        <div>Loading units...</div>
+                    </div>
+                }
+                else
+                {
+                    <div class="list-group" style="max-height: 400px; overflow-y: auto;">
+                        @foreach (var unit in FilteredUnits)
+                        {
+                            <button type="button" class="list-group-item list-group-item-action" 
+                                    @onclick="() => SelectUnit(unit.Id)">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong>@unit.Name</strong>
+                                        @if (unit.PointsCost.HasValue)
+                                        {
+                                            <span class="badge bg-success ms-2">@unit.PointsCost pts</span>
+                                        }
+                                        @if (!string.IsNullOrEmpty(unit.Role))
+                                        {
+                                            <span class="badge bg-secondary ms-1">@unit.Role</span>
+                                        }
+                                    </div>
+                                    <i class="fa fa-chevron-right text-muted"></i>
+                                </div>
+                            </button>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public EventCallback<int> OnUnitSelected { get; set; }
+
+    private List<Faction> factions = new();
+    private List<Datasheet> units = new();
+    private string selectedFactionId = "";
+    private string searchTerm = "";
+    private bool loading = false;
+
+    private IEnumerable<Datasheet> FilteredUnits
+    {
+        get
+        {
+            var filtered = units.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(searchTerm))
+            {
+                filtered = filtered.Where(u => u.Name.Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
+            }
+
+            return filtered.OrderBy(u => u.Name);
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        factions = await DataService.GetAllFactionsAsync();
+    }
+
+    public async Task Show()
+    {
+        await JS.InvokeVoidAsync("eval", "new bootstrap.Modal(document.getElementById('unitPickerModal')).show()");
+
+        if (!units.Any() && !string.IsNullOrEmpty(selectedFactionId))
+        {
+            await LoadUnitsForFaction();
+        }
+    }
+
+    private async Task LoadUnitsForFaction()
+    {
+        if (string.IsNullOrEmpty(selectedFactionId)) return;
+
+        loading = true;
+        StateHasChanged();
+
+        units = await DataService.GetDatasheetsByFactionAsync(selectedFactionId);
+
+        loading = false;
+        StateHasChanged();
+    }
+
+    private async Task SelectUnit(int datasheetId)
+    {
+        await JS.InvokeVoidAsync("eval", "$('#unitPickerModal').modal('hide')");
+        await OnUnitSelected.InvokeAsync(datasheetId);
+    }
+}

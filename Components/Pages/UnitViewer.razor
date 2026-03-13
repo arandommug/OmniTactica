@@ -144,6 +144,22 @@
                                     }
                                 }
 
+                                <!-- Unit Composition -->
+                                @if (datasheet.UnitComposition.Count > 0)
+                                {
+                                    <div class="p-1 mb-3">
+                                        <h5 class="text-primary">Unit Composition</h5>
+                                        <ul class="list-group">
+                                            @foreach (var composition in datasheet.UnitComposition)
+                                            {
+                                                <li class="list-group-item">
+                                                    <div class="rule-content">@((MarkupString)WahaDataImporter.CleanHtml(composition.Description))</div>
+                                                </li>
+                                            }
+                                        </ul>
+                                    </div>
+                                }
+
                                 <!-- Loadout -->
                                 @if (!string.IsNullOrEmpty(datasheet.Loadout))
                                 {
@@ -158,18 +174,19 @@
                                 {
                                     var ranged = datasheet.Wargear.Where(wep => wep.Type == "Ranged").ToList();
                                     var melee = datasheet.Wargear.Where(wep => wep.Type == "Melee").ToList();
+                                    var expandRanged = ranged.Any();
 
                                     <div class="accordion" id="weaponsAccordion">
                                         @if (ranged.Any())
                                         {
                                             <div class="accordion-item">
                                                 <h2 class="accordion-header">
-                                                    <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#rangedWeapons" aria-expanded="true">
+                                                    <button class="accordion-button @(expandRanged ? "" : "collapsed")" type="button" data-bs-toggle="collapse" data-bs-target="#rangedWeapons" aria-expanded="@expandRanged.ToString().ToLower()">
                                                         Ranged Weapons
                                                         <span class="badge bg-info ms-2">@ranged.Count</span>
                                                     </button>
                                                 </h2>
-                                                <div id="rangedWeapons" class="accordion-collapse collapse show" data-bs-parent="#weaponsAccordion">
+                                                <div id="rangedWeapons" class="accordion-collapse collapse @(expandRanged ? "show" : "")" data-bs-parent="#weaponsAccordion">
                                                     <div class="accordion-body p-2">
                                                         @foreach (var weapon in ranged)
                                                         {
@@ -220,12 +237,12 @@
                                         {
                                             <div class="accordion-item">
                                                 <h2 class="accordion-header">
-                                                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#meleeWeapons" aria-expanded="false">
+                                                    <button class="accordion-button @(expandRanged ? "collapsed" : "")" type="button" data-bs-toggle="collapse" data-bs-target="#meleeWeapons" aria-expanded="@(!expandRanged).ToString().ToLower()">
                                                         Melee Weapons
                                                         <span class="badge bg-info ms-2">@melee.Count</span>
                                                     </button>
                                                 </h2>
-                                                <div id="meleeWeapons" class="accordion-collapse collapse" data-bs-parent="#weaponsAccordion">
+                                                <div id="meleeWeapons" class="accordion-collapse collapse @(expandRanged ? "" : "show")" data-bs-parent="#weaponsAccordion">
                                                     <div class="accordion-body p-2">
                                                         @foreach (var weapon in melee)
                                                         {
@@ -286,7 +303,7 @@
                                                 <h2 class="accordion-header">
                                                     <button class="accordion-button @("Datasheet|Wargear|Primarch|Fortification (левая колонка)".Contains(ability.Type) ? "" : "collapsed")" type="button" data-bs-toggle="collapse" data-bs-target="#ability-@(ability.Line)" aria-expanded="false">
                                                         @ability.Name
-                                                        @if (!string.IsNullOrEmpty(ability.Type) && ability.Type != "Fortification (левая колонка)")
+                                                        @if (!string.IsNullOrEmpty(ability.Type) && ability.Type != "Fortification (левая колонка)" && ability.Type != "Special (правая колонка)")
                                                         {
                                                             <span class="badge bg-secondary ms-2">@ability.Type</span>
                                                         }

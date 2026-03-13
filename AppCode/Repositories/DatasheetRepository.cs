@@ -166,6 +166,7 @@ namespace OmniTactica.AppCode.Repositories
                 LoadAbilitiesAsync(datasheet),
                 LoadOptionsAsync(datasheet),
                 LoadCostsAsync(datasheet),
+                LoadUnitCompositionAsync(datasheet),
                 LoadLeaderRelationshipsAsync(datasheet),
                 LoadDetachmentAbilitiesAsync(datasheet, detachmentId),
                 LoadEnhancementsAsync(datasheet, detachmentId),
@@ -282,6 +283,21 @@ namespace OmniTactica.AppCode.Repositories
                 Line = I(r, "line") ?? 0,
                 Description = S(r, "description"),
                 Cost = I(r, "cost") ?? 0
+            }, ("@id", datasheet.Id));
+        }
+
+        private async Task LoadUnitCompositionAsync(DatasheetDetail datasheet)
+        {
+            const string sql = @"
+                SELECT line, description
+                FROM Datasheets_unit_composition
+                WHERE datasheet_id = @id
+                ORDER BY line";
+
+            datasheet.UnitComposition = await QueryListAsync(sql, r => new DatasheetUnitComposition
+            {
+                Line = I(r, "line") ?? 0,
+                Description = S(r, "description")
             }, ("@id", datasheet.Id));
         }
 

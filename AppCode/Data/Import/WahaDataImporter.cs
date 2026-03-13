@@ -29,6 +29,7 @@ namespace OmniTactica.AppCode.Data.Import
             "Datasheets_models.csv",
             "Datasheets_models_cost.csv",
             "Datasheets_leader.csv",
+            "Datasheets_unit_composition.csv",
             "Source.csv",
             "Factions.csv"
         };
@@ -136,6 +137,7 @@ namespace OmniTactica.AppCode.Data.Import
                 { "Datasheets_models_cost", "CREATE TABLE IF NOT EXISTS \"Datasheets_models_cost\" ( \"datasheet_id\" INTEGER, \"line\" INTEGER, \"description\" TEXT, \"cost\" INTEGER, PRIMARY KEY(\"line\",\"datasheet_id\") )" },
                 { "Datasheets_options", "CREATE TABLE IF NOT EXISTS \"Datasheets_options\" ( \"datasheet_id\" INTEGER, \"line\" INTEGER, \"button\" TEXT, \"description\" TEXT, PRIMARY KEY(\"line\",\"datasheet_id\") )" },
                 { "Datasheets_stratagems", "CREATE TABLE IF NOT EXISTS \"Datasheets_stratagems\" ( \"datasheet_id\" INTEGER, \"stratagem_id\" INTEGER, PRIMARY KEY(\"stratagem_id\",\"datasheet_id\") )" },
+                { "Datasheets_unit_composition", "CREATE TABLE IF NOT EXISTS \"Datasheets_unit_composition\" ( \"datasheet_id\" INTEGER, \"line\" INTEGER, \"description\" TEXT, PRIMARY KEY(\"datasheet_id\",\"line\") )" },
                 { "Datasheets_wargear", "CREATE TABLE IF NOT EXISTS \"Datasheets_wargear\" ( \"datasheet_id\" INTEGER, \"line\" INTEGER, \"line_in_wargear\" INTEGER, \"dice\" TEXT, \"name\" TEXT, \"description\" TEXT, \"range\" TEXT, \"type\" TEXT, \"A\" TEXT, \"BS_WS\" TEXT, \"S\" TEXT, \"AP\" TEXT, \"D\" TEXT )" },
                 { "Detachment_abilities", "CREATE TABLE IF NOT EXISTS \"Detachment_abilities\" ( \"id\" INTEGER, \"faction_id\" TEXT, \"name\" TEXT, \"legend\" TEXT, \"description\" TEXT, \"detachment\" TEXT, \"detachment_id\" INTEGER, PRIMARY KEY(\"id\",\"faction_id\",\"detachment_id\") )" },
                 { "Detachments", "CREATE TABLE IF NOT EXISTS \"Detachments\" ( \"id\" INTEGER, \"faction_id\" TEXT, \"name\" TEXT, \"legend\" TEXT, \"type\" TEXT, PRIMARY KEY(\"id\",\"faction_id\") )" },

@@ -1,315 +1,687 @@
 using OmniTactica.AppCode.Models.Core;
-using OmniTactica.AppCode.Utilities;
+using System.Text.RegularExpressions;
 
 namespace OmniTactica.AppCode.Services
 {
     /// <summary>
-    /// Result of a versus calculation showing Monte Carlo simulation outcomes.
-    /// </summary>
-    public class VersusResult
-    {
-        public double AverageHits { get; set; }
-        public double AverageWounds { get; set; }
-        public double AverageDamage { get; set; }
-        public double AverageModelsKilled { get; set; }
-        public double MedianDamage { get; set; }
-        public double KillProbability { get; set; }
-        public int SimulationCount { get; set; }
-        
-        public Dictionary<int, double> DamageDistribution { get; set; } = new();
-        public Dictionary<string, double> StageBreakdown { get; set; } = new();
-    }
-
-    /// <summary>
-    /// Monte Carlo simulation engine for calculating versus combat probabilities.
-    /// Implements proper 10th edition attack resolution pipeline.
+    /// Monte Carlo combat calculator with comprehensive logging and statistics.
     /// </summary>
     public static class VersusCalculator
     {
         private static readonly Random _random = new Random();
-        private const int DEFAULT_SIMULATIONS = 100000;
 
-        // TODO: Next improvements - make buttons fully clickable, support multiple weapons selected, add buffs/debuffs for weapons and defender
-
-        public static VersusResult Calculate(VersusContext context, int simulations = DEFAULT_SIMULATIONS)
+        public static VersusResult Calculate(VersusContext context)
         {
-            if (context.Attacker?.SelectedWeapon == null || context.Defender?.SelectedModel == null)
-                return new VersusResult { SimulationCount = simulations };
+            var settings = context.SimulationSettings;
+            var simulations = new List<SimulationRun>();
 
-            var results = new List<SimulationRun>();
-
-            for (int i = 0; i < simulations; i++)
+            for (int i = 0; i < settings.Iterations; i++)
             {
-                results.Add(RunSimulation(context));
+                var run = RunSimulation(context, i == 0 && settings.EnableDetailedLogging);
+                simulations.Add(run);
             }
 
-            return AggregateResults(results, context, simulations);
+            return AggregateResults(simulations, context);
         }
 
-        private static SimulationRun RunSimulation(VersusContext context)
+        private static SimulationRun RunSimulation(VersusContext context, bool enableLogging)
         {
-            var attacker = context.Attacker!;
-            var defender = context.Defender!;
-            var weapon = attacker.SelectedWeapon!;
-            var model = defender.SelectedModel!;
+            var run = new SimulationRun { Log = enableLogging ? new List<CombatLogEntry>() : null };
+            var step = 0;
 
-            var run = new SimulationRun();
+            // Clone defenders for this simulation
+            var defenders = CloneUnits(context.DefendingUnits);
 
-            // Step 1-3: Determine attacks
-            run.Attacks = DetermineAttacks(weapon, attacker);
+            // Process each attacking unit
+            foreach (var attacker in context.AttackingUnits)
+            {
+                foreach (var model in attacker.Models)
+                {
+                    // Process each model instance
+                    for (int modelInstance = 0; modelInstance < model.Quantity; modelInstance++)
+                    {
+                        foreach (var weapon in model.Weapons.Where(w => w.IsSelected))
+                        {
+                            if (!defenders.Any(u => u.Models.Any(m => !m.IsDestroyed)))
+                                break;
 
-            // Step 4-9: Resolve hits and auto-wounds
-            var hitResult = ResolveHits(run.Attacks, weapon, attacker);
-            run.Hits = hitResult.Hits;
-            run.AutoWounds = hitResult.AutoWounds;
+                            var weaponResult = ResolveWeaponAttack(
+                                attacker, model, weapon,
+                                defenders,
+                                context,
+                                run, ref step);
 
-            // Step 10-13: Resolve wounds
-            run.Wounds = ResolveWounds(hitResult.Hits - hitResult.AutoWounds, weapon, model, attacker) + hitResult.AutoWounds;
+                            run.TotalDamage += weaponResult.Damage;
+                        }
+                    }
+                }
+            }
 
-            // Step 14-18: Resolve saves and damage
-            var damageResult = ResolveSavesAndDamage(run.Wounds, weapon, model, attacker, defender);
-            run.MortalWounds = damageResult.MortalWounds;
-            run.NormalDamage = damageResult.NormalDamage;
+            // Count casualties
+            foreach (var defender in defenders)
+            {
+                run.ModelsKilled += defender.Models.Count(m => m.IsDestroyed);
+            }
 
-            // Step 19-22: Apply FNP and calculate total damage
-            run.TotalDamage = ApplyFeelNoPain(damageResult.MortalWounds + damageResult.NormalDamage, defender);
-
-            // Step 23: Calculate models killed
-            var woundsPerModel = ParseValue(model.W);
-            run.ModelsKilled = woundsPerModel > 0 ? run.TotalDamage / (double)woundsPerModel : 0;
+            run.AllDefendersDestroyed = defenders.All(u => u.Models.All(m => m.IsDestroyed));
 
             return run;
         }
 
-        private static int DetermineAttacks(DatasheetWargear weapon, AttackerContext attacker)
+        private static WeaponAttackResult ResolveWeaponAttack(
+            CombatUnit attackerUnit,
+            CombatModel attackerModel,
+            CombatWeapon weapon,
+            List<CombatUnit> defenders,
+            VersusContext context,
+            SimulationRun run,
+            ref int step)
         {
-            var baseAttacks = ParseValue(weapon.A);
-            var totalAttacks = baseAttacks * attacker.ModelsWithWeapon;
-            totalAttacks += attacker.Modifiers.ExtraAttacks + attacker.Modifiers.ExtraShots;
+            var result = new WeaponAttackResult
+            {
+                WeaponId = weapon.Id,
+                WeaponName = weapon.Name
+            };
 
-            // TODO: Apply Rapid Fire, Blast based on conditions
-            // For now, return base attacks
-            return Math.Max(1, totalAttacks);
+            // Step 1: Determine number of attacks
+            result.Attacks = DetermineAttacks(weapon, attackerUnit, attackerModel, defenders, context, run, ref step);
+            run.Stages.TotalAttacks += result.Attacks;
+
+            // Step 2: Resolve hit rolls
+            var hitResult = ResolveHitRolls(weapon, attackerUnit, attackerModel, result.Attacks, context, run, ref step);
+            result.Hits = hitResult.Hits;
+            result.CriticalHits = hitResult.CriticalHits;
+            result.AutoWounds = hitResult.AutoWounds;
+            run.Stages.TotalHits += result.Hits;
+            run.Stages.CriticalHits += result.CriticalHits;
+
+            // Step 3: Resolve wound rolls
+            var woundResult = ResolveWoundRolls(weapon, attackerUnit, attackerModel, hitResult, defenders, context, run, ref step);
+            result.Wounds = woundResult.Wounds;
+            result.CriticalWounds = woundResult.CriticalWounds;
+            result.MortalWounds = woundResult.MortalWounds;
+            run.Stages.TotalWounds += result.Wounds;
+            run.Stages.CriticalWounds += result.CriticalWounds;
+            run.Stages.MortalWounds += result.MortalWounds;
+
+            // Step 4: Allocate and resolve saves
+            var damageResult = AllocateWounds(weapon, attackerUnit, woundResult, defenders, context, run, ref step);
+            result.Damage = damageResult.TotalDamage;
+            result.UnsavedWounds = damageResult.UnsavedWounds;
+            run.Stages.FailedSaves += damageResult.FailedSaves;
+            run.Stages.SuccessfulSaves += damageResult.SuccessfulSaves;
+            run.Stages.InvulnerableSaves += damageResult.InvulnerableSaves;
+            run.Stages.FeelNoPainSaves += damageResult.FeelNoPainSaves;
+            run.Stages.TotalDamageDealt += result.Damage;
+            run.Stages.TotalDamagePrevented += damageResult.DamagePrevented;
+
+            return result;
         }
 
-        private static HitResult ResolveHits(int attacks, DatasheetWargear weapon, AttackerContext attacker)
+        private static int DetermineAttacks(
+            CombatWeapon weapon,
+            CombatUnit attackerUnit,
+            CombatModel attackerModel,
+            List<CombatUnit> defenders,
+            VersusContext context,
+            SimulationRun run,
+            ref int step)
         {
-            var result = new HitResult();
-            var bs_ws = ParseValue(weapon.BsWs);
-            if (bs_ws == 0) return result;
+            var attacks = ParseDiceValue(weapon.A);
 
-            var hitModifier = attacker.Modifiers.HitModifier;
-            var targetRoll = Math.Clamp(bs_ws - hitModifier, 2, 6);
+            // Apply Rapid Fire
+            if (weapon.Abilities.RapidFire.HasValue && context.SimulationSettings.RangeToTarget.HasValue)
+            {
+                var weaponRange = ParseRangeValue(weapon.Range);
+                if (context.SimulationSettings.RangeToTarget.Value <= weaponRange / 2)
+                {
+                    attacks += weapon.Abilities.RapidFire.Value;
+                    Log(run, step++, "Attacks", attackerUnit.DatasheetName, attackerModel.Name, weapon.Name, "", "",
+                        $"Rapid Fire: Added {weapon.Abilities.RapidFire.Value} attacks (within half range)",
+                        new Dictionary<string, object> { ["attacks"] = attacks });
+                }
+            }
+
+            // Apply Blast
+            if (weapon.Abilities.Blast)
+            {
+                var totalDefenders = defenders.Sum(u => u.Models.Sum(m => m.Quantity));
+                if (totalDefenders >= 10)
+                {
+                    attacks += 2;
+                    Log(run, step++, "Attacks", attackerUnit.DatasheetName, attackerModel.Name, weapon.Name, "", "",
+                        $"Blast: Added 2 attacks (10+ models)",
+                        new Dictionary<string, object> { ["attacks"] = attacks });
+                }
+                else if (totalDefenders >= 5)
+                {
+                    attacks++;
+                    Log(run, step++, "Attacks", attackerUnit.DatasheetName, attackerModel.Name, weapon.Name, "", "",
+                        $"Blast: Added 1 attack (5+ models)",
+                        new Dictionary<string, object> { ["attacks"] = attacks });
+                }
+            }
+
+            // Apply modifiers from conditional modifiers
+            foreach (var modifier in weapon.Modifiers.Where(m => m.IsActive))
+            {
+                if (EvaluateCondition(modifier.Condition, context, attackerUnit, weapon, defenders) &&
+                    modifier.Effect.Type == EffectType.AddAttacks && modifier.Effect.IntValue.HasValue)
+                {
+                    attacks += modifier.Effect.IntValue.Value;
+                    Log(run, step++, "Attacks", attackerUnit.DatasheetName, attackerModel.Name, weapon.Name, "", "",
+                        $"{modifier.Name}: Added {modifier.Effect.IntValue.Value} attacks",
+                        new Dictionary<string, object> { ["attacks"] = attacks });
+                }
+            }
+
+            Log(run, step++, "Attacks", attackerUnit.DatasheetName, attackerModel.Name, weapon.Name, "", "",
+                $"Total attacks: {attacks}",
+                new Dictionary<string, object> { ["attacks"] = attacks });
+
+            return Math.Max(1, attacks);
+        }
+
+        private static HitRollResult ResolveHitRolls(
+            CombatWeapon weapon,
+            CombatUnit attackerUnit,
+            CombatModel attackerModel,
+            int attacks,
+            VersusContext context,
+            SimulationRun run,
+            ref int step)
+        {
+            var result = new HitRollResult();
+
+            // Torrent auto-hits
+            if (weapon.Abilities.Torrent)
+            {
+                result.Hits = attacks;
+                Log(run, step++, "Hit", attackerUnit.DatasheetName, attackerModel.Name, weapon.Name, "", "",
+                    $"Torrent: All {attacks} attacks auto-hit",
+                    new Dictionary<string, object> { ["hits"] = attacks });
+                return result;
+            }
+
+            var bsWs = weapon.BsWs;
+            var hitModifier = context.AttackerGlobalModifiers.HitModifier;
+
+            // Apply modifiers
+            foreach (var modifier in weapon.Modifiers.Where(m => m.IsActive))
+            {
+                if (EvaluateCondition(modifier.Condition, context, attackerUnit, weapon, null) &&
+                    modifier.Effect.Type == EffectType.AddHitModifier && modifier.Effect.IntValue.HasValue)
+                {
+                    hitModifier += modifier.Effect.IntValue.Value;
+                }
+            }
+
+            var targetRoll = Math.Clamp(bsWs - hitModifier, 2, 6);
+
+            // Check for reroll abilities
+            var rerollAll = weapon.Modifiers.Any(m => m.IsActive && EvaluateCondition(m.Condition, context, attackerUnit, weapon, null) && m.Effect.Type == EffectType.RerollHits);
+            var rerollOnes = weapon.Modifiers.Any(m => m.IsActive && EvaluateCondition(m.Condition, context, attackerUnit, weapon, null) && m.Effect.Type == EffectType.RerollOnes);
 
             for (int i = 0; i < attacks; i++)
             {
-                var hitRoll = RollD6();
+                var roll = RollD6();
+                var originalRoll = roll;
                 var rerolled = false;
 
-                // Apply rerolls
-                if (attacker.Modifiers.RerollHits || (attacker.Modifiers.RerollOnes && hitRoll == 1))
+                if ((rerollAll) || (rerollOnes && roll == 1))
                 {
-                    hitRoll = RollD6();
+                    roll = RollD6();
                     rerolled = true;
                 }
 
-                // Check if hit
-                if (hitRoll >= targetRoll)
+                if (roll >= targetRoll)
                 {
                     result.Hits++;
 
-                    // Check for critical hit (unmodified 6)
-                    var isCritical = (!rerolled && hitRoll == 6) || (rerolled && hitRoll == 6 && attacker.Modifiers.CriticalHit == 6);
-                    
-                    if (isCritical)
+                    // Check for critical hit
+                    if (!rerolled && roll == 6)
                     {
+                        result.CriticalHits++;
+
                         // Sustained Hits
-                        if (attacker.Modifiers.SustainedHits > 0)
+                        if (weapon.Abilities.SustainedHits.HasValue)
                         {
-                            result.Hits += attacker.Modifiers.SustainedHits;
+                            result.Hits += weapon.Abilities.SustainedHits.Value;
+                            Log(run, step++, "Hit", attackerUnit.DatasheetName, attackerModel.Name, weapon.Name, "", "",
+                                $"Critical Hit: Sustained Hits added {weapon.Abilities.SustainedHits.Value} extra hits",
+                                new Dictionary<string, object> { ["roll"] = roll, ["extra_hits"] = weapon.Abilities.SustainedHits.Value });
                         }
 
-                        // Lethal Hits - converts this hit to auto-wound
-                        if (attacker.Modifiers.LethalHits > 0)
+                        // Lethal Hits
+                        if (weapon.Abilities.LethalHits)
                         {
                             result.AutoWounds++;
-                            result.Hits--; // Remove from normal hits
+                            result.Hits--;
+                            Log(run, step++, "Hit", attackerUnit.DatasheetName, attackerModel.Name, weapon.Name, "", "",
+                                "Critical Hit: Lethal Hits - auto-wound",
+                                new Dictionary<string, object> { ["roll"] = roll });
                         }
                     }
                 }
             }
 
+            Log(run, step++, "Hit", attackerUnit.DatasheetName, attackerModel.Name, weapon.Name, "", "",
+                $"Hit rolls complete: {result.Hits} hits, {result.CriticalHits} critical hits, {result.AutoWounds} auto-wounds",
+                new Dictionary<string, object> { ["hits"] = result.Hits, ["crits"] = result.CriticalHits, ["auto_wounds"] = result.AutoWounds });
+
             return result;
         }
 
-        private static int ResolveWounds(int hits, DatasheetWargear weapon, DatasheetModel model, AttackerContext attacker)
+        private static WoundRollResult ResolveWoundRolls(
+            CombatWeapon weapon,
+            CombatUnit attackerUnit,
+            CombatModel attackerModel,
+            HitRollResult hitResult,
+            List<CombatUnit> defenders,
+            VersusContext context,
+            SimulationRun run,
+            ref int step)
         {
-            if (hits <= 0) return 0;
+            var result = new WoundRollResult { MortalWounds = hitResult.AutoWounds };
 
-            var wounds = 0;
-            var strength = ParseValue(weapon.S);
-            var toughness = ParseValue(model.T) + attacker.Modifiers.WoundModifier;
+            var totalHits = hitResult.Hits;
+            if (totalHits <= 0) return result;
 
-            // Calculate wound target
-            int woundTarget;
-            if (strength >= toughness * 2)
-                woundTarget = 2;
-            else if (strength > toughness)
-                woundTarget = 3;
-            else if (strength == toughness)
-                woundTarget = 4;
-            else if (strength * 2 <= toughness)
-                woundTarget = 6;
-            else
-                woundTarget = 5;
+            var strength = weapon.S;
+            var averageToughness = CalculateAverageToughness(defenders);
+            var woundTarget = CalculateWoundTarget(strength, averageToughness);
 
-            woundTarget = Math.Clamp(woundTarget - attacker.Modifiers.WoundModifier, 2, 6);
+            var woundModifier = context.AttackerGlobalModifiers.WoundModifier;
 
-            for (int i = 0; i < hits; i++)
+            // Apply modifiers
+            foreach (var modifier in weapon.Modifiers.Where(m => m.IsActive))
             {
-                var woundRoll = RollD6();
-
-                // Apply wound rerolls
-                if (attacker.Modifiers.RerollWounds)
+                if (EvaluateCondition(modifier.Condition, context, attackerUnit, weapon, defenders) &&
+                    modifier.Effect.Type == EffectType.AddWoundModifier && modifier.Effect.IntValue.HasValue)
                 {
-                    woundRoll = RollD6();
-                }
-
-                if (woundRoll >= woundTarget)
-                {
-                    wounds++;
+                    woundModifier += modifier.Effect.IntValue.Value;
                 }
             }
 
-            return wounds;
+            woundTarget = Math.Clamp(woundTarget - woundModifier, 2, 6);
+
+            // Check for rerolls
+            var rerollAll = weapon.Abilities.TwinLinked || weapon.Modifiers.Any(m => m.IsActive && EvaluateCondition(m.Condition, context, attackerUnit, weapon, defenders) && m.Effect.Type == EffectType.RerollWounds);
+            var rerollOnes = weapon.Modifiers.Any(m => m.IsActive && EvaluateCondition(m.Condition, context, attackerUnit, weapon, defenders) && m.Effect.Type == EffectType.RerollOnes);
+
+            for (int i = 0; i < totalHits; i++)
+            {
+                var roll = RollD6();
+                var rerolled = false;
+
+                if (rerollAll || (rerollOnes && roll == 1))
+                {
+                    var reroll = RollD6();
+                    if (reroll >= roll || rerollAll)
+                    {
+                        roll = reroll;
+                        rerolled = true;
+                    }
+                }
+
+                if (roll >= woundTarget)
+                {
+                    result.Wounds++;
+
+                    // Check for critical wound
+                    if (!rerolled && roll == 6)
+                    {
+                        result.CriticalWounds++;
+
+                        // Devastating Wounds
+                        if (weapon.Abilities.DevastatingWounds)
+                        {
+                            result.MortalWounds++;
+                            result.Wounds--;
+                            Log(run, step++, "Wound", attackerUnit.DatasheetName, attackerModel.Name, weapon.Name, "", "",
+                                "Critical Wound: Devastating Wounds - converted to mortal wound",
+                                new Dictionary<string, object> { ["roll"] = roll });
+                        }
+                    }
+                }
+            }
+
+            Log(run, step++, "Wound", attackerUnit.DatasheetName, attackerModel.Name, weapon.Name, "", "",
+                $"Wound rolls complete: {result.Wounds} wounds, {result.CriticalWounds} critical wounds, {result.MortalWounds} mortal wounds",
+                new Dictionary<string, object> { ["wounds"] = result.Wounds, ["crits"] = result.CriticalWounds, ["mortal"] = result.MortalWounds });
+
+            return result;
         }
 
-        private static DamageResult ResolveSavesAndDamage(int wounds, DatasheetWargear weapon, 
-            DatasheetModel model, AttackerContext attacker, DefenderContext defender)
+        private static DamageResult AllocateWounds(
+            CombatWeapon weapon,
+            CombatUnit attackerUnit,
+            WoundRollResult woundResult,
+            List<CombatUnit> defenders,
+            VersusContext context,
+            SimulationRun run,
+            ref int step)
         {
             var result = new DamageResult();
-            if (wounds <= 0) return result;
+            var totalWounds = woundResult.Wounds + woundResult.MortalWounds;
 
-            var weaponAP = ParseValue(weapon.AP);
-            var defenderSave = ParseValue(model.Sv) + defender.Modifiers.ArmorSaveModifier;
-            var defenderInvuln = ParseValue(model.InvSv);
+            if (totalWounds <= 0) return result;
 
-            for (int i = 0; i < wounds; i++)
+            // Get target models based on allocation method
+            var targetModels = GetWoundAllocationTargets(defenders, context.SimulationSettings.WoundAllocation);
+
+            foreach (var targetModel in targetModels)
             {
-                // Check for devastating wounds (critical wound conversion)
-                var isCriticalWound = false; // TODO: Track critical wounds from wound rolls
-                
-                if (isCriticalWound && attacker.Modifiers.DevastatingWounds > 0)
+                if (totalWounds <= 0) break;
+                if (targetModel.IsDestroyed) continue;
+
+                // Allocate one wound at a time
+                while (totalWounds > 0 && !targetModel.IsDestroyed)
                 {
-                    // Devastating wounds become mortal wounds
-                    result.MortalWounds += RollDamage(weapon.D);
-                }
-                else
-                {
-                    // Calculate save
-                    var modifiedSave = defenderSave - weaponAP;
+                    var isMortal = woundResult.MortalWounds > 0;
+                    if (isMortal) woundResult.MortalWounds--;
+                    else woundResult.Wounds--;
 
-                    if (defender.Modifiers.Cover && !attacker.Modifiers.IgnoreCover)
+                    var damage = 0;
+
+                    if (isMortal)
                     {
-                        modifiedSave -= 1;
+                        // Mortal wounds bypass saves
+                        damage = RollDamage(weapon.D);
+                        result.UnsavedWounds++;
+                        Log(run, step++, "Save", attackerUnit.DatasheetName, "", weapon.Name,
+                            defenders.First(u => u.Models.Contains(targetModel)).DatasheetName, targetModel.Name,
+                            $"Mortal wound bypasses saves: {damage} damage",
+                            new Dictionary<string, object> { ["damage"] = damage });
                     }
-
-                    var effectiveSave = modifiedSave;
-
-                    if (!attacker.Modifiers.IgnoreInvulnerable && defenderInvuln > 0)
+                    else
                     {
-                        effectiveSave = Math.Min(modifiedSave, defenderInvuln + defender.Modifiers.InvulnerableSaveModifier);
-                    }
+                        // Regular wound - resolve save
+                        var saveResult = ResolveSave(weapon, targetModel, context, run, ref step, attackerUnit.DatasheetName);
 
-                    effectiveSave = Math.Clamp(effectiveSave, 2, 7);
-
-                    // Roll save
-                    var saveSucceeds = effectiveSave < 7 && RollD6() >= effectiveSave;
-
-                    if (!saveSucceeds)
-                    {
-                        var damage = RollDamage(weapon.D);
-
-                        // Apply damage reduction
-                        if (defender.Modifiers.DamageReduction > 0)
+                        if (saveResult.Saved)
                         {
-                            damage = Math.Max(1, damage - defender.Modifiers.DamageReduction);
+                            result.SuccessfulSaves++;
+                            if (saveResult.UsedInvulnerable) result.InvulnerableSaves++;
                         }
-
-                        if (defender.Modifiers.HalveDamage)
+                        else
                         {
-                            damage = Math.Max(1, damage / 2);
-                        }
+                            result.FailedSaves++;
+                            damage = RollDamage(weapon.D);
+                            result.UnsavedWounds++;
 
-                        result.NormalDamage += damage;
+                            // Apply damage modifiers
+                            foreach (var modifier in targetModel.Modifiers.Where(m => m.IsActive))
+                            {
+                                if (modifier.Effect.Type == EffectType.ReduceDamage && modifier.Effect.IntValue.HasValue)
+                                {
+                                    var reduction = modifier.Effect.IntValue.Value;
+                                    damage = Math.Max(1, damage - reduction);
+                                    result.DamagePrevented += reduction;
+                                }
+                                else if (modifier.Effect.Type == EffectType.HalveDamage)
+                                {
+                                    var halved = damage / 2;
+                                    result.DamagePrevented += damage - Math.Max(1, halved);
+                                    damage = Math.Max(1, halved);
+                                }
+                            }
+
+                            // Apply Feel No Pain
+                            if (targetModel.Modifiers.Any(m => m.IsActive && m.Effect.Type == EffectType.FeelNoPain))
+                            {
+                                var fnpRoll = RollD6();
+                                var fnpValue = targetModel.Modifiers.First(m => m.IsActive && m.Effect.Type == EffectType.FeelNoPain).Effect.IntValue ?? 5;
+                                if (fnpRoll >= fnpValue)
+                                {
+                                    result.FeelNoPainSaves++;
+                                    result.DamagePrevented += damage;
+                                    damage = 0;
+                                    Log(run, step++, "FNP", attackerUnit.DatasheetName, "", weapon.Name,
+                                        defenders.First(u => u.Models.Contains(targetModel)).DatasheetName, targetModel.Name,
+                                        $"Feel No Pain passed (rolled {fnpRoll})",
+                                        new Dictionary<string, object> { ["roll"] = fnpRoll, ["needed"] = fnpValue });
+                                }
+                            }
+                        }
                     }
+
+                    // Apply damage
+                    if (damage > 0)
+                    {
+                        targetModel.CurrentWounds -= damage;
+                        result.TotalDamage += damage;
+
+                        var defenderUnit = defenders.First(u => u.Models.Contains(targetModel));
+                        Log(run, step++, "Damage", attackerUnit.DatasheetName, "", weapon.Name,
+                            defenderUnit.DatasheetName, targetModel.Name,
+                            $"Dealt {damage} damage ({targetModel.CurrentWounds}/{targetModel.MaxWounds} wounds remaining)",
+                            new Dictionary<string, object> { ["damage"] = damage, ["remaining"] = targetModel.CurrentWounds });
+
+                        if (targetModel.IsDestroyed)
+                        {
+                            Log(run, step++, "Destroyed", attackerUnit.DatasheetName, "", weapon.Name,
+                                defenderUnit.DatasheetName, targetModel.Name,
+                                "Model destroyed!",
+                                new Dictionary<string, object>());
+                        }
+                    }
+
+                    totalWounds--;
                 }
             }
 
             return result;
         }
 
-        private static int ApplyFeelNoPain(int totalDamage, DefenderContext defender)
+        private static SaveResult ResolveSave(
+            CombatWeapon weapon,
+            CombatModel defender,
+            VersusContext context,
+            SimulationRun run,
+            ref int step,
+            string attackerName)
         {
-            if (!defender.Modifiers.FeelNoPain || totalDamage <= 0)
-                return totalDamage;
+            var result = new SaveResult();
 
-            var fnpTarget = defender.Modifiers.FeelNoPainValue;
-            var remainingDamage = 0;
+            var ap = weapon.AP;
+            var armorSave = defender.Sv;
+            var invulnSave = defender.InvSv;
 
-            for (int i = 0; i < totalDamage; i++)
+            // Apply cover
+            if (context.DefenderGlobalModifiers.Cover && !weapon.Abilities.IgnoresCover && !context.AttackerGlobalModifiers.IgnoreCover)
             {
-                if (RollD6() < fnpTarget)
+                armorSave -= 1;
+            }
+
+            var modifiedArmorSave = Math.Clamp(armorSave - ap, 2, 7);
+
+            // Choose best save
+            var effectiveSave = modifiedArmorSave;
+            if (invulnSave > 0 && invulnSave < modifiedArmorSave)
+            {
+                effectiveSave = invulnSave;
+                result.UsedInvulnerable = true;
+            }
+
+            if (effectiveSave >= 7)
+            {
+                result.Saved = false;
+                return result;
+            }
+
+            var saveRoll = RollD6();
+            result.Saved = saveRoll >= effectiveSave;
+
+            Log(run, step++, "Save", attackerName, "", weapon.Name, "", defender.Name,
+                $"Save roll: {saveRoll} vs {effectiveSave}+ ({(result.Saved ? "Passed" : "Failed")}, {(result.UsedInvulnerable ? "Invuln" : "Armor")})",
+                new Dictionary<string, object> { ["roll"] = saveRoll, ["needed"] = effectiveSave, ["passed"] = result.Saved });
+
+            return result;
+        }
+
+        // Helper methods
+
+        private static List<CombatModel> GetWoundAllocationTargets(List<CombatUnit> defenders, WoundAllocationMethod method)
+        {
+            var allModels = new List<CombatModel>();
+            foreach (var unit in defenders)
+            {
+                foreach (var model in unit.Models)
                 {
-                    remainingDamage++;
+                    for (int i = 0; i < model.Quantity; i++)
+                    {
+                        if (!model.IsDestroyed)
+                            allModels.Add(model);
+                    }
                 }
             }
 
-            return remainingDamage;
+            return method switch
+            {
+                WoundAllocationMethod.TargetWeakest => allModels.OrderBy(m => m.CurrentWounds).ToList(),
+                WoundAllocationMethod.TargetStrongest => allModels.OrderByDescending(m => m.CurrentWounds).ToList(),
+                WoundAllocationMethod.RandomAllocation => allModels.OrderBy(_ => _random.Next()).ToList(),
+                _ => allModels
+            };
         }
 
-        private static VersusResult AggregateResults(List<SimulationRun> results, VersusContext context, int simulations)
+        private static int CalculateAverageToughness(List<CombatUnit> defenders)
         {
-            var totalDamages = results.Select(r => (int)Math.Floor(r.TotalDamage)).ToList();
-            totalDamages.Sort();
+            var livingModels = new List<CombatModel>();
+            foreach (var unit in defenders)
+            {
+                foreach (var model in unit.Models)
+                {
+                    if (!model.IsDestroyed)
+                    {
+                        for (int i = 0; i < model.Quantity; i++)
+                            livingModels.Add(model);
+                    }
+                }
+            }
+
+            if (!livingModels.Any()) return 1;
+            return (int)Math.Round(livingModels.Average(m => m.T));
+        }
+
+        private static int CalculateWoundTarget(int strength, int toughness)
+        {
+            if (strength >= toughness * 2) return 2;
+            if (strength > toughness) return 3;
+            if (strength == toughness) return 4;
+            if (strength * 2 <= toughness) return 6;
+            return 5;
+        }
+
+        private static bool EvaluateCondition(ModifierCondition condition, VersusContext context, CombatUnit attacker, CombatWeapon weapon, List<CombatUnit>? defenders)
+        {
+            return condition.Type switch
+            {
+                ConditionType.Always => true,
+                ConditionType.UnitCharged => context.SimulationSettings.AttackerCharged,
+                ConditionType.TargetWithinHalfRange => context.SimulationSettings.RangeToTarget.HasValue &&
+                                                        context.SimulationSettings.RangeToTarget.Value <= ParseRangeValue(weapon.Range) / 2,
+                ConditionType.TargetUnitSize5Plus => defenders != null && defenders.Sum(u => u.Models.Sum(m => m.Quantity)) >= 5,
+                ConditionType.TargetUnitSize10Plus => defenders != null && defenders.Sum(u => u.Models.Sum(m => m.Quantity)) >= 10,
+                _ => false
+            };
+        }
+
+        private static List<CombatUnit> CloneUnits(List<CombatUnit> units)
+        {
+            var cloned = new List<CombatUnit>();
+
+            foreach (var unit in units)
+            {
+                var clonedUnit = new CombatUnit
+                {
+                    Id = unit.Id,
+                    DatasheetId = unit.DatasheetId,
+                    DatasheetName = unit.DatasheetName,
+                    FactionId = unit.FactionId
+                };
+
+                foreach (var model in unit.Models)
+                {
+                    clonedUnit.Models.Add(new CombatModel
+                    {
+                        Id = model.Id,
+                        Name = model.Name,
+                        Quantity = model.Quantity,
+                        M = model.M,
+                        T = model.T,
+                        Sv = model.Sv,
+                        InvSv = model.InvSv,
+                        W = model.W,
+                        Ld = model.Ld,
+                        OC = model.OC,
+                        CurrentWounds = model.CurrentWounds,
+                        MaxWounds = model.MaxWounds,
+                        Modifiers = model.Modifiers.ToList()
+                    });
+                }
+
+                cloned.Add(clonedUnit);
+            }
+
+            return cloned;
+        }
+
+        private static VersusResult AggregateResults(List<SimulationRun> simulations, VersusContext context)
+        {
+            var damages = simulations.Select(s => (int)s.TotalDamage).OrderBy(d => d).ToList();
 
             var result = new VersusResult
             {
-                SimulationCount = simulations,
-                AverageHits = results.Average(r => r.Hits),
-                AverageWounds = results.Average(r => r.Wounds),
-                AverageDamage = results.Average(r => r.TotalDamage),
-                AverageModelsKilled = results.Average(r => r.ModelsKilled),
-                MedianDamage = totalDamages[simulations / 2]
+                SimulationCount = simulations.Count,
+                AverageDamage = simulations.Average(s => s.TotalDamage),
+                MedianDamage = damages[damages.Count / 2],
+                MinDamage = damages.First(),
+                MaxDamage = damages.Last(),
+                StandardDeviation = CalculateStandardDeviation(simulations.Select(s => s.TotalDamage).ToList()),
+                AverageModelsKilled = simulations.Average(s => s.ModelsKilled),
+                WipeoutProbability = simulations.Count(s => s.AllDefendersDestroyed) * 100.0 / simulations.Count
             };
 
-            // Calculate damage distribution
-            var damageGroups = totalDamages.GroupBy(d => d).OrderBy(g => g.Key);
+            // Damage distribution
+            var damageGroups = damages.GroupBy(d => d);
             foreach (var group in damageGroups)
             {
-                result.DamageDistribution[group.Key] = (double)group.Count() / simulations * 100;
+                result.DamageDistribution[group.Key] = group.Count() * 100.0 / simulations.Count;
             }
 
-            // Calculate kill probability (assuming defending unit has wounds equal to model wounds)
-            if (context.Defender?.SelectedModel != null)
+            // Stage statistics
+            result.Stages = new StageStatistics
             {
-                var modelWounds = ParseValue(context.Defender.SelectedModel.W);
-                if (modelWounds > 0)
-                {
-                    var killCount = totalDamages.Count(d => d >= modelWounds);
-                    result.KillProbability = (double)killCount / simulations * 100;
-                }
-            }
+                TotalAttacks = simulations.Average(s => s.Stages.TotalAttacks),
+                TotalHits = simulations.Average(s => s.Stages.TotalHits),
+                CriticalHits = simulations.Average(s => s.Stages.CriticalHits),
+                TotalWounds = simulations.Average(s => s.Stages.TotalWounds),
+                CriticalWounds = simulations.Average(s => s.Stages.CriticalWounds),
+                MortalWounds = simulations.Average(s => s.Stages.MortalWounds),
+                FailedSaves = simulations.Average(s => s.Stages.FailedSaves),
+                SuccessfulSaves = simulations.Average(s => s.Stages.SuccessfulSaves),
+                InvulnerableSaves = simulations.Average(s => s.Stages.InvulnerableSaves),
+                FeelNoPainSaves = simulations.Average(s => s.Stages.FeelNoPainSaves),
+                TotalDamageDealt = simulations.Average(s => s.Stages.TotalDamageDealt),
+                TotalDamagePrevented = simulations.Average(s => s.Stages.TotalDamagePrevented)
+            };
 
-            // Stage breakdown (averages)
-            result.StageBreakdown["Attacks"] = results.Average(r => r.Attacks);
-            result.StageBreakdown["Average Hits"] = result.AverageHits;
-            result.StageBreakdown["Average Wounds"] = result.AverageWounds;
-            result.StageBreakdown["Average Damage"] = result.AverageDamage;
-            result.StageBreakdown["Median Damage"] = result.MedianDamage;
-            result.StageBreakdown["Models Killed"] = result.AverageModelsKilled;
+            // Sample log from first simulation
+            if (simulations.Any() && simulations[0].Log != null)
+            {
+                result.SampleCombatLog = simulations[0].Log;
+            }
 
             return result;
+        }
+
+        private static double CalculateStandardDeviation(List<double> values)
+        {
+            var avg = values.Average();
+            var sumOfSquares = values.Sum(v => Math.Pow(v - avg, 2));
+            return Math.Sqrt(sumOfSquares / values.Count);
         }
 
         private static int RollD6() => _random.Next(1, 7);
@@ -320,111 +692,136 @@ namespace OmniTactica.AppCode.Services
 
             damageString = damageString.Trim();
 
-            // Handle flat damage
             if (int.TryParse(damageString, out var flatDamage))
                 return flatDamage;
 
-            // Handle dice notation
-            if (damageString.Contains('D') || damageString.Contains('d'))
+            var match = Regex.Match(damageString, @"(\d*)D(\d+)(?:\+(\d+))?", RegexOptions.IgnoreCase);
+            if (match.Success)
             {
-                var parts = damageString.ToUpper().Split('D');
-                
-                if (parts.Length == 1)
-                {
-                    // "D6" format
-                    if (int.TryParse(parts[0], out var dice))
-                        return RollDice(1, dice);
-                    return RollD6();
-                }
-                else if (parts.Length == 2)
-                {
-                    // "2D6" or "D6+2" format
-                    var numDice = string.IsNullOrEmpty(parts[0]) ? 1 : int.Parse(parts[0]);
-                    var remaining = parts[1];
+                var numDice = string.IsNullOrEmpty(match.Groups[1].Value) ? 1 : int.Parse(match.Groups[1].Value);
+                var diceSize = int.Parse(match.Groups[2].Value);
+                var modifier = match.Groups[3].Success ? int.Parse(match.Groups[3].Value) : 0;
 
-                    // Check for modifier like "D6+2"
-                    if (remaining.Contains('+'))
-                    {
-                        var subParts = remaining.Split('+');
-                        var diceSize = int.Parse(subParts[0]);
-                        var modifier = int.Parse(subParts[1]);
-                        return RollDice(numDice, diceSize) + modifier;
-                    }
-                    else
-                    {
-                        var diceSize = int.Parse(remaining);
-                        return RollDice(numDice, diceSize);
-                    }
+                var total = 0;
+                for (int i = 0; i < numDice; i++)
+                {
+                    total += _random.Next(1, diceSize + 1);
                 }
+                return total + modifier;
+            }
+
+            return 1;
+        }
+
+        private static int ParseDiceValue(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return 0;
+
+            value = value.Trim();
+
+            if (int.TryParse(value, out var result))
+                return result;
+
+            var match = Regex.Match(value, @"(\d*)D(\d+)", RegexOptions.IgnoreCase);
+            if (match.Success)
+            {
+                var numDice = string.IsNullOrEmpty(match.Groups[1].Value) ? 1 : int.Parse(match.Groups[1].Value);
+                var diceSize = int.Parse(match.Groups[2].Value);
+
+                var avg = numDice * (diceSize + 1) / 2;
+                return avg;
             }
 
             return 0;
         }
 
-        private static int RollDice(int count, int size)
+        private static int ParseRangeValue(string range)
         {
-            var total = 0;
-            for (int i = 0; i < count; i++)
-            {
-                total += _random.Next(1, size + 1);
-            }
-            return total;
-        }
+            if (string.IsNullOrEmpty(range) || range.Equals("Melee", StringComparison.OrdinalIgnoreCase))
+                return 0;
 
-        private static int ParseValue(string value)
-        {
-            if (string.IsNullOrEmpty(value)) return 0;
-            
-            value = value.Replace("+", "").Replace("″", "").Replace("\"", "").Trim();
+            range = range.Replace("\"", "").Replace("'", "").Trim();
 
-            if (value.Contains('D') || value.Contains('d'))
-            {
-                // For attack characteristics, use average
-                var parts = value.Split(new[] { 'D', 'd' }, StringSplitOptions.RemoveEmptyEntries);
-                
-                if (parts.Length == 1)
-                {
-                    if (int.TryParse(parts[0], out var dice))
-                        return (dice + 1) / 2;
-                }
-                else if (parts.Length == 2)
-                {
-                    var numDice = int.TryParse(parts[0], out var nd) ? nd : 1;
-                    var diceSize = int.TryParse(parts[1], out var ds) ? ds : 6;
-                    return (int)Math.Round(numDice * (diceSize + 1) / 2.0);
-                }
-
-                return 3;
-            }
-
-            if (int.TryParse(value, out var result))
+            if (int.TryParse(range, out var result))
                 return result;
 
             return 0;
         }
 
-        private class SimulationRun
+        private static void Log(SimulationRun run, int step, string phase, string attackerUnit, string attackerModel,
+            string weapon, string defenderUnit, string defenderModel, string message, Dictionary<string, object> details)
         {
-            public int Attacks { get; set; }
-            public int Hits { get; set; }
-            public int AutoWounds { get; set; }
-            public int Wounds { get; set; }
-            public int MortalWounds { get; set; }
-            public int NormalDamage { get; set; }
-            public double TotalDamage { get; set; }
-            public double ModelsKilled { get; set; }
+            if (run.Log == null) return;
+
+            run.Log.Add(new CombatLogEntry
+            {
+                Step = step,
+                Phase = phase,
+                AttackerUnit = attackerUnit,
+                AttackerModel = attackerModel,
+                WeaponName = weapon,
+                DefenderUnit = defenderUnit,
+                DefenderModel = defenderModel,
+                Message = message,
+                Details = details
+            });
         }
 
-        private class HitResult
+        // Internal classes for simulation
+
+        private class SimulationRun
+        {
+            public double TotalDamage { get; set; }
+            public int ModelsKilled { get; set; }
+            public bool AllDefendersDestroyed { get; set; }
+            public StageStatistics Stages { get; set; } = new();
+            public List<CombatLogEntry>? Log { get; set; }
+        }
+
+        private class WeaponAttackResult
+        {
+            public string WeaponId { get; set; } = string.Empty;
+            public string WeaponName { get; set; } = string.Empty;
+            public int Attacks { get; set; }
+            public int Hits { get; set; }
+            public int CriticalHits { get; set; }
+            public int AutoWounds { get; set; }
+            public int Wounds { get; set; }
+            public int CriticalWounds { get; set; }
+            public int MortalWounds { get; set; }
+            public int UnsavedWounds { get; set; }
+            public double Damage { get; set; }
+        }
+
+        private class HitRollResult
         {
             public int Hits { get; set; }
+            public int CriticalHits { get; set; }
             public int AutoWounds { get; set; }
+        }
+
+        private class WoundRollResult
+        {
+            public int Wounds { get; set; }
+            public int CriticalWounds { get; set; }
+            public int MortalWounds { get; set; }
         }
 
         private class DamageResult
         {
-            public int MortalWounds { get; set; }
-            public int NormalDamage { get; set; }
+            public double TotalDamage { get; set; }
+            public int UnsavedWounds { get; set; }
+            public int FailedSaves { get; set; }
+            public int SuccessfulSaves { get; set; }
+            public int InvulnerableSaves { get; set; }
+            public int FeelNoPainSaves { get; set; }
+            public double DamagePrevented { get; set; }
+        }
+
+        private class SaveResult
+        {
+            public bool Saved { get; set; }
+            public bool UsedInvulnerable { get; set; }
         }
     }
 }

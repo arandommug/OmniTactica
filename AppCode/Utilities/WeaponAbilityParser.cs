@@ -45,46 +45,101 @@ namespace OmniTactica.AppCode.Utilities
             var blastMatch = Regex.Match(lower, @"blast");
             if (blastMatch.Success)
             {
-                abilities.Blast = 1;
+                abilities.Blast = true;
             }
 
             // Twin-Linked
             if (lower.Contains("twin-linked"))
             {
-                abilities.TwinLinked = 1;
+                abilities.TwinLinked = true;
             }
 
             // Torrent
             if (lower.Contains("torrent"))
             {
-                abilities.Torrent = 1;
+                abilities.Torrent = true;
             }
 
             // Melta X
             var meltaMatch = Regex.Match(lower, @"melta (\d+)");
             if (meltaMatch.Success && int.TryParse(meltaMatch.Groups[1].Value, out var meltaRange))
             {
-                abilities.Melta = true;
-                abilities.MeltaRange = meltaRange;
+                abilities.Melta = meltaRange;
             }
             else if (lower.Contains("melta"))
             {
-                abilities.Melta = true;
-                abilities.MeltaRange = 6; // Default melta range
+                abilities.Melta = 6; // Default melta range
             }
 
             // Ignores Cover
             if (lower.Contains("ignores cover"))
             {
-                abilities.Ignores = true;
+                abilities.IgnoresCover = true;
             }
 
-            // Anti-keyword X+
-            var antiMatch = Regex.Match(lower, @"anti-([a-z\s]+) (\d+)\+");
-            if (antiMatch.Success)
+            // Anti-Infantry X+
+            var antiInfantryMatch = Regex.Match(lower, @"anti-infantry (\d+)\+");
+            if (antiInfantryMatch.Success && int.TryParse(antiInfantryMatch.Groups[1].Value, out var antiInfantryValue))
             {
-                abilities.AntiKeyword = true;
-                abilities.AntiKeywordValue = antiMatch.Groups[1].Value.Trim();
+                abilities.AntiInfantry = true;
+                abilities.AntiInfantryValue = antiInfantryValue;
+            }
+
+            // Anti-Vehicle X+
+            var antiVehicleMatch = Regex.Match(lower, @"anti-vehicle (\d+)\+");
+            if (antiVehicleMatch.Success && int.TryParse(antiVehicleMatch.Groups[1].Value, out var antiVehicleValue))
+            {
+                abilities.AntiVehicle = true;
+                abilities.AntiVehicleValue = antiVehicleValue;
+            }
+
+            // Anti-Monster X+
+            var antiMonsterMatch = Regex.Match(lower, @"anti-monster (\d+)\+");
+            if (antiMonsterMatch.Success && int.TryParse(antiMonsterMatch.Groups[1].Value, out var antiMonsterValue))
+            {
+                abilities.AntiMonster = true;
+                abilities.AntiMonsterValue = antiMonsterValue;
+            }
+
+            // Lethal Hits
+            if (lower.Contains("lethal hits"))
+            {
+                abilities.LethalHits = true;
+            }
+
+            // Devastating Wounds
+            if (lower.Contains("devastating wounds"))
+            {
+                abilities.DevastatingWounds = true;
+            }
+
+            // Sustained Hits X
+            var sustainedHitsMatch = Regex.Match(lower, @"sustained hits (\d+)");
+            if (sustainedHitsMatch.Success && int.TryParse(sustainedHitsMatch.Groups[1].Value, out var sustainedHits))
+            {
+                abilities.SustainedHits = sustainedHits;
+            }
+            else if (lower.Contains("sustained hits"))
+            {
+                abilities.SustainedHits = 1;
+            }
+
+            // Precision
+            if (lower.Contains("precision"))
+            {
+                abilities.Precision = true;
+            }
+
+            // Hazardous
+            if (lower.Contains("hazardous"))
+            {
+                abilities.Hazardous = true;
+            }
+
+            // Indirect Fire
+            if (lower.Contains("indirect fire"))
+            {
+                abilities.IndirectFire = true;
             }
 
             return abilities;
@@ -142,8 +197,7 @@ namespace OmniTactica.AppCode.Utilities
                 expectedPerModel *= (1 + abilities.RapidFire.Value);
             }
 
-            // Apply Twin-Linked (double attacks)
-            if (abilities.TwinLinked.HasValue)
+            // Note: Twin-Linked doesn't double attacks, it provides reroll to wound
             {
                 expectedPerModel *= 2;
             }

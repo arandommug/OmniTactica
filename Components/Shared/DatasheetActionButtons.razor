@@ -63,15 +63,15 @@
         }
     }
 
-    private void SetAsAttacker()
+    private async Task SetAsAttacker()
     {
-        VersusService.SetAttacker(DatasheetId, DatasheetName);
+        await VersusService.AddAttackingUnitAsync(DatasheetId);
         Navigation.NavigateTo("/versus");
     }
 
-    private void SetAsDefender()
+    private async Task SetAsDefender()
     {
-        VersusService.SetDefender(DatasheetId, DatasheetName);
+        await VersusService.AddDefendingUnitAsync(DatasheetId);
         Navigation.NavigateTo("/versus");
     }
 

@@ -40,6 +40,7 @@ namespace OmniTactica.AppCode.Models.Core
         public List<DatasheetAbility> Abilities { get; set; } = new();
         public List<DatasheetOption> Options { get; set; } = new();
         public List<DatasheetCost> Costs { get; set; } = new();
+        public List<DatasheetUnitComposition> UnitComposition { get; set; } = new();
         public List<string> Keywords { get; set; } = new();
         public List<string> FactionKeywords { get; set; } = new();
 
@@ -122,6 +123,15 @@ namespace OmniTactica.AppCode.Models.Core
         public int Line { get; set; }
         public string Description { get; set; } = string.Empty;
         public int Cost { get; set; }
+    }
+
+    /// <summary>
+    /// Represents a unit composition entry.
+    /// </summary>
+    public class DatasheetUnitComposition
+    {
+        public int Line { get; set; }
+        public string Description { get; set; } = string.Empty;
     }
 
     /// <summary>

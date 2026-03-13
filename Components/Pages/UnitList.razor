@@ -2,11 +2,14 @@
 @using OmniTactica.AppCode.Data.Database
 @using OmniTactica.AppCode.Services
 @using OmniTactica.AppCode.Models.Core
+@using Microsoft.JSInterop
 
 @inject WahaSQLiteService DB
 @inject WahaDataService Data
 @inject NavigationManager Navigation
 @inject FactionViewerState ViewerState
+@inject IJSRuntime JS
+@implements IDisposable
 
 <div class="p-2">
     <div class="card bg-secondary-subtle">
@@ -51,7 +54,7 @@
                     <div class="list-group">
                         @foreach (var unit in datasheets)
                         {
-                            <a href="@($"/faction/{FactionId}/unit/{unit.Id}")" class="list-group-item list-group-item-action">
+                            <a href="@($"/faction/{FactionId}/unit/{unit.Id}")" class="list-group-item list-group-item-action" @onclick="@(() => SaveScrollPosition())" @onclick:preventDefault="false">
                                 <div class="d-flex w-100 justify-content-between align-items-start">
                                     <div class="flex-grow-1">
                                         <h5 class="mb-1">@unit.Name</h5>
@@ -116,6 +119,21 @@
         loading = false;
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Restore scroll position if returning from unit viewer
+            await JS.InvokeVoidAsync("restoreScrollPosition", $"unitlist_{FactionId}");
+        }
+    }
+
+    private void SaveScrollPosition()
+    {
+        // Save scroll position before navigating away
+        _ = JS.InvokeVoidAsync("saveScrollPosition", $"unitlist_{FactionId}");
+    }
+
     private async Task LoadUnitsAsync()
     {
         datasheets = await Data.GetDatasheetsByFactionAsync(
@@ -141,5 +159,10 @@
 
         loading = false;
         StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        // Cleanup if needed
     }
 }

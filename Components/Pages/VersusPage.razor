@@ -1,0 +1,515 @@
+@page "/versus"
+@using OmniTactica.AppCode.Services
+@using OmniTactica.AppCode.Models.Core
+@using Microsoft.JSInterop
+
+@inject VersusService VersusService
+@inject BookmarkService BookmarkService
+@inject IJSRuntime JS
+@implements IDisposable
+
+<style>
+    .unit-summary-card {
+        transition: all 0.3s ease;
+        cursor: pointer;
+    }
+    .unit-summary-card:hover {
+        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        transform: translateY(-2px);
+    }
+    .split-container {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1rem;
+    }
+    @@media (max-width: 768px) {
+        .split-container {
+            grid-template-columns: 1fr;
+        }
+    }
+    .combat-log {
+        max-height: 500px;
+        overflow-y: auto;
+        font-family: 'Courier New', monospace;
+        font-size: 0.85rem;
+    }
+    .combat-log-entry {
+        padding: 0.25rem 0.5rem;
+        border-left: 3px solid transparent;
+    }
+    .combat-log-entry.phase-attacks { border-left-color: #ffc107; }
+    .combat-log-entry.phase-hit { border-left-color: #17a2b8; }
+    .combat-log-entry.phase-wound { border-left-color: #dc3545; }
+    .combat-log-entry.phase-save { border-left-color: #28a745; }
+    .combat-log-entry.phase-damage { border-left-color: #6f42c1; }
+</style>
+
+<div class="p-2">
+    <div class="card bg-secondary-subtle">
+        <div class="card-header">
+            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                <h1 class="text-primary mb-0">
+                    <i class="fa fa-fist-raised me-2"></i>Versus Calculator
+                </h1>
+                <div class="d-flex gap-2 flex-wrap">
+                    <button class="btn btn-sm btn-warning" @onclick="SwapSides" title="Swap Attacker and Defender">
+                        <i class="fa fa-exchange-alt"></i> Swap
+                    </button>
+                    <button class="btn btn-sm btn-info" @onclick="ShowSettings">
+                        <i class="fa fa-cog"></i> Settings
+                    </button>
+                    <button class="btn btn-sm btn-success" @onclick="Calculate" disabled="@(!CanCalculate())">
+                        <i class="fa fa-calculator"></i> Calculate (@context.SimulationSettings.Iterations.ToString("N0") runs)
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger" @onclick="ClearAll">
+                        <i class="fa fa-trash"></i> Clear All
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="card-body">
+            <!-- Split Screen: Attacker | Defender -->
+            <div class="split-container mb-3">
+                <!-- ATTACKER SIDE -->
+                <div>
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h4 class="text-danger mb-0">
+                            <i class="fa fa-crosshairs"></i> Attacker
+                        </h4>
+                        <div class="btn-group btn-group-sm">
+                            <button class="btn btn-danger" @onclick="() => ShowUnitPicker(true)">
+                                <i class="fa fa-plus"></i> Add Unit
+                            </button>
+                            @if (BookmarkService.GetBookmarksByType(BookmarkType.Datasheet).Any())
+                            {
+                                <button class="btn btn-outline-danger dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                    <i class="fa fa-bookmark"></i>
+                                </button>
+                                <ul class="dropdown-menu">
+                                    @foreach (var bookmark in BookmarkService.GetBookmarksByType(BookmarkType.Datasheet))
+                                    {
+                                        <li>
+                                            <a class="dropdown-item" @onclick="() => AddFromBookmark(int.Parse(bookmark.EntityId), true)">
+                                                <i class="fa fa-bookmark me-2"></i>@bookmark.Name
+                                            </a>
+                                        </li>
+                                    }
+                                </ul>
+                            }
+                        </div>
+                    </div>
+
+                    @if (!context.AttackingUnits.Any())
+                    {
+                        <div class="alert alert-warning">
+                            <i class="fa fa-info-circle"></i> No attacker selected. Click "Add Unit" to begin.
+                        </div>
+                    }
+                    else
+                    {
+                        @foreach (var unit in context.AttackingUnits)
+                        {
+                            <div class="card unit-summary-card border-danger mb-2" @onclick="() => EditUnit(unit, true)">
+                                <div class="card-header bg-danger bg-opacity-10 d-flex justify-content-between align-items-center">
+                                    <strong>@unit.DatasheetName</strong>
+                                    <button class="btn btn-sm btn-outline-danger" @onclick:stopPropagation="true" @onclick="() => RemoveUnit(unit.Id, true)">
+                                        <i class="fa fa-times"></i>
+                                    </button>
+                                </div>
+                                <div class="card-body p-2">
+                                    <div class="text-muted small">
+                                        <div><strong>Models:</strong> @unit.Models.Sum(m => m.Quantity)</div>
+                                        <div><strong>Selected Weapons:</strong> @unit.Models.Sum(m => m.Weapons.Count(w => w.IsSelected))</div>
+                                        @if (unit.Modifiers.Any(m => m.IsActive))
+                                        {
+                                            <div><strong>Modifiers:</strong> @unit.Modifiers.Count(m => m.IsActive) active</div>
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    }
+                </div>
+
+                <!-- DEFENDER SIDE -->
+                <div>
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h4 class="text-primary mb-0">
+                            <i class="fa fa-shield-alt"></i> Defender
+                        </h4>
+                        <div class="btn-group btn-group-sm">
+                            <button class="btn btn-primary" @onclick="() => ShowUnitPicker(false)">
+                                <i class="fa fa-plus"></i> Add Unit
+                            </button>
+                            @if (BookmarkService.GetBookmarksByType(BookmarkType.Datasheet).Any())
+                            {
+                                <button class="btn btn-outline-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                    <i class="fa fa-bookmark"></i>
+                                </button>
+                                <ul class="dropdown-menu">
+                                    @foreach (var bookmark in BookmarkService.GetBookmarksByType(BookmarkType.Datasheet))
+                                    {
+                                        <li>
+                                            <a class="dropdown-item" @onclick="() => AddFromBookmark(int.Parse(bookmark.EntityId), false)">
+                                                <i class="fa fa-bookmark me-2"></i>@bookmark.Name
+                                            </a>
+                                        </li>
+                                    }
+                                </ul>
+                            }
+                        </div>
+                    </div>
+
+                    @if (!context.DefendingUnits.Any())
+                    {
+                        <div class="alert alert-info">
+                            <i class="fa fa-info-circle"></i> No defender selected. Click "Add Unit" to begin.
+                        </div>
+                    }
+                    else
+                    {
+                        @foreach (var unit in context.DefendingUnits)
+                        {
+                            <div class="card unit-summary-card border-primary mb-2" @onclick="() => EditUnit(unit, false)">
+                                <div class="card-header bg-primary bg-opacity-10 d-flex justify-content-between align-items-center">
+                                    <strong>@unit.DatasheetName</strong>
+                                    <button class="btn btn-sm btn-outline-danger" @onclick:stopPropagation="true" @onclick="() => RemoveUnit(unit.Id, false)">
+                                        <i class="fa fa-times"></i>
+                                    </button>
+                                </div>
+                                <div class="card-body p-2">
+                                    <div class="text-muted small">
+                                        <div><strong>Models:</strong> @unit.Models.Sum(m => m.Quantity)</div>
+                                        @if (unit.Modifiers.Any(m => m.IsActive))
+                                        {
+                                            <div><strong>Modifiers:</strong> @unit.Modifiers.Count(m => m.IsActive) active</div>
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+
+            <!-- Results Section -->
+            @if (result != null && !calculating)
+            {
+                <div class="card border-success mt-3">
+                    <div class="card-header bg-success bg-opacity-10">
+                        <h5 class="mb-0"><i class="fa fa-chart-bar"></i> Results (@result.SimulationCount.ToString("N0") simulations)</h5>
+                    </div>
+                    <div class="card-body">
+                        <!-- Summary Statistics -->
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-3">
+                                <div class="card bg-primary text-white">
+                                    <div class="card-body p-2">
+                                        <div class="small">Average Damage</div>
+                                        <h4 class="mb-0">@result.AverageDamage.ToString("F2")</h4>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card bg-info text-white">
+                                    <div class="card-body p-2">
+                                        <div class="small">Median Damage</div>
+                                        <h4 class="mb-0">@result.MedianDamage</h4>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card bg-warning text-dark">
+                                    <div class="card-body p-2">
+                                        <div class="small">Models Killed</div>
+                                        <h4 class="mb-0">@result.AverageModelsKilled.ToString("F2")</h4>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card bg-danger text-white">
+                                    <div class="card-body p-2">
+                                        <div class="small">Wipeout Chance</div>
+                                        <h4 class="mb-0">@result.WipeoutProbability.ToString("F1")%</h4>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Detailed Statistics -->
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-6">
+                                <div class="card">
+                                    <div class="card-header bg-secondary-subtle">
+                                        <strong>Stage Breakdown</strong>
+                                    </div>
+                                    <div class="card-body p-2">
+                                        <table class="table table-sm table-borderless mb-0">
+                                            <tbody>
+                                                <tr>
+                                                    <td>Total Attacks:</td>
+                                                    <td class="text-end"><strong>@result.Stages.TotalAttacks.ToString("F1")</strong></td>
+                                                </tr>
+                                                <tr>
+                                                    <td>Total Hits:</td>
+                                                    <td class="text-end"><strong>@result.Stages.TotalHits.ToString("F1")</strong> (@((result.Stages.TotalHits / result.Stages.TotalAttacks * 100).ToString("F1"))%)</td>
+                                                </tr>
+                                                <tr>
+                                                    <td>Critical Hits:</td>
+                                                    <td class="text-end"><strong>@result.Stages.CriticalHits.ToString("F1")</strong></td>
+                                                </tr>
+                                                <tr>
+                                                    <td>Total Wounds:</td>
+                                                    <td class="text-end"><strong>@result.Stages.TotalWounds.ToString("F1")</strong> (@((result.Stages.TotalWounds / result.Stages.TotalHits * 100).ToString("F1"))%)</td>
+                                                </tr>
+                                                <tr>
+                                                    <td>Critical Wounds:</td>
+                                                    <td class="text-end"><strong>@result.Stages.CriticalWounds.ToString("F1")</strong></td>
+                                                </tr>
+                                                <tr>
+                                                    <td>Mortal Wounds:</td>
+                                                    <td class="text-end"><strong>@result.Stages.MortalWounds.ToString("F1")</strong></td>
+                                                </tr>
+                                                <tr>
+                                                    <td>Failed Saves:</td>
+                                                    <td class="text-end"><strong>@result.Stages.FailedSaves.ToString("F1")</strong></td>
+                                                </tr>
+                                                <tr>
+                                                    <td>Successful Saves:</td>
+                                                    <td class="text-end"><strong>@result.Stages.SuccessfulSaves.ToString("F1")</strong></td>
+                                                </tr>
+                                                <tr>
+                                                    <td>Invulnerable Saves:</td>
+                                                    <td class="text-end"><strong>@result.Stages.InvulnerableSaves.ToString("F1")</strong></td>
+                                                </tr>
+                                                <tr>
+                                                    <td>Feel No Pain Saves:</td>
+                                                    <td class="text-end"><strong>@result.Stages.FeelNoPainSaves.ToString("F1")</strong></td>
+                                                </tr>
+                                                <tr class="table-primary">
+                                                    <td><strong>Total Damage Dealt:</strong></td>
+                                                    <td class="text-end"><strong>@result.Stages.TotalDamageDealt.ToString("F1")</strong></td>
+                                                </tr>
+                                                <tr>
+                                                    <td>Damage Prevented:</td>
+                                                    <td class="text-end"><strong>@result.Stages.TotalDamagePrevented.ToString("F1")</strong></td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="card">
+                                    <div class="card-header bg-secondary-subtle">
+                                        <strong>Damage Distribution</strong>
+                                    </div>
+                                    <div class="card-body p-2">
+                                        <div style="max-height: 400px; overflow-y: auto;">
+                                            <table class="table table-sm table-striped mb-0">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Damage</th>
+                                                        <th>Probability</th>
+                                                        <th>Chart</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    @foreach (var entry in result.DamageDistribution.OrderBy(kvp => kvp.Key))
+                                                    {
+                                                        <tr>
+                                                            <td>@entry.Key</td>
+                                                            <td>@entry.Value.ToString("F2")%</td>
+                                                            <td>
+                                                                <div class="progress" style="height: 20px;">
+                                                                    <div class="progress-bar" style="width: @entry.Value%"></div>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    }
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Combat Log -->
+                        @if (result.SampleCombatLog.Any())
+                        {
+                            <div class="card">
+                                <div class="card-header bg-secondary-subtle d-flex justify-content-between align-items-center">
+                                    <strong><i class="fa fa-list"></i> Combat Log (Sample Simulation)</strong>
+                                    <button class="btn btn-sm btn-outline-secondary" @onclick="ToggleLogExpanded">
+                                        <i class="fa @(logExpanded ? "fa-compress" : "fa-expand")"></i>
+                                    </button>
+                                </div>
+                                <div class="card-body p-0 combat-log" style="@(logExpanded ? "max-height: none;" : "")">
+                                    @foreach (var entry in result.SampleCombatLog)
+                                    {
+                                        <div class="combat-log-entry phase-@entry.Phase.ToLower()">
+                                            <span class="text-muted">[Step @entry.Step]</span>
+                                            <span class="badge bg-secondary">@entry.Phase</span>
+                                            <strong>@entry.Message</strong>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+            else if (calculating)
+            {
+                <div class="alert alert-info mt-3 text-center">
+                    <div class="spinner-border text-primary me-2" role="status"></div>
+                    <strong>Calculating @context.SimulationSettings.Iterations.ToString("N0") simulations...</strong>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<!-- Unit Picker Modal -->
+<UnitPickerModal @ref="unitPickerModal" OnUnitSelected="HandleUnitSelected" />
+
+<!-- Unit Editor Modal -->
+<UnitEditorModal @ref="unitEditorModal" />
+
+<!-- Settings Modal -->
+<SimulationSettingsModal @ref="settingsModal" Settings="@context.SimulationSettings" OnSettingsChanged="HandleSettingsChanged" />
+
+@code {
+    private VersusContext context = new();
+    private VersusResult? result;
+    private UnitPickerModal unitPickerModal = null!;
+    private UnitEditorModal unitEditorModal = null!;
+    private SimulationSettingsModal settingsModal = null!;
+    private bool calculating = false;
+    private bool isAddingAttacker = true;
+    private bool logExpanded = false;
+
+    protected override void OnInitialized()
+    {
+        context = VersusService.GetContext();
+        VersusService.OnContextChanged += HandleContextChanged;
+    }
+
+    private void HandleContextChanged()
+    {
+        context = VersusService.GetContext();
+        StateHasChanged();
+    }
+
+    private async Task ShowUnitPicker(bool isAttacker)
+    {
+        isAddingAttacker = isAttacker;
+        await unitPickerModal.Show();
+    }
+
+    private async Task HandleUnitSelected(int datasheetId)
+    {
+        try
+        {
+            if (isAddingAttacker)
+                await VersusService.AddAttackingUnitAsync(datasheetId);
+            else
+                await VersusService.AddDefendingUnitAsync(datasheetId);
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("alert", $"Error adding unit: {ex.Message}");
+        }
+    }
+
+    private async Task AddFromBookmark(int datasheetId, bool isAttacker)
+    {
+        try
+        {
+            if (isAttacker)
+                await VersusService.AddAttackingUnitAsync(datasheetId);
+            else
+                await VersusService.AddDefendingUnitAsync(datasheetId);
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("alert", $"Error adding unit from bookmark: {ex.Message}");
+        }
+    }
+
+    private async Task EditUnit(CombatUnit unit, bool isAttacker)
+    {
+        await unitEditorModal.Show(unit, isAttacker);
+    }
+
+    private void RemoveUnit(string unitId, bool isAttacker)
+    {
+        if (isAttacker)
+            VersusService.RemoveAttackingUnit(unitId);
+        else
+            VersusService.RemoveDefendingUnit(unitId);
+    }
+
+    private async Task Calculate()
+    {
+        calculating = true;
+        result = null;
+        StateHasChanged();
+
+        await Task.Delay(10);
+
+        try
+        {
+            result = VersusCalculator.Calculate(context);
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("alert", $"Error calculating: {ex.Message}");
+        }
+        finally
+        {
+            calculating = false;
+            StateHasChanged();
+        }
+    }
+
+    private bool CanCalculate()
+    {
+        return context.AttackingUnits.Any() &&
+               context.DefendingUnits.Any() &&
+               context.AttackingUnits.Any(u => u.Models.Any(m => m.Weapons.Any(w => w.IsSelected)));
+    }
+
+    private void SwapSides()
+    {
+        VersusService.SwapAttackerDefender();
+    }
+
+    private async Task ShowSettings()
+    {
+        await settingsModal.Show();
+    }
+
+    private void HandleSettingsChanged(SimulationSettings settings)
+    {
+        VersusService.UpdateSimulationSettings(settings);
+    }
+
+    private void ClearAll()
+    {
+        VersusService.ClearAll();
+        result = null;
+    }
+
+    private void ToggleLogExpanded()
+    {
+        logExpanded = !logExpanded;
+    }
+
+    public void Dispose()
+    {
+        VersusService.OnContextChanged -= HandleContextChanged;
+    }
+}
