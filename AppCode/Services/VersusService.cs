@@ -268,26 +268,15 @@ namespace OmniTactica.AppCode.Services
             if (meltaMatch.Success)
                 abilities.Melta = int.Parse(meltaMatch.Groups[1].Value);
 
-            // Parse Anti- keywords
-            var antiInfantryMatch = Regex.Match(description, @"anti-infantry (\d+)\+", RegexOptions.IgnoreCase);
-            if (antiInfantryMatch.Success)
+            // Anti-X Y+ (generic keyword support)
+            var antiMatch = Regex.Match(description, @"anti-(\w+(?:\s+\w+)*)\s+(\d+)\+", RegexOptions.IgnoreCase);
+            if (antiMatch.Success)
             {
-                abilities.AntiInfantry = true;
-                abilities.AntiInfantryValue = int.Parse(antiInfantryMatch.Groups[1].Value);
-            }
-
-            var antiVehicleMatch = Regex.Match(description, @"anti-vehicle (\d+)\+", RegexOptions.IgnoreCase);
-            if (antiVehicleMatch.Success)
-            {
-                abilities.AntiVehicle = true;
-                abilities.AntiVehicleValue = int.Parse(antiVehicleMatch.Groups[1].Value);
-            }
-
-            var antiMonsterMatch = Regex.Match(description, @"anti-monster (\d+)\+", RegexOptions.IgnoreCase);
-            if (antiMonsterMatch.Success)
-            {
-                abilities.AntiMonster = true;
-                abilities.AntiMonsterValue = int.Parse(antiMonsterMatch.Groups[1].Value);
+                abilities.AntiKeyword = antiMatch.Groups[1].Value;
+                if (int.TryParse(antiMatch.Groups[2].Value, out var antiThreshold))
+                {
+                    abilities.AntiKeywordThreshold = antiThreshold;
+                }
             }
 
             return abilities;

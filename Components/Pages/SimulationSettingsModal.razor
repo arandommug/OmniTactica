@@ -30,8 +30,15 @@
                 </div>
 
                 <div class="mb-3">
-                    <label class="form-label">Range to Target (inches, optional)</label>
-                    <input type="number" class="form-control" @bind="rangeString" placeholder="Leave empty if not applicable" />
+                    <label class="form-label">Range to Target</label>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" @bind="withinHalfRange" id="halfRangeCheck" />
+                        <label class="form-check-label" for="halfRangeCheck">
+                            Within Half Range (Quick Toggle)
+                        </label>
+                        <div class="form-text">Automatically sets range for Rapid Fire weapons</div>
+                    </div>
+                    <input type="number" class="form-control" @bind="rangeString" placeholder="Or enter specific range in inches" disabled="@withinHalfRange" />
                     <div class="form-text">Used for Rapid Fire, Melta, and range-dependent abilities</div>
                 </div>
 
@@ -70,6 +77,7 @@
 
     private SimulationSettings localSettings = new();
     private string rangeString = "";
+    private bool withinHalfRange = false;
 
     public async Task Show()
     {
@@ -84,14 +92,29 @@
         };
 
         rangeString = Settings.RangeToTarget?.ToString() ?? "";
+        withinHalfRange = Settings.RangeToTarget == -1; // -1 indicates "within half range" mode
+        if (withinHalfRange)
+            rangeString = "";
 
         await JS.InvokeVoidAsync("eval", "new bootstrap.Modal(document.getElementById('simulationSettingsModal')).show()");
+    }
+
+    private void HandleHalfRangeToggle()
+    {
+        if (withinHalfRange)
+        {
+            rangeString = "";
+        }
     }
 
     private async Task ApplySettings()
     {
         // Parse range
-        if (int.TryParse(rangeString, out var range) && range > 0)
+        if (withinHalfRange)
+        {
+            localSettings.RangeToTarget = -1; // Special value to indicate "within half range"
+        }
+        else if (int.TryParse(rangeString, out var range) && range > 0)
         {
             localSettings.RangeToTarget = range;
         }

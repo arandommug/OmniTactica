@@ -133,7 +133,19 @@ namespace OmniTactica.AppCode.Services
             if (weapon.Abilities.RapidFire.HasValue && context.SimulationSettings.RangeToTarget.HasValue)
             {
                 var weaponRange = ParseRangeValue(weapon.Range);
-                if (context.SimulationSettings.RangeToTarget.Value <= weaponRange / 2)
+                var isWithinHalfRange = false;
+
+                // RangeToTarget = -1 is a special value meaning "within half range"
+                if (context.SimulationSettings.RangeToTarget.Value == -1)
+                {
+                    isWithinHalfRange = true;
+                }
+                else if (context.SimulationSettings.RangeToTarget.Value <= weaponRange / 2)
+                {
+                    isWithinHalfRange = true;
+                }
+
+                if (isWithinHalfRange)
                 {
                     attacks += weapon.Abilities.RapidFire.Value;
                     Log(run, step++, "Attacks", attackerUnit.DatasheetName, attackerModel.Name, weapon.Name, "", "",
@@ -225,21 +237,20 @@ namespace OmniTactica.AppCode.Services
             for (int i = 0; i < attacks; i++)
             {
                 var roll = RollD6();
-                var originalRoll = roll;
-                var rerolled = false;
+                var unmodifiedRoll = roll; // Track unmodified roll for critical checks
 
                 if ((rerollAll) || (rerollOnes && roll == 1))
                 {
                     roll = RollD6();
-                    rerolled = true;
+                    unmodifiedRoll = roll; // After reroll, the reroll result is the "unmodified" value
                 }
 
                 if (roll >= targetRoll)
                 {
                     result.Hits++;
 
-                    // Check for critical hit
-                    if (!rerolled && roll == 6)
+                    // Check for critical hit (unmodified 6, rerolls count as unmodified)
+                    if (unmodifiedRoll == 6)
                     {
                         result.CriticalHits++;
 
@@ -249,7 +260,7 @@ namespace OmniTactica.AppCode.Services
                             result.Hits += weapon.Abilities.SustainedHits.Value;
                             Log(run, step++, "Hit", attackerUnit.DatasheetName, attackerModel.Name, weapon.Name, "", "",
                                 $"Critical Hit: Sustained Hits added {weapon.Abilities.SustainedHits.Value} extra hits",
-                                new Dictionary<string, object> { ["roll"] = roll, ["extra_hits"] = weapon.Abilities.SustainedHits.Value });
+                                new Dictionary<string, object> { ["roll"] = unmodifiedRoll, ["extra_hits"] = weapon.Abilities.SustainedHits.Value });
                         }
 
                         // Lethal Hits
@@ -259,7 +270,7 @@ namespace OmniTactica.AppCode.Services
                             result.Hits--;
                             Log(run, step++, "Hit", attackerUnit.DatasheetName, attackerModel.Name, weapon.Name, "", "",
                                 "Critical Hit: Lethal Hits - auto-wound",
-                                new Dictionary<string, object> { ["roll"] = roll });
+                                new Dictionary<string, object> { ["roll"] = unmodifiedRoll });
                         }
                     }
                 }
@@ -305,6 +316,20 @@ namespace OmniTactica.AppCode.Services
 
             woundTarget = Math.Clamp(woundTarget - woundModifier, 2, 6);
 
+            // Check for CriticalWoundOn modifiers (e.g., Anti-Infantry 3+)
+            var criticalWoundThreshold = 6;
+            foreach (var modifier in weapon.Modifiers.Where(m => m.IsActive))
+            {
+                if (EvaluateCondition(modifier.Condition, context, attackerUnit, weapon, defenders) &&
+                    modifier.Effect.Type == EffectType.CriticalWoundOn && modifier.Effect.IntValue.HasValue)
+                {
+                    criticalWoundThreshold = Math.Min(criticalWoundThreshold, modifier.Effect.IntValue.Value);
+                    Log(run, step++, "Wound", attackerUnit.DatasheetName, attackerModel.Name, weapon.Name, "", "",
+                        $"{modifier.Name}: Critical wounds on {modifier.Effect.IntValue.Value}+",
+                        new Dictionary<string, object> { ["crit_threshold"] = modifier.Effect.IntValue.Value });
+                }
+            }
+
             // Check for rerolls
             var rerollAll = weapon.Abilities.TwinLinked || weapon.Modifiers.Any(m => m.IsActive && EvaluateCondition(m.Condition, context, attackerUnit, weapon, defenders) && m.Effect.Type == EffectType.RerollWounds);
             var rerollOnes = weapon.Modifiers.Any(m => m.IsActive && EvaluateCondition(m.Condition, context, attackerUnit, weapon, defenders) && m.Effect.Type == EffectType.RerollOnes);
@@ -312,7 +337,7 @@ namespace OmniTactica.AppCode.Services
             for (int i = 0; i < totalHits; i++)
             {
                 var roll = RollD6();
-                var rerolled = false;
+                var unmodifiedRoll = roll; // Track unmodified roll for critical checks
 
                 if (rerollAll || (rerollOnes && roll == 1))
                 {
@@ -320,16 +345,19 @@ namespace OmniTactica.AppCode.Services
                     if (reroll >= roll || rerollAll)
                     {
                         roll = reroll;
-                        rerolled = true;
+                        unmodifiedRoll = reroll; // After reroll, the reroll result is the "unmodified" value
                     }
                 }
 
-                if (roll >= woundTarget)
+                // Check for critical wound first (using unmodified roll)
+                // Critical wounds always succeed, even if they wouldn't normally wound
+                bool isCriticalWound = unmodifiedRoll >= criticalWoundThreshold;
+
+                if (isCriticalWound || roll >= woundTarget)
                 {
                     result.Wounds++;
 
-                    // Check for critical wound
-                    if (!rerolled && roll == 6)
+                    if (isCriticalWound)
                     {
                         result.CriticalWounds++;
 
@@ -340,7 +368,7 @@ namespace OmniTactica.AppCode.Services
                             result.Wounds--;
                             Log(run, step++, "Wound", attackerUnit.DatasheetName, attackerModel.Name, weapon.Name, "", "",
                                 "Critical Wound: Devastating Wounds - converted to mortal wound",
-                                new Dictionary<string, object> { ["roll"] = roll });
+                                new Dictionary<string, object> { ["roll"] = unmodifiedRoll });
                         }
                     }
                 }
@@ -580,12 +608,28 @@ namespace OmniTactica.AppCode.Services
             {
                 ConditionType.Always => true,
                 ConditionType.UnitCharged => context.SimulationSettings.AttackerCharged,
-                ConditionType.TargetWithinHalfRange => context.SimulationSettings.RangeToTarget.HasValue &&
-                                                        context.SimulationSettings.RangeToTarget.Value <= ParseRangeValue(weapon.Range) / 2,
+                ConditionType.TargetWithinHalfRange => IsWithinHalfRange(context, weapon),
                 ConditionType.TargetUnitSize5Plus => defenders != null && defenders.Sum(u => u.Models.Sum(m => m.Quantity)) >= 5,
                 ConditionType.TargetUnitSize10Plus => defenders != null && defenders.Sum(u => u.Models.Sum(m => m.Quantity)) >= 10,
+                ConditionType.TargetHasKeyword => defenders != null && !string.IsNullOrEmpty(condition.Value) && defenders.Any(u => u.DatasheetDetail?.Keywords.Any(k => k.Equals(condition.Value, StringComparison.OrdinalIgnoreCase)) == true),
+                ConditionType.TargetIsInfantry => defenders != null && defenders.Any(u => u.DatasheetDetail?.Keywords.Any(k => k.Equals("Infantry", StringComparison.OrdinalIgnoreCase)) == true),
+                ConditionType.TargetIsVehicle => defenders != null && defenders.Any(u => u.DatasheetDetail?.Keywords.Any(k => k.Equals("Vehicle", StringComparison.OrdinalIgnoreCase)) == true),
+                ConditionType.TargetIsMonster => defenders != null && defenders.Any(u => u.DatasheetDetail?.Keywords.Any(k => k.Equals("Monster", StringComparison.OrdinalIgnoreCase)) == true),
                 _ => false
             };
+        }
+
+        private static bool IsWithinHalfRange(VersusContext context, CombatWeapon weapon)
+        {
+            if (!context.SimulationSettings.RangeToTarget.HasValue)
+                return false;
+
+            // -1 is special value for "within half range" quick toggle
+            if (context.SimulationSettings.RangeToTarget.Value == -1)
+                return true;
+
+            var weaponRange = ParseRangeValue(weapon.Range);
+            return context.SimulationSettings.RangeToTarget.Value <= weaponRange / 2;
         }
 
         private static List<CombatUnit> CloneUnits(List<CombatUnit> units)
@@ -599,7 +643,8 @@ namespace OmniTactica.AppCode.Services
                     Id = unit.Id,
                     DatasheetId = unit.DatasheetId,
                     DatasheetName = unit.DatasheetName,
-                    FactionId = unit.FactionId
+                    FactionId = unit.FactionId,
+                    DatasheetDetail = unit.DatasheetDetail // Preserve DatasheetDetail for keyword checks
                 };
 
                 foreach (var model in unit.Models)

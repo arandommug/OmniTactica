@@ -90,12 +90,10 @@ namespace OmniTactica.AppCode.Models.Core
     /// </summary>
     public class WeaponAbilities
     {
-        public bool AntiInfantry { get; set; }
-        public int? AntiInfantryValue { get; set; }
-        public bool AntiVehicle { get; set; }
-        public int? AntiVehicleValue { get; set; }
-        public bool AntiMonster { get; set; }
-        public int? AntiMonsterValue { get; set; }
+        // Generic Anti-keyword support (replaces specific AntiInfantry, etc.)
+        public string? AntiKeyword { get; set; }
+        public int? AntiKeywordThreshold { get; set; }
+
         public bool Assault { get; set; }
         public bool Blast { get; set; }
         public bool DevastatingWounds { get; set; }
@@ -155,6 +153,7 @@ namespace OmniTactica.AppCode.Models.Core
         TargetWithinHalfRange,
         TargetWithinEngagementRange,
         UnitRemainedStationary,
+        TargetHasKeyword, // Generic keyword check (replaces TargetIsInfantry, etc.)
         TargetIsInfantry,
         TargetIsVehicle,
         TargetIsMonster,

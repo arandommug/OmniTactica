@@ -77,28 +77,15 @@ namespace OmniTactica.AppCode.Utilities
                 abilities.IgnoresCover = true;
             }
 
-            // Anti-Infantry X+
-            var antiInfantryMatch = Regex.Match(lower, @"anti-infantry (\d+)\+");
-            if (antiInfantryMatch.Success && int.TryParse(antiInfantryMatch.Groups[1].Value, out var antiInfantryValue))
+            // Anti-X Y+ (generic keyword support)
+            var antiMatch = Regex.Match(lower, @"anti-(\w+(?:\s+\w+)*)\s+(\d+)\+");
+            if (antiMatch.Success)
             {
-                abilities.AntiInfantry = true;
-                abilities.AntiInfantryValue = antiInfantryValue;
-            }
-
-            // Anti-Vehicle X+
-            var antiVehicleMatch = Regex.Match(lower, @"anti-vehicle (\d+)\+");
-            if (antiVehicleMatch.Success && int.TryParse(antiVehicleMatch.Groups[1].Value, out var antiVehicleValue))
-            {
-                abilities.AntiVehicle = true;
-                abilities.AntiVehicleValue = antiVehicleValue;
-            }
-
-            // Anti-Monster X+
-            var antiMonsterMatch = Regex.Match(lower, @"anti-monster (\d+)\+");
-            if (antiMonsterMatch.Success && int.TryParse(antiMonsterMatch.Groups[1].Value, out var antiMonsterValue))
-            {
-                abilities.AntiMonster = true;
-                abilities.AntiMonsterValue = antiMonsterValue;
+                abilities.AntiKeyword = antiMatch.Groups[1].Value;
+                if (int.TryParse(antiMatch.Groups[2].Value, out var antiThreshold))
+                {
+                    abilities.AntiKeywordThreshold = antiThreshold;
+                }
             }
 
             // Lethal Hits

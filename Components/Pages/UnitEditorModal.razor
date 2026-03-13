@@ -235,14 +235,19 @@
                                             {
                                                 <div class="card mb-3 border-secondary">
                                                     <div class="card-header bg-secondary bg-opacity-10 d-flex justify-content-between align-items-center">
-                                                        <div>
+                                                        <div class="d-flex align-items-center gap-2">
                                                             <strong>@model.Name</strong>
-                                                            <span class="badge bg-info ms-2">x@model.Quantity</span>
+                                                            <div class="btn-group btn-group-sm">
+                                                                <button class="btn btn-outline-secondary btn-sm" @onclick="() => DecrementModelQuantity(model)" disabled="@(model.Quantity <= 1)">
+                                                                    <i class="fa fa-minus"></i>
+                                                                </button>
+                                                                <button class="btn btn-info btn-sm" disabled style="min-width: 50px;">@model.Quantity</button>
+                                                                <button class="btn btn-outline-secondary btn-sm" @onclick="() => IncrementModelQuantity(model)">
+                                                                    <i class="fa fa-plus"></i>
+                                                                </button>
+                                                            </div>
                                                         </div>
                                                         <div class="btn-group btn-group-sm">
-                                                            <button class="btn btn-outline-primary" @onclick="() => EditModelQuantity(model)" title="Edit Quantity">
-                                                                <i class="fa fa-sort-numeric-up"></i>
-                                                            </button>
                                                             <button class="btn btn-outline-success" @onclick="() => AddWeaponToModel(model)" title="Add Weapon">
                                                                 <i class="fa fa-plus"></i>
                                                             </button>
@@ -273,16 +278,20 @@
                                                                 <strong class="small">Weapons:</strong>
                                                                 @foreach (var weapon in model.Weapons)
                                                                 {
-                                                                    <div class="d-flex align-items-center justify-content-between mb-1 p-1 border rounded @(weapon.IsSelected ? "bg-success bg-opacity-10" : "bg-light")">
+                                                                    <div class="d-flex align-items-center justify-content-between mb-1 p-2 border rounded @(weapon.IsSelected ? "bg-success bg-opacity-10" : "bg-light")">
                                                                         <div class="d-flex align-items-center flex-grow-1">
-                                                                            <input type="checkbox" class="form-check-input me-2" @bind="weapon.IsSelected" />
-                                                                            <span class="small">@weapon.Name</span>
-                                                                            <span class="badge bg-secondary ms-2 small">@weapon.Type</span>
-                                                                            @if (weapon.Modifiers.Any(m => m.IsActive))
-                                                                            {
-                                                                                <span class="badge bg-warning ms-1 small">@weapon.Modifiers.Count(m => m.IsActive) mods</span>
-                                                                            }
-                                                                        </div>
+                                                                            <div class="form-check">
+                                                                                <input type="checkbox" class="form-check-input" id="weapon-@weapon.Id" @bind="weapon.IsSelected" />
+                                                                                <label class="form-check-label" for="weapon-@weapon.Id">
+                                                                                    <span class="small">@weapon.Name</span>
+                                                                                </label>
+                                                                            </div>
+                                                                                    <span class="badge bg-secondary ms-2 small">@weapon.Type</span>
+                                                                                    @if (weapon.Modifiers.Any(m => m.IsActive))
+                                                                                    {
+                                                                                        <span class="badge bg-warning ms-1 small">@weapon.Modifiers.Count(m => m.IsActive) mods</span>
+                                                                                    }
+                                                                            </div>
                                                                         <div class="btn-group btn-group-sm">
                                                                             <button class="btn btn-sm btn-outline-warning" @onclick="() => ShowModifierModal(model, weapon, null, ModifierTarget.Weapon)" title="Add Modifier">
                                                                                 <i class="fa fa-magic"></i>
@@ -501,6 +510,24 @@
         showQuantityModal = true;
     }
 
+    private void IncrementModelQuantity(CombatModel model)
+    {
+        if (model.Quantity < 20) // Reasonable max limit
+        {
+            model.Quantity++;
+            StateHasChanged();
+        }
+    }
+
+    private void DecrementModelQuantity(CombatModel model)
+    {
+        if (model.Quantity > 1)
+        {
+            model.Quantity--;
+            StateHasChanged();
+        }
+    }
+
     private void AddWeaponToModel(CombatModel model)
     {
         selectedModel = model;
@@ -684,6 +711,23 @@
                 IsCustom = false
             });
         }
+
+        // Anti-X Y+ (generic keyword support)
+        if (!string.IsNullOrEmpty(weapon.Abilities.AntiKeyword) && weapon.Abilities.AntiKeywordThreshold.HasValue)
+        {
+            weapon.Modifiers.Add(new ConditionalModifier
+            {
+                Name = $"Anti-{weapon.Abilities.AntiKeyword} {weapon.Abilities.AntiKeywordThreshold}+ (Built-in)",
+                Condition = new ModifierCondition 
+                { 
+                    Type = ConditionType.TargetHasKeyword,
+                    Value = weapon.Abilities.AntiKeyword
+                },
+                Effect = new ModifierEffect { Type = EffectType.CriticalWoundOn, IntValue = weapon.Abilities.AntiKeywordThreshold.Value },
+                IsActive = true,
+                IsCustom = false
+            });
+        }
     }
 
     private WeaponAbilities ParseWeaponAbilities(string description)
@@ -719,25 +763,15 @@
         if (meltaMatch.Success)
             abilities.Melta = int.Parse(meltaMatch.Groups[1].Value);
 
-        var antiInfantryMatch = Regex.Match(description, @"anti-infantry (\d+)\+", RegexOptions.IgnoreCase);
-        if (antiInfantryMatch.Success)
+        // Anti-X Y+ (generic keyword support)
+        var antiMatch = Regex.Match(description, @"anti-(\w+(?:\s+\w+)*)\s+(\d+)\+", RegexOptions.IgnoreCase);
+        if (antiMatch.Success)
         {
-            abilities.AntiInfantry = true;
-            abilities.AntiInfantryValue = int.Parse(antiInfantryMatch.Groups[1].Value);
-        }
-
-        var antiVehicleMatch = Regex.Match(description, @"anti-vehicle (\d+)\+", RegexOptions.IgnoreCase);
-        if (antiVehicleMatch.Success)
-        {
-            abilities.AntiVehicle = true;
-            abilities.AntiVehicleValue = int.Parse(antiVehicleMatch.Groups[1].Value);
-        }
-
-        var antiMonsterMatch = Regex.Match(description, @"anti-monster (\d+)\+", RegexOptions.IgnoreCase);
-        if (antiMonsterMatch.Success)
-        {
-            abilities.AntiMonster = true;
-            abilities.AntiMonsterValue = int.Parse(antiMonsterMatch.Groups[1].Value);
+            abilities.AntiKeyword = antiMatch.Groups[1].Value;
+            if (int.TryParse(antiMatch.Groups[2].Value, out var antiThreshold))
+            {
+                abilities.AntiKeywordThreshold = antiThreshold;
+            }
         }
 
         return abilities;
