@@ -27,21 +27,6 @@
             grid-template-columns: 1fr;
         }
     }
-    .combat-log {
-        max-height: 500px;
-        overflow-y: auto;
-        font-family: 'Courier New', monospace;
-        font-size: 0.85rem;
-    }
-    .combat-log-entry {
-        padding: 0.25rem 0.5rem;
-        border-left: 3px solid transparent;
-    }
-    .combat-log-entry.phase-attacks { border-left-color: #ffc107; }
-    .combat-log-entry.phase-hit { border-left-color: #17a2b8; }
-    .combat-log-entry.phase-wound { border-left-color: #dc3545; }
-    .combat-log-entry.phase-save { border-left-color: #28a745; }
-    .combat-log-entry.phase-damage { border-left-color: #6f42c1; }
 </style>
 
 <div class="p-2">
@@ -341,20 +326,22 @@
                         {
                             <div class="card">
                                 <div class="card-header bg-secondary-subtle d-flex justify-content-between align-items-center">
-                                    <strong><i class="fa fa-list"></i> Combat Log (Sample Simulation)</strong>
-                                    <button class="btn btn-sm btn-outline-secondary" @onclick="ToggleLogExpanded">
-                                        <i class="fa @(logExpanded ? "fa-compress" : "fa-expand")"></i>
-                                    </button>
-                                </div>
-                                <div class="card-body p-0 combat-log" style="@(logExpanded ? "max-height: none;" : "")">
-                                    @foreach (var entry in result.SampleCombatLog)
-                                    {
-                                        <div class="combat-log-entry phase-@entry.Phase.ToLower()">
-                                            <span class="text-muted">[Step @entry.Step]</span>
-                                            <span class="badge bg-secondary">@entry.Phase</span>
-                                            <strong>@entry.Message</strong>
+                                    <strong><i class="fa fa-scroll"></i> Combat Log (Sample Simulation)</strong>
+                                    <div class="d-flex gap-2 align-items-center">
+                                        <div class="form-check form-switch mb-0">
+                                            <input class="form-check-input" type="checkbox" id="verboseModeSwitch" 
+                                                   checked="@verboseMode" @onchange="ToggleVerboseMode">
+                                            <label class="form-check-label" for="verboseModeSwitch">
+                                                <i class="fa fa-dice"></i> Verbose
+                                            </label>
                                         </div>
-                                    }
+                                        <button class="btn btn-sm btn-outline-secondary" @onclick="ToggleLogExpanded">
+                                            <i class="fa @(logExpanded ? "fa-compress" : "fa-expand")"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="card-body" style="@(logExpanded ? "" : "max-height: 600px; overflow-y: auto;")">
+                                    <CombatLogViewer Entries="@result.SampleCombatLog" VerboseMode="@verboseMode" />
                                 </div>
                             </div>
                         }
@@ -390,6 +377,7 @@
     private bool calculating = false;
     private bool isAddingAttacker = true;
     private bool logExpanded = false;
+    private bool verboseMode = false;
 
     protected override void OnInitialized()
     {
@@ -506,6 +494,12 @@
     private void ToggleLogExpanded()
     {
         logExpanded = !logExpanded;
+    }
+
+    private void ToggleVerboseMode(ChangeEventArgs e)
+    {
+        verboseMode = (bool)(e.Value ?? false);
+        StateHasChanged();
     }
 
     public void Dispose()

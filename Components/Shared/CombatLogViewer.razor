@@ -1,0 +1,710 @@
+@using OmniTactica.AppCode.Models.Core
+@using OmniTactica.AppCode.Services
+@using Microsoft.JSInterop
+@inject AbilityRulesService AbilityRulesService
+@inject IJSRuntime JS
+
+<style>
+    .combat-log-card {
+        border-left: 4px solid #6c757d;
+        margin-bottom: 0.5rem;
+        transition: all 0.2s ease;
+    }
+
+    .combat-log-card:hover {
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+
+    .combat-log-header {
+        cursor: pointer;
+        user-select: none;
+        padding: 0.75rem 1rem;
+        background-color: rgba(108, 117, 125, 0.05);
+    }
+
+    .combat-log-header:hover {
+        background-color: rgba(108, 117, 125, 0.1);
+    }
+
+    .phase-section {
+        padding: 0.5rem 0;
+        border-bottom: 1px solid rgba(0,0,0,0.05);
+    }
+
+    .phase-section:last-child {
+        border-bottom: none;
+    }
+
+    .phase-title {
+        font-weight: 600;
+        font-size: 0.9rem;
+        margin-bottom: 0.25rem;
+        color: #495057;
+    }
+
+    .phase-hit { border-left-color: #0dcaf0; }
+    .phase-wound { border-left-color: #dc3545; }
+    .phase-save { border-left-color: #198754; }
+    .phase-damage { border-left-color: #6f42c1; }
+
+    .result-badge-no-wounds { background-color: #6c757d; }
+    .result-badge-saved { background-color: #198754; }
+    .result-badge-damage { background-color: #dc3545; }
+    .result-badge-destroyed { background-color: #212529; }
+
+    .fight-separator {
+        border-top: 3px double #dee2e6;
+        margin: 1.5rem 0;
+        padding-top: 1rem;
+        text-align: center;
+        font-weight: 600;
+        color: #6c757d;
+    }
+
+    .combat-summary-line {
+        font-size: 0.9rem;
+        color: #6c757d;
+    }
+</style>
+
+@if (Entries != null && Entries.Any())
+{
+    <div class="combat-log-container">
+        @{
+            var groupedLogs = GroupLogsByAttack(Entries);
+            var currentFightPhase = "";
+        }
+
+        @foreach (var attackGroup in groupedLogs)
+        {
+            // Render phase header if this group starts a new combat phase
+            @if (!string.IsNullOrEmpty(attackGroup.PhaseHeaderText))
+            {
+                <div class="fight-separator">
+                    <i class="fa fa-@(attackGroup.PhaseHeaderText.Contains("SHOOTING") ? "crosshairs" : "fist-raised") me-2"></i>
+                    @attackGroup.PhaseHeaderText
+                    <i class="fa fa-@(attackGroup.PhaseHeaderText.Contains("SHOOTING") ? "crosshairs" : "fist-raised") ms-2"></i>
+                </div>
+            }
+
+            // Render fight phase separator if needed
+            @if (!string.IsNullOrEmpty(attackGroup.FightPhase) && attackGroup.FightPhase != currentFightPhase)
+            {
+                currentFightPhase = attackGroup.FightPhase;
+                <div class="fight-separator">
+                    <i class="fa fa-crosshairs me-2"></i>
+                    @currentFightPhase
+                    <i class="fa fa-crosshairs ms-2"></i>
+                </div>
+            }
+
+            <div class="card combat-log-card shadow-sm phase-@GetPhaseClass(attackGroup)">
+                <!-- HEADER SUMMARY -->
+                <div class="card-header combat-log-header"
+                     data-bs-toggle="collapse"
+                     data-bs-target="#log-@attackGroup.Id">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="flex-grow-1">
+                            <div class="fw-bold">
+                                @attackGroup.AttackerName
+                                @if (!string.IsNullOrEmpty(attackGroup.WeaponName))
+                                {
+                                    <span class="text-muted"> — @attackGroup.WeaponName</span>
+                                }
+                            </div>
+                            <div class="combat-summary-line">
+                                <i class="fa fa-fist-raised"></i> @attackGroup.Attacks
+                                →
+                                <i class="fa fa-crosshairs"></i> @attackGroup.Hits
+                                →
+                                <i class="fa fa-tint"></i> @attackGroup.Wounds
+                            </div>
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="badge @GetResultBadgeClass(attackGroup)">
+                                @GetResultText(attackGroup)
+                            </span>
+                            <i class="fa fa-chevron-down"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- EXPANDABLE DETAILS -->
+                <div id="log-@attackGroup.Id" class="collapse">
+                    <div class="card-body">
+                        <!-- WEAPON MODIFIERS (if any) -->
+                        @if (attackGroup.ActiveModifiers.Any() || attackGroup.WeaponAbilities.Any())
+                        {
+                            <div class="phase-section mb-2 bg-warning bg-opacity-10 p-2 rounded">
+                                <div class="phase-title">
+                                    <i class="fa fa-star text-warning"></i>
+                                    Active Weapon Abilities & Modifiers
+                                </div>
+                                <div class="ms-3">
+                                    @foreach (var ability in attackGroup.WeaponAbilities)
+                                    {
+                                        var tooltip = AbilityTooltipHelper.GetTooltipFromName(ability, AbilityRulesService);
+                                        <span class="badge bg-info me-1 mb-1" 
+                                              style="cursor: help;"
+                                              data-bs-toggle="tooltip" 
+                                              data-bs-placement="top"
+                                              data-bs-html="true"
+                                              title="@tooltip">
+                                            @ability
+                                        </span>
+                                    }
+                                    @foreach (var modifier in attackGroup.ActiveModifiers)
+                                    {
+                                        <div class="text-primary small">
+                                            <i class="fa fa-cog"></i> @modifier
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        <!-- ATTACKS -->
+                        @if (attackGroup.Attacks > 0)
+                        {
+                            <div class="phase-section mb-2">
+                                <div class="phase-title">
+                                    <i class="fa fa-fist-raised"></i>
+                                    Attacks
+                                </div>
+                                <div class="ms-3">
+                                    <div>Total: @attackGroup.Attacks</div>
+                                    @foreach (var effect in attackGroup.AttackEffects)
+                                    {
+                                        <div class="text-muted small">@effect</div>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        <!-- HIT PHASE -->
+                        @if (attackGroup.Attacks > 0)
+                        {
+                            <div class="phase-section mb-2">
+                                <div class="phase-title">
+                                    <i class="fa fa-crosshairs text-info"></i>
+                                    Hit Roll
+                                </div>
+                                <div class="ms-3">
+                                    <div>
+                                        <i class="fa fa-check text-success"></i>
+                                        Hits: @attackGroup.Hits
+                                    </div>
+                                    @if (attackGroup.CriticalHits > 0)
+                                    {
+                                        <div>
+                                            <i class="fa fa-bolt text-warning"></i>
+                                            Critical Hits: @attackGroup.CriticalHits
+                                        </div>
+                                    }
+                                    @if (attackGroup.Misses > 0)
+                                    {
+                                        <div>
+                                            <i class="fa fa-times text-danger"></i>
+                                            Misses: @attackGroup.Misses
+                                        </div>
+                                    }
+                                    @if (attackGroup.AutoWounds > 0)
+                                    {
+                                        <div>
+                                            <i class="fa fa-skull text-danger"></i>
+                                            Auto-Wounds: @attackGroup.AutoWounds
+                                        </div>
+                                    }
+                                    @foreach (var effect in attackGroup.HitEffects)
+                                    {
+                                        <div class="text-muted small">Effect: @effect</div>
+                                    }
+                                    @if (VerboseMode && attackGroup.HitDice.Any())
+                                    {
+                                        <div class="text-muted small mt-1">
+                                            <i class="fa fa-dice"></i> Hit Dice: [@string.Join(",", attackGroup.HitDice)]
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        <!-- WOUND PHASE -->
+                        @if (attackGroup.Hits + attackGroup.CriticalHits + attackGroup.AutoWounds > 0)
+                        {
+                            <div class="phase-section mb-2">
+                                <div class="phase-title">
+                                    <i class="fa fa-tint text-danger"></i>
+                                    Wound Roll
+                                </div>
+                                <div class="ms-3">
+                                    <div>
+                                        <i class="fa fa-check text-success"></i>
+                                        Wounds: @attackGroup.Wounds
+                                    </div>
+                                    @if (attackGroup.CriticalWounds > 0)
+                                    {
+                                        <div>
+                                            <i class="fa fa-bolt text-warning"></i>
+                                            Critical Wounds: @attackGroup.CriticalWounds
+                                        </div>
+                                    }
+                                    @if (attackGroup.FailedToWound > 0)
+                                    {
+                                        <div>
+                                            <i class="fa fa-times text-danger"></i>
+                                            Failed: @attackGroup.FailedToWound
+                                        </div>
+                                    }
+                                    @if (attackGroup.MortalWounds > 0)
+                                    {
+                                        <div>
+                                            <i class="fa fa-skull text-danger"></i>
+                                            Mortal Wounds: @attackGroup.MortalWounds
+                                        </div>
+                                    }
+                                    @foreach (var effect in attackGroup.WoundEffects)
+                                    {
+                                        <div class="text-muted small">Effect: @effect</div>
+                                    }
+                                    @if (VerboseMode && attackGroup.WoundDice.Any())
+                                    {
+                                        <div class="text-muted small mt-1">
+                                            <i class="fa fa-dice"></i> Wound Dice: [@string.Join(",", attackGroup.WoundDice)]
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        <!-- SAVE PHASE -->
+                        @if (attackGroup.SaveAttempts.Any())
+                        {
+                            var groupedSaves = attackGroup.SaveAttempts.GroupBy(s => s.DefenderName);
+                            @foreach (var defenderSaves in groupedSaves)
+                            {
+                                <div class="phase-section mb-2">
+                                    <div class="phase-title">
+                                        <i class="fa fa-shield text-success"></i>
+                                        Save — @defenderSaves.Key
+                                    </div>
+                                    <div class="ms-3">
+                                        @foreach (var save in defenderSaves)
+                                        {
+                                            @if (save.IsMortalWound)
+                                            {
+                                                <div class="text-danger">
+                                                    <i class="fa fa-skull"></i>
+                                                    Mortal wound bypasses saves
+                                                </div>
+                                            }
+                                            else
+                                            {
+                                                <div class="@(save.Passed ? "text-success" : "text-danger")">
+                                                    Roll: @save.Roll vs @save.Target+
+                                                    @if (save.Passed)
+                                                    {
+                                                        <span>— <i class="fa fa-shield"></i> Save Passed (@save.SaveType)</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span>— <i class="fa fa-times"></i> Save Failed (@save.SaveType)</span>
+                                                    }
+                                                </div>
+                                            }
+                                        }
+                                        @if (VerboseMode && attackGroup.SaveDice.Any() && defenderSaves.Any(s => !s.IsMortalWound))
+                                        {
+                                            <div class="text-muted small mt-1">
+                                                <i class="fa fa-dice"></i> Save Dice: [@string.Join(",", attackGroup.SaveDice)]
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        }
+
+                        <!-- DAMAGE -->
+                        @if (attackGroup.DamageEvents.Any())
+                        {
+                            <div class="phase-section">
+                                <div class="phase-title">
+                                    <i class="fa fa-bolt text-danger"></i>
+                                    Damage
+                                </div>
+                                <div class="ms-3">
+                                    @foreach (var damageEvent in attackGroup.DamageEvents)
+                                    {
+                                        <div>@damageEvent</div>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        <!-- RESULT SUMMARY -->
+                        <div class="phase-section mt-3 pt-3 border-top">
+                            <div class="phase-title">
+                                <i class="fa fa-flag-checkered"></i>
+                                Result
+                            </div>
+                            <div class="ms-3">
+                                @if (attackGroup.TotalDamage == 0)
+                                {
+                                    @if ((attackGroup.Wounds + attackGroup.CriticalWounds + attackGroup.MortalWounds) == 0)
+                                    {
+                                        <div class="text-muted">No wounds inflicted</div>
+                                    }
+                                    else
+                                    {
+                                        <div class="text-success">All wounds saved</div>
+                                    }
+                                }
+                                else
+                                {
+                                    <div class="text-danger fw-bold">
+                                        <i class="fa fa-bolt"></i> @attackGroup.TotalDamage damage inflicted
+                                        @if (attackGroup.TargetDestroyed)
+                                        {
+                                            <span class="ms-2"><i class="fa fa-skull"></i> Target destroyed</span>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+else
+{
+    <div class="alert alert-info">
+        <i class="fa fa-info-circle"></i> No combat log data available. Run a simulation with detailed logging enabled.
+    </div>
+}
+
+@code {
+    [Parameter]
+    public List<CombatLogEntry>? Entries { get; set; }
+
+    [Parameter]
+    public bool VerboseMode { get; set; } = false;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await JS.InvokeVoidAsync("initTooltips");
+    }
+
+    private List<AttackGroupLog> GroupLogsByAttack(List<CombatLogEntry> entries)
+    {
+        var groups = new List<AttackGroupLog>();
+        AttackGroupLog? currentGroup = null;
+        var currentSaveDefenderName = "Defender";
+        string? pendingPhaseHeader = null;
+
+        foreach (var entry in entries)
+        {
+            // Handle combat phase headers (Shooting Phase / Fight Phase)
+            if (entry.Phase == "PhaseHeader")
+            {
+                if (entry.Message.Contains("SHOOTING") || entry.Message.Contains("FIGHT"))
+                {
+                    pendingPhaseHeader = entry.Message.Replace("║", "").Replace("╔", "").Replace("╗", "").Replace("╚", "").Replace("╝", "").Replace("═", "").Trim();
+                }
+                continue;
+            }
+
+            // Check for fight phase separators
+            if (entry.Phase == "AttackHeader")
+            {
+                if (entry.Message.Contains("═══") && !entry.Message.Contains("—"))
+                {
+                    // Fight phase separator
+                    if (currentGroup != null)
+                    {
+                        currentGroup.FightPhase = entry.Message.Replace("═", "").Trim();
+                    }
+                }
+                else if (entry.Message.Contains("—"))
+                {
+                    // New attack sequence - add previous group if exists
+                    if (currentGroup != null)
+                    {
+                        groups.Add(currentGroup);
+                    }
+
+                    // Start new group
+                    var parts = entry.Message.Split("—", StringSplitOptions.TrimEntries);
+                    currentGroup = new AttackGroupLog
+                    {
+                        Id = Guid.NewGuid().ToString(),
+                        AttackerName = parts.Length > 0 ? parts[0] : "",
+                        WeaponName = parts.Length > 1 ? parts[1] : "",
+                        PhaseHeaderText = pendingPhaseHeader
+                    };
+                    pendingPhaseHeader = null;
+                    currentSaveDefenderName = "Defender";
+                }
+                continue;
+            }
+
+            if (currentGroup == null) continue;
+
+            // Parse different phases
+            switch (entry.Phase)
+            {
+                case "WeaponInfo":
+                    if (entry.Message.Contains("[Ability]"))
+                    {
+                        currentGroup.WeaponAbilities.Add(entry.Message.Replace("[Ability]", "").Trim());
+                    }
+                    else if (entry.Message.Contains("[Modifier]"))
+                    {
+                        currentGroup.ActiveModifiers.Add(entry.Message.Replace("[Modifier]", "").Trim());
+                    }
+                    break;
+
+                case "Attacks":
+                    if (entry.Message.Contains("Total attacks:"))
+                    {
+                        var attacksMatch = System.Text.RegularExpressions.Regex.Match(entry.Message, @"Total attacks: (\d+)");
+                        if (attacksMatch.Success)
+                        {
+                            currentGroup.Attacks = int.Parse(attacksMatch.Groups[1].Value);
+                        }
+                    }
+                    else if (!string.IsNullOrWhiteSpace(entry.Message) && !entry.Message.Contains("═"))
+                    {
+                        currentGroup.AttackEffects.Add(entry.Message);
+                    }
+                    break;
+
+                case "Hit":
+                    if (entry.Message.Contains("✓ Hits:"))
+                    {
+                        var match = System.Text.RegularExpressions.Regex.Match(entry.Message, @"Hits: (\d+)");
+                        if (match.Success) currentGroup.Hits = int.Parse(match.Groups[1].Value);
+                    }
+                    else if (entry.Message.Contains("⚡ Critical Hits:"))
+                    {
+                        var match = System.Text.RegularExpressions.Regex.Match(entry.Message, @"Critical Hits: (\d+)");
+                        if (match.Success) currentGroup.CriticalHits = int.Parse(match.Groups[1].Value);
+                    }
+                    else if (entry.Message.Contains("✗ Misses:"))
+                    {
+                        var match = System.Text.RegularExpressions.Regex.Match(entry.Message, @"Misses: (\d+)");
+                        if (match.Success) currentGroup.Misses = int.Parse(match.Groups[1].Value);
+                    }
+                    else if (entry.Message.Contains("💀 Auto-Wounds:"))
+                    {
+                        var match = System.Text.RegularExpressions.Regex.Match(entry.Message, @"Auto-Wounds: (\d+)");
+                        if (match.Success) currentGroup.AutoWounds = int.Parse(match.Groups[1].Value);
+                    }
+                    else if (entry.Message.Contains("Effect:"))
+                    {
+                        currentGroup.HitEffects.Add(entry.Message.Replace("Effect:", "").Trim());
+                    }
+                    else if (entry.Message.Contains("[DICE]"))
+                    {
+                        var diceStr = entry.Message.Replace("[DICE]", "").Trim();
+                        currentGroup.HitDice = diceStr.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                            .Select(d => int.TryParse(d.Trim(), out var v) ? v : 0).Where(v => v > 0).ToList();
+                    }
+                    break;
+
+                case "Wound":
+                    if (entry.Message.Contains("✓ Wounds:"))
+                    {
+                        var match = System.Text.RegularExpressions.Regex.Match(entry.Message, @"Wounds: (\d+)");
+                        if (match.Success) currentGroup.Wounds = int.Parse(match.Groups[1].Value);
+                    }
+                    else if (entry.Message.Contains("⚡ Critical Wounds:"))
+                    {
+                        var match = System.Text.RegularExpressions.Regex.Match(entry.Message, @"Critical Wounds: (\d+)");
+                        if (match.Success) currentGroup.CriticalWounds = int.Parse(match.Groups[1].Value);
+                    }
+                    else if (entry.Message.Contains("✗ Failed:"))
+                    {
+                        var match = System.Text.RegularExpressions.Regex.Match(entry.Message, @"Failed: (\d+)");
+                        if (match.Success) currentGroup.FailedToWound = int.Parse(match.Groups[1].Value);
+                    }
+                    else if (entry.Message.Contains("💀 Mortal Wounds:"))
+                    {
+                        var match = System.Text.RegularExpressions.Regex.Match(entry.Message, @"Mortal Wounds: (\d+)");
+                        if (match.Success) currentGroup.MortalWounds = int.Parse(match.Groups[1].Value);
+                    }
+                    else if (entry.Message.Contains("Effect:"))
+                    {
+                        currentGroup.WoundEffects.Add(entry.Message.Replace("Effect:", "").Trim());
+                    }
+                    else if (entry.Message.Contains("[DICE]"))
+                    {
+                        var diceStr = entry.Message.Replace("[DICE]", "").Trim();
+                        currentGroup.WoundDice = diceStr.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                            .Select(d => int.TryParse(d.Trim(), out var v) ? v : 0).Where(v => v > 0).ToList();
+                    }
+                    break;
+
+                case "Save":
+                    if (entry.Message.StartsWith("Save Roll —"))
+                    {
+                        // Extract defender name from header for subsequent save entries
+                        currentSaveDefenderName = entry.Message.Replace("Save Roll —", "").Trim();
+                        continue;
+                    }
+                    else if (entry.Message.Contains("💀 Mortal wound bypasses saves"))
+                    {
+                        currentGroup.SaveAttempts.Add(new SaveAttemptLog
+                        {
+                            DefenderName = currentSaveDefenderName,
+                            IsMortalWound = true
+                        });
+                    }
+                    else if (entry.Message.Contains("Roll:"))
+                    {
+                        var rollMatch = System.Text.RegularExpressions.Regex.Match(entry.Message, @"Roll: (\d+) vs (\d+)\+");
+                        if (rollMatch.Success)
+                        {
+                            var roll = int.Parse(rollMatch.Groups[1].Value);
+                            var target = int.Parse(rollMatch.Groups[2].Value);
+                            var passed = roll >= target;
+
+                            currentGroup.SaveAttempts.Add(new SaveAttemptLog
+                            {
+                                DefenderName = currentSaveDefenderName,
+                                Roll = roll,
+                                Target = target,
+                                Passed = passed
+                            });
+                        }
+                    }
+                    else if ((entry.Message.Contains("🛡 Save Passed") || entry.Message.Contains("✗ Save Failed")) && currentGroup.SaveAttempts.Any())
+                    {
+                        var lastSave = currentGroup.SaveAttempts.Last();
+                        lastSave.Passed = entry.Message.Contains("🛡 Save Passed");
+
+                        var saveTypeMatch = System.Text.RegularExpressions.Regex.Match(entry.Message, @"\((.*?)\)");
+                        if (saveTypeMatch.Success)
+                        {
+                            lastSave.SaveType = saveTypeMatch.Groups[1].Value;
+                        }
+                    }
+                    else if (entry.Message.Contains("[DICE]"))
+                    {
+                        var diceStr = entry.Message.Replace("[DICE]", "").Trim();
+                        currentGroup.SaveDice = diceStr.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                            .Select(d => int.TryParse(d.Trim(), out var v) ? v : 0).Where(v => v > 0).ToList();
+                    }
+                    break;
+
+                case "Damage":
+                    if (!string.IsNullOrWhiteSpace(entry.Message) && !entry.Message.Contains("Damage") && !entry.Message.Contains("═"))
+                    {
+                        currentGroup.DamageEvents.Add(entry.Message.Trim());
+
+                        // Try to extract total damage
+                        var dmgMatch = System.Text.RegularExpressions.Regex.Match(entry.Message, @"(\d+) damage");
+                        if (dmgMatch.Success)
+                        {
+                            currentGroup.TotalDamage += int.Parse(dmgMatch.Groups[1].Value);
+                        }
+                    }
+                    break;
+
+                case "Result":
+                    if (entry.Message.Contains("☠️ Target destroyed") || entry.Message.Contains("Target destroyed"))
+                    {
+                        currentGroup.TargetDestroyed = true;
+                    }
+                    if (entry.Message.Contains("damage inflicted"))
+                    {
+                        var dmgMatch = System.Text.RegularExpressions.Regex.Match(entry.Message, @"(\d+) damage inflicted");
+                        if (dmgMatch.Success)
+                        {
+                            currentGroup.TotalDamage = int.Parse(dmgMatch.Groups[1].Value);
+                        }
+                    }
+                    break;
+            }
+        }
+
+        // Add the last group
+        if (currentGroup != null)
+        {
+            groups.Add(currentGroup);
+        }
+
+        return groups;
+    }
+
+    private string GetPhaseClass(AttackGroupLog log)
+    {
+        if (log.TotalDamage > 0) return "damage";
+        if (log.Wounds > 0) return "wound";
+        if (log.Hits > 0) return "hit";
+        return "save";
+    }
+
+    private string GetResultBadgeClass(AttackGroupLog log)
+    {
+        if (log.TotalDamage == 0 && (log.Wounds + log.CriticalWounds + log.MortalWounds) == 0)
+            return "result-badge-no-wounds";
+        if (log.TotalDamage == 0)
+            return "result-badge-saved";
+        if (log.TargetDestroyed)
+            return "result-badge-destroyed text-white";
+        return "result-badge-damage text-white";
+    }
+
+    private string GetResultText(AttackGroupLog log)
+    {
+        if (log.TotalDamage == 0 && (log.Wounds + log.CriticalWounds + log.MortalWounds) == 0)
+            return "No Wounds";
+        if (log.TotalDamage == 0)
+            return "Saved";
+        if (log.TargetDestroyed)
+            return "Destroyed";
+        return $"{log.TotalDamage} Damage";
+    }
+
+    private class AttackGroupLog
+    {
+        public string Id { get; set; } = "";
+        public string AttackerName { get; set; } = "";
+        public string WeaponName { get; set; } = "";
+        public string FightPhase { get; set; } = "";
+        public string? PhaseHeaderText { get; set; }
+        public List<string> WeaponAbilities { get; set; } = new();
+        public List<string> ActiveModifiers { get; set; } = new();
+        public int Attacks { get; set; }
+        public int Hits { get; set; }
+        public int CriticalHits { get; set; }
+        public int Misses { get; set; }
+        public int AutoWounds { get; set; }
+        public List<string> AttackEffects { get; set; } = new();
+        public List<string> HitEffects { get; set; } = new();
+        public List<int> HitDice { get; set; } = new();
+        public int Wounds { get; set; }
+        public int CriticalWounds { get; set; }
+        public int FailedToWound { get; set; }
+        public int MortalWounds { get; set; }
+        public List<string> WoundEffects { get; set; } = new();
+        public List<int> WoundDice { get; set; } = new();
+        public List<SaveAttemptLog> SaveAttempts { get; set; } = new();
+        public List<int> SaveDice { get; set; } = new();
+        public List<string> DamageEvents { get; set; } = new();
+        public int TotalDamage { get; set; }
+        public bool TargetDestroyed { get; set; }
+    }
+
+    private class SaveAttemptLog
+    {
+        public string DefenderName { get; set; } = "";
+        public int Roll { get; set; }
+        public int Target { get; set; }
+        public bool Passed { get; set; }
+        public string SaveType { get; set; } = "";
+        public bool IsMortalWound { get; set; }
+    }
+}

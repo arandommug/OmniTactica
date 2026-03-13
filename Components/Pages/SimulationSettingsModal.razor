@@ -30,6 +30,33 @@
                 </div>
 
                 <div class="mb-3">
+                    <label class="form-label">Combat Phase</label>
+                    <div class="btn-group w-100" role="group">
+                        <input type="radio" class="btn-check" name="combatPhase" id="phaseShootingOnly"
+                               checked="@(localSettings.CombatPhase == CombatPhaseMode.ShootingOnly)"
+                               @onchange="() => localSettings.CombatPhase = CombatPhaseMode.ShootingOnly" />
+                        <label class="btn btn-outline-danger" for="phaseShootingOnly">
+                            <i class="fa fa-crosshairs"></i> Shooting Only
+                        </label>
+
+                        <input type="radio" class="btn-check" name="combatPhase" id="phaseBoth"
+                               checked="@(localSettings.CombatPhase == CombatPhaseMode.Both)"
+                               @onchange="() => localSettings.CombatPhase = CombatPhaseMode.Both" />
+                        <label class="btn btn-outline-primary" for="phaseBoth">
+                            <i class="fa fa-bolt"></i> Both
+                        </label>
+
+                        <input type="radio" class="btn-check" name="combatPhase" id="phaseFightOnly"
+                               checked="@(localSettings.CombatPhase == CombatPhaseMode.FightOnly)"
+                               @onchange="() => localSettings.CombatPhase = CombatPhaseMode.FightOnly" />
+                        <label class="btn btn-outline-warning" for="phaseFightOnly">
+                            <i class="fa fa-fist-raised"></i> Fight Only
+                        </label>
+                    </div>
+                    <div class="form-text">Shooting processes ranged weapons first, then Fight processes melee weapons</div>
+                </div>
+
+                <div class="mb-3">
                     <label class="form-label">Range to Target</label>
                     <div class="form-check mb-2">
                         <input class="form-check-input" type="checkbox" @bind="withinHalfRange" id="halfRangeCheck" />
@@ -88,7 +115,8 @@
             WoundAllocation = Settings.WoundAllocation,
             EnableDetailedLogging = Settings.EnableDetailedLogging,
             AttackerCharged = Settings.AttackerCharged,
-            RangeToTarget = Settings.RangeToTarget
+            RangeToTarget = Settings.RangeToTarget,
+            CombatPhase = Settings.CombatPhase
         };
 
         rangeString = Settings.RangeToTarget?.ToString() ?? "";

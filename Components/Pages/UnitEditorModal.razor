@@ -1,10 +1,12 @@
 @using OmniTactica.AppCode.Services
 @using OmniTactica.AppCode.Models.Core
 @using OmniTactica.AppCode.Data.Import
+@using OmniTactica.AppCode.Utilities
 @using Microsoft.JSInterop
 @using System.Text.RegularExpressions
 
 @inject VersusService VersusService
+@inject AbilityRulesService AbilityRulesService
 @inject IJSRuntime JS
 
 <div class="modal fade" id="unitEditorModal" tabindex="-1">
@@ -126,7 +128,13 @@
                                                                                 <div class="small">
                                                                                     @foreach (var ability in weapon.Description.Split(','))
                                                                                     {
-                                                                                        <span class="badge bg-secondary me-1">@ability.Trim()</span>
+                                                                                        var tooltip = AbilityTooltipHelper.GetTooltipFromName(ability.Trim(), AbilityRulesService);
+                                                                                        <span class="badge bg-secondary me-1"
+                                                                                              style="cursor: help;"
+                                                                                              data-bs-toggle="tooltip"
+                                                                                              data-bs-placement="top"
+                                                                                              data-bs-html="true"
+                                                                                              title="@tooltip">@ability.Trim()</span>
                                                                                     }
                                                                                 </div>
                                                                             }
@@ -170,7 +178,13 @@
                                                                                 <div class="small">
                                                                                     @foreach (var ability in weapon.Description.Split(','))
                                                                                     {
-                                                                                        <span class="badge bg-secondary me-1">@ability.Trim()</span>
+                                                                                        var tooltip = AbilityTooltipHelper.GetTooltipFromName(ability.Trim(), AbilityRulesService);
+                                                                                        <span class="badge bg-secondary me-1"
+                                                                                              style="cursor: help;"
+                                                                                              data-bs-toggle="tooltip"
+                                                                                              data-bs-placement="top"
+                                                                                              data-bs-html="true"
+                                                                                              title="@tooltip">@ability.Trim()</span>
                                                                                     }
                                                                                 </div>
                                                                             }
@@ -289,7 +303,19 @@
                                                                                     <span class="badge bg-secondary ms-2 small">@weapon.Type</span>
                                                                                     @if (weapon.Modifiers.Any(m => m.IsActive))
                                                                                     {
-                                                                                        <span class="badge bg-warning ms-1 small">@weapon.Modifiers.Count(m => m.IsActive) mods</span>
+                                                                                        @foreach (var mod in weapon.Modifiers.Where(m => m.IsActive))
+                                                                                        {
+                                                                                            var modDisplayName = string.IsNullOrWhiteSpace(mod.Name) || mod.Name == "Custom" ? "Custom" : mod.Name.Replace(" (Built-in)", "");
+                                                                                            var tooltip = AbilityTooltipHelper.GetTooltipFromName(modDisplayName, AbilityRulesService);
+                                                                                            <span class="badge bg-warning ms-1 small"
+                                                                                                  style="cursor: help;"
+                                                                                                  data-bs-toggle="tooltip" 
+                                                                                                  data-bs-placement="top"
+                                                                                                  data-bs-html="true"
+                                                                                                  title="@tooltip">
+                                                                                                @modDisplayName
+                                                                                            </span>
+                                                                                        }
                                                                                     }
                                                                             </div>
                                                                         <div class="btn-group btn-group-sm">
@@ -469,6 +495,7 @@
         this.isAttacker = isAttacker;
         StateHasChanged();
         await JS.InvokeVoidAsync("eval", "new bootstrap.Modal(document.getElementById('unitEditorModal')).show()");
+        await JS.InvokeVoidAsync("initTooltips");
     }
 
     private void AddModelFromProfile(DatasheetModel profile)
@@ -712,18 +739,22 @@
             });
         }
 
-        // Anti-X Y+ (generic keyword support)
-        if (!string.IsNullOrEmpty(weapon.Abilities.AntiKeyword) && weapon.Abilities.AntiKeywordThreshold.HasValue)
+        // Anti-X Y+ (generic keyword support) - Handle multiple Anti keywords
+        foreach (var antiAbility in weapon.Abilities.GetAntiAbilities())
         {
+            // Extract keyword from the ability ID (e.g., "anti_vehicle" -> "vehicle")
+            var keyword = antiAbility.Id.Replace("anti_", "").Replace("_", " ");
+            var threshold = antiAbility.Value ?? 4; // Default to 4+ if not specified
+
             weapon.Modifiers.Add(new ConditionalModifier
             {
-                Name = $"Anti-{weapon.Abilities.AntiKeyword} {weapon.Abilities.AntiKeywordThreshold}+ (Built-in)",
+                Name = $"{antiAbility.DisplayName} (Built-in)",
                 Condition = new ModifierCondition 
                 { 
                     Type = ConditionType.TargetHasKeyword,
-                    Value = weapon.Abilities.AntiKeyword
+                    Value = keyword
                 },
-                Effect = new ModifierEffect { Type = EffectType.CriticalWoundOn, IntValue = weapon.Abilities.AntiKeywordThreshold.Value },
+                Effect = new ModifierEffect { Type = EffectType.CriticalWoundOn, IntValue = threshold },
                 IsActive = true,
                 IsCustom = false
             });
@@ -732,49 +763,7 @@
 
     private WeaponAbilities ParseWeaponAbilities(string description)
     {
-        if (string.IsNullOrEmpty(description))
-            return new WeaponAbilities();
-
-        var abilities = new WeaponAbilities();
-        var lower = description.ToLower();
-
-        abilities.Assault = lower.Contains("assault");
-        abilities.Blast = lower.Contains("blast");
-        abilities.DevastatingWounds = lower.Contains("devastating wounds");
-        abilities.Hazardous = lower.Contains("hazardous");
-        abilities.Heavy = lower.Contains("heavy");
-        abilities.IgnoresCover = lower.Contains("ignores cover");
-        abilities.IndirectFire = lower.Contains("indirect fire");
-        abilities.LethalHits = lower.Contains("lethal hits");
-        abilities.Pistol = lower.Contains("pistol");
-        abilities.Precision = lower.Contains("precision");
-        abilities.Torrent = lower.Contains("torrent");
-        abilities.TwinLinked = lower.Contains("twin-linked");
-
-        var rapidFireMatch = Regex.Match(description, @"rapid fire (\d+)", RegexOptions.IgnoreCase);
-        if (rapidFireMatch.Success)
-            abilities.RapidFire = int.Parse(rapidFireMatch.Groups[1].Value);
-
-        var sustainedHitsMatch = Regex.Match(description, @"sustained hits (\d+)", RegexOptions.IgnoreCase);
-        if (sustainedHitsMatch.Success)
-            abilities.SustainedHits = int.Parse(sustainedHitsMatch.Groups[1].Value);
-
-        var meltaMatch = Regex.Match(description, @"melta (\d+)", RegexOptions.IgnoreCase);
-        if (meltaMatch.Success)
-            abilities.Melta = int.Parse(meltaMatch.Groups[1].Value);
-
-        // Anti-X Y+ (generic keyword support)
-        var antiMatch = Regex.Match(description, @"anti-(\w+(?:\s+\w+)*)\s+(\d+)\+", RegexOptions.IgnoreCase);
-        if (antiMatch.Success)
-        {
-            abilities.AntiKeyword = antiMatch.Groups[1].Value;
-            if (int.TryParse(antiMatch.Groups[2].Value, out var antiThreshold))
-            {
-                abilities.AntiKeywordThreshold = antiThreshold;
-            }
-        }
-
-        return abilities;
+        return WeaponAbilityParser.Parse(description);
     }
 
     private int ParseStatValue(string value)
@@ -788,6 +777,48 @@
             return result;
 
         return 0;
+    }
+
+    private string GetModifierTooltip(ConditionalModifier modifier)
+    {
+        var condition = modifier.Condition.Type switch
+        {
+            ConditionType.Always => "Always",
+            ConditionType.UnitCharged => "When charged",
+            ConditionType.TargetWithinHalfRange => "Within half range",
+            ConditionType.TargetUnitSize5Plus => "Target 5+ models",
+            ConditionType.TargetUnitSize10Plus => "Target 10+ models",
+            ConditionType.TargetHasKeyword => $"Target has {modifier.Condition.Value}",
+            ConditionType.TargetIsInfantry => "Target is Infantry",
+            ConditionType.TargetIsVehicle => "Target is Vehicle",
+            ConditionType.TargetIsMonster => "Target is Monster",
+            _ => "Conditional"
+        };
+
+        var effect = modifier.Effect.Type switch
+        {
+            EffectType.AddHitModifier => $"+{modifier.Effect.IntValue} to Hit",
+            EffectType.AddWoundModifier => $"+{modifier.Effect.IntValue} to Wound",
+            EffectType.AddSaveModifier => $"+{modifier.Effect.IntValue} to Save",
+            EffectType.AddAPModifier => $"+{modifier.Effect.IntValue} AP",
+            EffectType.AddDamageModifier => $"+{modifier.Effect.IntValue} Damage",
+            EffectType.AddAttacks => $"+{modifier.Effect.IntValue} Attacks",
+            EffectType.RerollHits => "Reroll Hit rolls",
+            EffectType.RerollWounds => "Reroll Wound rolls",
+            EffectType.RerollOnes => "Reroll 1s",
+            EffectType.IgnoreInvulnerable => "Ignore Invulnerable saves",
+            EffectType.IgnoreCover => "Ignore Cover",
+            EffectType.HalveDamage => "Halve Damage",
+            EffectType.ReduceDamage => $"Reduce Damage by {modifier.Effect.IntValue}",
+            EffectType.FeelNoPain => $"Feel No Pain {modifier.Effect.IntValue}+",
+            EffectType.CriticalHitOn => $"Critical Hit on {modifier.Effect.IntValue}+",
+            EffectType.CriticalWoundOn => $"Critical Wound on {modifier.Effect.IntValue}+",
+            EffectType.AutoWoundOnCrit => "Auto-wound on Critical Hit",
+            EffectType.ConvertToMortalWounds => "Convert to Mortal Wounds",
+            _ => "Unknown effect"
+        };
+
+        return $"<em>When:</em> {condition}<br/><em>Effect:</em> {effect}";
     }
 
     private string GetModifierDescription(ConditionalModifier modifier)

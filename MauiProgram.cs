@@ -35,6 +35,7 @@ namespace OmniTactica
             builder.Services.AddScoped<FactionViewerState>();
             builder.Services.AddSingleton<BookmarkService>();
             builder.Services.AddSingleton<VersusService>();
+            builder.Services.AddSingleton<AbilityRulesService>();
 
             builder.Services.AddSingleton<HttpClient>();
 

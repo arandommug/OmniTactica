@@ -87,28 +87,40 @@ namespace OmniTactica.AppCode.Models.Core
 
     /// <summary>
     /// Weapon abilities parsed from description.
+    /// Now uses a scalable list-based approach that maps to versus-rules.json.
     /// </summary>
     public class WeaponAbilities
     {
-        // Generic Anti-keyword support (replaces specific AntiInfantry, etc.)
-        public string? AntiKeyword { get; set; }
-        public int? AntiKeywordThreshold { get; set; }
+        /// <summary>
+        /// List of all abilities on this weapon.
+        /// </summary>
+        public List<WeaponAbility> Abilities { get; set; } = new();
 
-        public bool Assault { get; set; }
-        public bool Blast { get; set; }
-        public bool DevastatingWounds { get; set; }
-        public bool Hazardous { get; set; }
-        public bool Heavy { get; set; }
-        public bool IgnoresCover { get; set; }
-        public bool IndirectFire { get; set; }
-        public bool LethalHits { get; set; }
-        public int? Melta { get; set; }
-        public bool Pistol { get; set; }
-        public bool Precision { get; set; }
-        public int? RapidFire { get; set; }
-        public int? SustainedHits { get; set; }
-        public bool Torrent { get; set; }
-        public bool TwinLinked { get; set; }
+        // Helper methods for common queries
+        public bool HasAbility(string abilityId) => Abilities.Any(a => a.Id == abilityId);
+        public WeaponAbility? GetAbility(string abilityId) => Abilities.FirstOrDefault(a => a.Id == abilityId);
+        public int? GetAbilityValue(string abilityId) => GetAbility(abilityId)?.Value;
+
+        // Legacy property accessors for backward compatibility during transition
+        public bool Assault => HasAbility("assault");
+        public bool Blast => HasAbility("blast") || HasAbility("blast_large");
+        public bool DevastatingWounds => HasAbility("devastating_wounds");
+        public bool Hazardous => HasAbility("hazardous");
+        public bool Heavy => HasAbility("heavy");
+        public bool IgnoresCover => HasAbility("ignores_cover");
+        public bool IndirectFire => HasAbility("indirect_fire");
+        public bool LethalHits => HasAbility("lethal_hits");
+        public int? Melta => GetAbilityValue("melta");
+        public bool Pistol => HasAbility("pistol_shoot_in_melee");
+        public bool Precision => HasAbility("precision");
+        public int? RapidFire => GetAbilityValue("rapid_fire");
+        public int? SustainedHits => GetAbilityValue("sustained_hits");
+        public bool Torrent => HasAbility("torrent");
+        public bool TwinLinked => HasAbility("twin_linked");
+
+        // Get all Anti abilities
+        public List<WeaponAbility> GetAntiAbilities() => 
+            Abilities.Where(a => a.Id.StartsWith("anti_")).ToList();
     }
 
     /// <summary>
@@ -215,6 +227,17 @@ namespace OmniTactica.AppCode.Models.Core
         public bool EnableDetailedLogging { get; set; } = true;
         public bool AttackerCharged { get; set; } = false;
         public int? RangeToTarget { get; set; }
+        public CombatPhaseMode CombatPhase { get; set; } = CombatPhaseMode.Both;
+    }
+
+    /// <summary>
+    /// Which combat phases to simulate.
+    /// </summary>
+    public enum CombatPhaseMode
+    {
+        ShootingOnly,
+        FightOnly,
+        Both
     }
 
     /// <summary>

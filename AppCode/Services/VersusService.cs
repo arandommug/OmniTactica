@@ -79,10 +79,24 @@ namespace OmniTactica.AppCode.Services
             // Create combat models based on composition
             foreach (var (modelName, minQuantity, maxQuantity) in modelComposition)
             {
-                // Find matching model profile
+                // Find matching model profile - try exact match first, then partial match, then use datasheet name or first profile
                 var modelProfile = datasheet.Models.FirstOrDefault(m =>
-                    m.Name.Equals(modelName, StringComparison.OrdinalIgnoreCase) ||
-                    m.Name.Equals(datasheet.Name, StringComparison.OrdinalIgnoreCase));
+                    m.Name.Equals(modelName, StringComparison.OrdinalIgnoreCase));
+
+                if (modelProfile == null)
+                {
+                    // Try partial match (e.g., "Kill Team Veterans" matches "KILL TEAM VETERANS")
+                    modelProfile = datasheet.Models.FirstOrDefault(m =>
+                        m.Name.Replace(" ", "").Contains(modelName.Replace(" ", ""), StringComparison.OrdinalIgnoreCase) ||
+                        modelName.Replace(" ", "").Contains(m.Name.Replace(" ", ""), StringComparison.OrdinalIgnoreCase));
+                }
+
+                if (modelProfile == null)
+                {
+                    // Try matching with datasheet name (many units use datasheet name as the model profile)
+                    modelProfile = datasheet.Models.FirstOrDefault(m =>
+                        m.Name.Equals(datasheet.Name, StringComparison.OrdinalIgnoreCase));
+                }
 
                 if (modelProfile == null)
                 {
@@ -92,9 +106,10 @@ namespace OmniTactica.AppCode.Services
 
                 if (modelProfile != null)
                 {
-                    var combatModel = CreateCombatModelFromProfile(modelProfile, minQuantity);
+                    // Create combat model using the profile stats but keeping the composition name
+                    var combatModel = CreateCombatModelFromProfile(modelProfile, minQuantity, modelName);
 
-                    // Parse loadout to assign weapons
+                    // Parse loadout to assign weapons specific to this model type
                     var weaponsForModel = ParseLoadoutForModel(datasheet.Loadout, modelName, datasheet.Wargear);
                     foreach (var weapon in weaponsForModel)
                     {
@@ -111,11 +126,12 @@ namespace OmniTactica.AppCode.Services
         /// <summary>
         /// Creates a CombatModel from a DatasheetModel profile.
         /// </summary>
-        private CombatModel CreateCombatModelFromProfile(DatasheetModel profile, int quantity)
+        private CombatModel CreateCombatModelFromProfile(DatasheetModel profile, int quantity, string? compositionName = null)
         {
             var model = new CombatModel
             {
-                Name = profile.Name,
+                // Use composition name if provided (e.g., "Knight Master"), otherwise use profile name
+                Name = compositionName ?? profile.Name,
                 Quantity = quantity,
                 M = ParseStatValue(profile.M),
                 T = ParseStatValue(profile.T),
@@ -138,6 +154,8 @@ namespace OmniTactica.AppCode.Services
         /// </summary>
         private CombatWeapon CreateCombatWeaponFromWargear(DatasheetWargear wargear)
         {
+            var abilities = ParseWeaponAbilities(wargear.Description);
+
             var weapon = new CombatWeapon
             {
                 Name = wargear.Name,
@@ -149,10 +167,111 @@ namespace OmniTactica.AppCode.Services
                 AP = ParseStatValue(wargear.AP),
                 D = wargear.D,
                 DatasheetWargear = wargear,
-                Abilities = ParseWeaponAbilities(wargear.Description)
+                Abilities = abilities
             };
 
+            // Convert weapon abilities to modifiers for the combat system
+            CreateModifiersFromAbilities(weapon, abilities);
+
             return weapon;
+        }
+
+        /// <summary>
+        /// Creates ConditionalModifier objects from weapon abilities.
+        /// </summary>
+        private void CreateModifiersFromAbilities(CombatWeapon weapon, WeaponAbilities abilities)
+        {
+            // Anti-X Y+ (e.g., Anti-Infantry 4+, Anti-Vehicle 4+) - Handle multiple Anti keywords
+            foreach (var antiAbility in abilities.GetAntiAbilities())
+            {
+                // Extract keyword from the ability ID (e.g., "anti_vehicle" -> "vehicle")
+                var keyword = antiAbility.Id.Replace("anti_", "").Replace("_", " ");
+                var threshold = antiAbility.Value ?? 4; // Default to 4+ if not specified
+
+                weapon.Modifiers.Add(new ConditionalModifier
+                {
+                    Name = antiAbility.DisplayName,
+                    Condition = new ModifierCondition
+                    {
+                        Type = MapAntiKeywordToCondition(keyword),
+                        Value = keyword
+                    },
+                    Effect = new ModifierEffect
+                    {
+                        Type = EffectType.CriticalWoundOn,
+                        IntValue = threshold
+                    },
+                    IsActive = true
+                });
+            }
+
+            // Devastating Wounds is handled directly in VersusCalculator via Abilities property
+            // Sustained Hits is handled directly in VersusCalculator via Abilities property
+            // Lethal Hits is handled directly in VersusCalculator via Abilities property
+            // But we can still add them as display modifiers
+
+            if (abilities.SustainedHits.HasValue && abilities.SustainedHits.Value > 0)
+            {
+                weapon.Modifiers.Add(new ConditionalModifier
+                {
+                    Name = $"Sustained Hits {abilities.SustainedHits.Value}",
+                    Condition = new ModifierCondition { Type = ConditionType.Always },
+                    Effect = new ModifierEffect
+                    {
+                        Type = EffectType.AddExtraHitsOnCrit,
+                        IntValue = abilities.SustainedHits.Value
+                    },
+                    IsActive = true
+                });
+            }
+
+            if (abilities.DevastatingWounds)
+            {
+                weapon.Modifiers.Add(new ConditionalModifier
+                {
+                    Name = "Devastating Wounds",
+                    Condition = new ModifierCondition { Type = ConditionType.Always },
+                    Effect = new ModifierEffect { Type = EffectType.ConvertToMortalWounds },
+                    IsActive = true
+                });
+            }
+
+            if (abilities.LethalHits)
+            {
+                weapon.Modifiers.Add(new ConditionalModifier
+                {
+                    Name = "Lethal Hits",
+                    Condition = new ModifierCondition { Type = ConditionType.Always },
+                    Effect = new ModifierEffect { Type = EffectType.AutoWoundOnCrit },
+                    IsActive = true
+                });
+            }
+
+            if (abilities.TwinLinked)
+            {
+                weapon.Modifiers.Add(new ConditionalModifier
+                {
+                    Name = "Twin-Linked",
+                    Condition = new ModifierCondition { Type = ConditionType.Always },
+                    Effect = new ModifierEffect { Type = EffectType.RerollWounds },
+                    IsActive = true
+                });
+            }
+        }
+
+        /// <summary>
+        /// Maps anti-keyword string to appropriate condition type.
+        /// </summary>
+        private ConditionType MapAntiKeywordToCondition(string keyword)
+        {
+            return keyword.ToLower() switch
+            {
+                "infantry" => ConditionType.TargetIsInfantry,
+                "vehicle" => ConditionType.TargetIsVehicle,
+                "monster" => ConditionType.TargetIsMonster,
+                "character" => ConditionType.TargetIsCharacter,
+                _ => ConditionType.TargetHasKeyword
+            };
         }
 
         /// <summary>
@@ -185,7 +304,7 @@ namespace OmniTactica.AppCode.Services
 
         /// <summary>
         /// Parses loadout text to assign weapons to models.
-        /// Example: "Every model is equipped with: bolt pistol; bolt rifle; close combat weapon."
+        /// Example: "The Knight Master is equipped with: great weapon of the Unforgiven. Every Deathwing Knight is equipped with: mace of absolution."
         /// </summary>
         private List<CombatWeapon> ParseLoadoutForModel(string loadoutText, string modelName, List<DatasheetWargear> allWargear)
         {
@@ -197,33 +316,103 @@ namespace OmniTactica.AppCode.Services
             // Remove HTML tags
             loadoutText = HtmlUtility.StripHtml(loadoutText);
 
-            // Split by common delimiters
-            var weaponNames = loadoutText.Split(new[] { ';', ',', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+            // Split by sentence-like patterns (looking for "X is equipped with:" patterns)
+            // Examples:
+            // "The Knight Master is equipped with: weapon1; weapon2."
+            // "Every Deathwing Knight is equipped with: weapon3."
+            // "Every model is equipped with: weapon4."
+
+            var loadoutLines = loadoutText.Split(new[] { '.', '\n' }, StringSplitOptions.RemoveEmptyEntries)
                 .Select(s => s.Trim())
                 .Where(s => !string.IsNullOrEmpty(s))
                 .ToList();
 
-            foreach (var weaponName in weaponNames)
+            foreach (var line in loadoutLines)
             {
-                // Clean up weapon name
-                var cleanName = weaponName
-                    .Replace("Every model is equipped with:", "")
-                    .Replace("This model is equipped with:", "")
-                    .Replace("The ", "")
-                    .Replace(" is equipped with:", "")
-                    .Trim();
+                // Check if this line applies to our model
+                // Patterns to match:
+                // "The [ModelName] is equipped with:"
+                // "Every [ModelName] is equipped with:"
+                // "This model is equipped with:" (applies to all)
+                // "Every model is equipped with:" (applies to all)
 
-                if (string.IsNullOrEmpty(cleanName))
-                    continue;
+                bool appliesToThisModel = false;
+                string weaponsPart = "";
 
-                // Find matching wargear
-                var wargear = allWargear.FirstOrDefault(w =>
-                    w.Name.Equals(cleanName, StringComparison.OrdinalIgnoreCase) ||
-                    cleanName.Contains(w.Name, StringComparison.OrdinalIgnoreCase));
-
-                if (wargear != null)
+                // Check for "The [ModelName] is equipped with:"
+                var theModelMatch = Regex.Match(line, @"^The (.+?) is equipped with:(.+)$", RegexOptions.IgnoreCase);
+                if (theModelMatch.Success)
                 {
-                    weapons.Add(CreateCombatWeaponFromWargear(wargear));
+                    var targetModel = theModelMatch.Groups[1].Value.Trim();
+                    weaponsPart = theModelMatch.Groups[2].Value.Trim();
+                    appliesToThisModel = targetModel.Equals(modelName, StringComparison.OrdinalIgnoreCase) ||
+                                        modelName.Contains(targetModel, StringComparison.OrdinalIgnoreCase);
+                }
+
+                // Check for "Every [ModelName] is equipped with:"
+                var everyModelMatch = Regex.Match(line, @"^Every (.+?) is equipped with:(.+)$", RegexOptions.IgnoreCase);
+                if (everyModelMatch.Success)
+                {
+                    var targetModel = everyModelMatch.Groups[1].Value.Trim();
+                    weaponsPart = everyModelMatch.Groups[2].Value.Trim();
+                    // Match both singular and plural forms
+                    // "Every Deathwing Knight" should match "Deathwing Knights" from composition
+                    appliesToThisModel = 
+                        targetModel.Equals(modelName, StringComparison.OrdinalIgnoreCase) ||
+                        targetModel.TrimEnd('s').Equals(modelName.TrimEnd('s'), StringComparison.OrdinalIgnoreCase) ||
+                        modelName.Contains(targetModel, StringComparison.OrdinalIgnoreCase) ||
+                        targetModel.Contains(modelName, StringComparison.OrdinalIgnoreCase);
+                }
+
+                // Check for "This model is equipped with:" or "Every model is equipped with:"
+                var genericModelMatch = Regex.Match(line, @"^(?:This model|Every model) is equipped with:(.+)$", RegexOptions.IgnoreCase);
+                if (genericModelMatch.Success)
+                {
+                    weaponsPart = genericModelMatch.Groups[1].Value.Trim();
+                    appliesToThisModel = true; // Applies to all models
+                }
+
+                if (appliesToThisModel && !string.IsNullOrEmpty(weaponsPart))
+                {
+                    // Parse weapons from this line
+                    var weaponNames = weaponsPart.Split(new[] { ';', ',' }, StringSplitOptions.RemoveEmptyEntries)
+                        .Select(s => s.Trim())
+                        .Where(s => !string.IsNullOrEmpty(s))
+                        .ToList();
+
+                    foreach (var weaponName in weaponNames)
+                    {
+                        // Parse optional quantity prefix (e.g., "2 godhammer lascannons")
+                        int quantity = 1;
+                        string cleanedName = weaponName;
+                        var qtyMatch = Regex.Match(weaponName, @"^(\d+)\s+(.+)$");
+                        if (qtyMatch.Success)
+                        {
+                            quantity = int.Parse(qtyMatch.Groups[1].Value);
+                            cleanedName = qtyMatch.Groups[2].Value.Trim();
+                        }
+
+                        // Try to match with the name as-is, then without trailing 's' for plurals
+                        var wargear = allWargear.FirstOrDefault(w =>
+                            w.Name.Equals(cleanedName, StringComparison.OrdinalIgnoreCase) ||
+                            cleanedName.Contains(w.Name, StringComparison.OrdinalIgnoreCase));
+
+                        if (wargear == null && cleanedName.EndsWith('s'))
+                        {
+                            var singular = cleanedName[..^1];
+                            wargear = allWargear.FirstOrDefault(w =>
+                                w.Name.Equals(singular, StringComparison.OrdinalIgnoreCase) ||
+                                singular.Contains(w.Name, StringComparison.OrdinalIgnoreCase));
+                        }
+
+                        if (wargear != null)
+                        {
+                            for (int i = 0; i < quantity; i++)
+                            {
+                                weapons.Add(CreateCombatWeaponFromWargear(wargear));
+                            }
+                        }
+                    }
                 }
             }
 
@@ -235,51 +424,7 @@ namespace OmniTactica.AppCode.Services
         /// </summary>
         private WeaponAbilities ParseWeaponAbilities(string description)
         {
-            if (string.IsNullOrEmpty(description))
-                return new WeaponAbilities();
-
-            var abilities = new WeaponAbilities();
-            var lower = description.ToLower();
-
-            // Parse abilities
-            abilities.Assault = lower.Contains("assault");
-            abilities.Blast = lower.Contains("blast");
-            abilities.DevastatingWounds = lower.Contains("devastating wounds");
-            abilities.Hazardous = lower.Contains("hazardous");
-            abilities.Heavy = lower.Contains("heavy");
-            abilities.IgnoresCover = lower.Contains("ignores cover");
-            abilities.IndirectFire = lower.Contains("indirect fire");
-            abilities.LethalHits = lower.Contains("lethal hits");
-            abilities.Pistol = lower.Contains("pistol");
-            abilities.Precision = lower.Contains("precision");
-            abilities.Torrent = lower.Contains("torrent");
-            abilities.TwinLinked = lower.Contains("twin-linked");
-
-            // Parse with values
-            var rapidFireMatch = Regex.Match(description, @"rapid fire (\d+)", RegexOptions.IgnoreCase);
-            if (rapidFireMatch.Success)
-                abilities.RapidFire = int.Parse(rapidFireMatch.Groups[1].Value);
-
-            var sustainedHitsMatch = Regex.Match(description, @"sustained hits (\d+)", RegexOptions.IgnoreCase);
-            if (sustainedHitsMatch.Success)
-                abilities.SustainedHits = int.Parse(sustainedHitsMatch.Groups[1].Value);
-
-            var meltaMatch = Regex.Match(description, @"melta (\d+)", RegexOptions.IgnoreCase);
-            if (meltaMatch.Success)
-                abilities.Melta = int.Parse(meltaMatch.Groups[1].Value);
-
-            // Anti-X Y+ (generic keyword support)
-            var antiMatch = Regex.Match(description, @"anti-(\w+(?:\s+\w+)*)\s+(\d+)\+", RegexOptions.IgnoreCase);
-            if (antiMatch.Success)
-            {
-                abilities.AntiKeyword = antiMatch.Groups[1].Value;
-                if (int.TryParse(antiMatch.Groups[2].Value, out var antiThreshold))
-                {
-                    abilities.AntiKeywordThreshold = antiThreshold;
-                }
-            }
-
-            return abilities;
+            return WeaponAbilityParser.Parse(description);
         }
 
         /// <summary>
