@@ -179,12 +179,23 @@
         StateHasChanged();
     }
 
-    private void ApplyPreset(ConditionalModifier preset)
+    private async Task ApplyPreset(ConditionalModifier preset)
     {
-        modifierName = preset.Name;
-        conditionType = preset.Condition.Type;
-        effectType = preset.Effect.Type;
-        effectValue = preset.Effect.IntValue ?? 1;
+        var modifier = new ConditionalModifier
+        {
+            Name = preset.Name,
+            Condition = new ModifierCondition { Type = preset.Condition.Type },
+            Effect = new ModifierEffect
+            {
+                Type = preset.Effect.Type,
+                IntValue = preset.Effect.IntValue
+            },
+            IsActive = true,
+            IsCustom = false
+        };
+
+        await OnModifierAdded.InvokeAsync(modifier);
+        showModal = false;
         StateHasChanged();
     }
 

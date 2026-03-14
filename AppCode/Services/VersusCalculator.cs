@@ -93,31 +93,31 @@ namespace OmniTactica.AppCode.Services
             {
                 foreach (var model in attacker.Models)
                 {
-                    for (int modelInstance = 0; modelInstance < model.Quantity; modelInstance++)
+                    var phaseWeapons = model.Weapons
+                        .Where(w => w.IsSelected && IsMeleeWeapon(w) != isRanged)
+                        .ToList();
+
+                    if (!phaseWeapons.Any()) continue;
+
+                    foreach (var weapon in phaseWeapons)
                     {
-                        var phaseWeapons = model.Weapons
-                            .Where(w => w.IsSelected && IsMeleeWeapon(w) != isRanged)
-                            .ToList();
-
-                        if (!phaseWeapons.Any()) continue;
-
-                        if (enableLogging && model.Quantity > 1)
-                        {
-                            Log(run, step++, "Attacks", attacker.DatasheetName, model.Name, "", "", "",
-                                $"═══ {model.Name} #{modelInstance + 1} of {model.Quantity} ═══",
-                                new Dictionary<string, object>());
-                        }
-
-                        foreach (var weapon in phaseWeapons)
+                        for (int weaponInstance = 0; weaponInstance < weapon.Quantity; weaponInstance++)
                         {
                             if (!defenders.Any(u => u.Models.Any(m => !m.IsDestroyed)))
                                 break;
+
+                            if (enableLogging && weapon.Quantity > 1)
+                            {
+                                Log(run, step++, "Attacks", attacker.DatasheetName, model.Name, "", "", "",
+                                    $"═══ {weapon.Name} #{weaponInstance + 1} of {weapon.Quantity} ═══",
+                                    new Dictionary<string, object>());
+                            }
 
                             var weaponResult = ResolveWeaponAttack(
                                 attacker, model, weapon,
                                 defenders,
                                 context,
-                                run, ref step, modelInstance + 1);
+                                run, ref step, weaponInstance + 1);
 
                             run.TotalDamage += weaponResult.Damage;
                         }
@@ -142,8 +142,8 @@ namespace OmniTactica.AppCode.Services
                 WeaponName = weapon.Name
             };
 
-            // Create model display name with instance number if multiple models
-            var modelDisplayName = attackerModel.Quantity > 1 
+            // Create model display name with instance number if multiple weapons
+            var modelDisplayName = weapon.Quantity > 1 
                 ? $"{attackerModel.Name} #{modelInstance}"
                 : attackerModel.Name;
 

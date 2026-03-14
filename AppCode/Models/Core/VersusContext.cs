@@ -67,6 +67,7 @@ namespace OmniTactica.AppCode.Models.Core
         public string Id { get; set; } = Guid.NewGuid().ToString();
         public string Name { get; set; } = string.Empty;
         public bool IsSelected { get; set; } = true;
+        public int Quantity { get; set; } = 1;
 
         // Weapon stats
         public string Range { get; set; } = string.Empty;

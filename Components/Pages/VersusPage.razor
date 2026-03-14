@@ -10,65 +10,97 @@
 
 <style>
     .unit-summary-card {
-        transition: all 0.3s ease;
+        transition: all 0.2s ease;
         cursor: pointer;
+        border: none;
+        border-left: 3px solid transparent;
+        background: transparent;
     }
     .unit-summary-card:hover {
-        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-        transform: translateY(-2px);
+        background: rgba(0,0,0,0.03);
+    }
+    .unit-summary-card.border-danger {
+        border-left-color: var(--bs-danger);
+    }
+    .unit-summary-card.border-primary {
+        border-left-color: var(--bs-primary);
     }
     .split-container {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: 1rem;
+        gap: 1.5rem;
     }
     @@media (max-width: 768px) {
         .split-container {
             grid-template-columns: 1fr;
         }
     }
+    .versus-section-header {
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        padding-bottom: 0.5rem;
+        margin-bottom: 0.75rem;
+        border-bottom: 1px solid rgba(0,0,0,0.1);
+    }
+    .versus-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+    .unit-stat-pills .badge {
+        font-weight: 500;
+        font-size: 0.7rem;
+    }
+    .unit-weapon-summary {
+        font-size: 0.75rem;
+        color: var(--bs-secondary);
+        line-height: 1.6;
+    }
+    .unit-weapon-summary .weapon-line {
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+    }
 </style>
 
-<div class="p-2">
-    <div class="card bg-secondary-subtle">
-        <div class="card-header">
-            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
-                <h1 class="text-primary mb-0">
-                    <i class="fa fa-fist-raised me-2"></i>Versus Calculator
-                </h1>
-                <div class="d-flex gap-2 flex-wrap">
-                    <button class="btn btn-sm btn-warning" @onclick="SwapSides" title="Swap Attacker and Defender">
-                        <i class="fa fa-exchange-alt"></i> Swap
-                    </button>
-                    <button class="btn btn-sm btn-info" @onclick="ShowSettings">
-                        <i class="fa fa-cog"></i> Settings
-                    </button>
-                    <button class="btn btn-sm btn-success" @onclick="Calculate" disabled="@(!CanCalculate())">
-                        <i class="fa fa-calculator"></i> Calculate (@context.SimulationSettings.Iterations.ToString("N0") runs)
-                    </button>
-                    <button class="btn btn-sm btn-outline-danger" @onclick="ClearAll">
-                        <i class="fa fa-trash"></i> Clear All
-                    </button>
-                </div>
-            </div>
+<div class="p-3">
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+        <h1 class="text-primary mb-0" style="font-size: 1.5rem;">
+            <i class="fa fa-fist-raised me-2"></i>Versus Calculator
+        </h1>
+        <div class="versus-toolbar">
+            <button class="btn btn-sm btn-outline-secondary" @onclick="SwapSides" title="Swap Attacker and Defender">
+                <i class="fa fa-exchange-alt"></i> Swap
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" @onclick="ShowSettings">
+                <i class="fa fa-cog"></i>
+            </button>
+            <button class="btn btn-sm btn-success" @onclick="Calculate" disabled="@(!CanCalculate())">
+                <i class="fa fa-calculator"></i> Calculate
+            </button>
+            <button class="btn btn-sm btn-outline-danger" @onclick="ClearAll">
+                <i class="fa fa-trash"></i>
+            </button>
         </div>
+    </div>
 
-        <div class="card-body">
+    <div>
             <!-- Split Screen: Attacker | Defender -->
             <div class="split-container mb-3">
                 <!-- ATTACKER SIDE -->
                 <div>
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <h4 class="text-danger mb-0">
-                            <i class="fa fa-crosshairs"></i> Attacker
-                        </h4>
-                        <div class="btn-group btn-group-sm">
-                            <button class="btn btn-danger" @onclick="() => ShowUnitPicker(true)">
-                                <i class="fa fa-plus"></i> Add Unit
+                    <div class="versus-section-header text-danger d-flex justify-content-between align-items-center">
+                        <span><i class="fa fa-crosshairs me-1"></i> Attacker</span>
+                        <div class="d-flex gap-1">
+                            <button class="btn btn-sm btn-outline-danger" @onclick="() => ShowUnitPicker(true)">
+                                <i class="fa fa-plus"></i> Add
                             </button>
                             @if (BookmarkService.GetBookmarksByType(BookmarkType.Datasheet).Any())
                             {
-                                <button class="btn btn-outline-danger dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
                                     <i class="fa fa-bookmark"></i>
                                 </button>
                                 <ul class="dropdown-menu">
@@ -87,31 +119,51 @@
 
                     @if (!context.AttackingUnits.Any())
                     {
-                        <div class="alert alert-warning">
-                            <i class="fa fa-info-circle"></i> No attacker selected. Click "Add Unit" to begin.
+                        <div class="text-muted small text-center py-4">
+                            <i class="fa fa-crosshairs fa-2x mb-2 d-block opacity-25"></i>
+                            No attacker selected. Click "Add" to begin.
                         </div>
                     }
                     else
                     {
                         @foreach (var unit in context.AttackingUnits)
                         {
-                            <div class="card unit-summary-card border-danger mb-2" @onclick="() => EditUnit(unit, true)">
-                                <div class="card-header bg-danger bg-opacity-10 d-flex justify-content-between align-items-center">
-                                    <strong>@unit.DatasheetName</strong>
-                                    <button class="btn btn-sm btn-outline-danger" @onclick:stopPropagation="true" @onclick="() => RemoveUnit(unit.Id, true)">
+                            <div class="unit-summary-card border-danger rounded p-2 mb-2" @onclick="() => EditUnit(unit, true)">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <strong style="font-size: 0.9rem;">@unit.DatasheetName</strong>
+                                        <div class="text-muted" style="font-size: 0.75rem;">@unit.Models.Sum(m => m.Quantity) models</div>
+                                    </div>
+                                    <button class="btn btn-sm btn-outline-danger border-0 py-0" @onclick:stopPropagation="true" @onclick="() => RemoveUnit(unit.Id, true)">
                                         <i class="fa fa-times"></i>
                                     </button>
                                 </div>
-                                <div class="card-body p-2">
-                                    <div class="text-muted small">
-                                        <div><strong>Models:</strong> @unit.Models.Sum(m => m.Quantity)</div>
-                                        <div><strong>Selected Weapons:</strong> @unit.Models.Sum(m => m.Weapons.Count(w => w.IsSelected))</div>
-                                        @if (unit.Modifiers.Any(m => m.IsActive))
+                                @{ var attackerWeapons = unit.Models.SelectMany(m => m.Weapons.Where(w => w.IsSelected)).ToList(); }
+                                @if (attackerWeapons.Any())
+                                {
+                                    <div class="unit-weapon-summary mt-1">
+                                        @foreach (var wg in attackerWeapons.GroupBy(w => w.Type))
                                         {
-                                            <div><strong>Modifiers:</strong> @unit.Modifiers.Count(m => m.IsActive) active</div>
+                                            <div class="weapon-line">
+                                                <span class="badge @(wg.Key == "Melee" ? "bg-danger" : "bg-primary") bg-opacity-75" style="font-size: 0.6rem;">@wg.Key</span>
+                                                <span>@wg.Sum(w => ParseAttacks(w.A) * w.Quantity) attacks</span>
+                                            </div>
                                         }
                                     </div>
-                                </div>
+                                }
+                                @if (unit.Modifiers.Any(m => m.IsActive))
+                                {
+                                    <div class="mt-1">
+                                        @foreach (var mod in unit.Modifiers.Where(m => m.IsActive).Take(3))
+                                        {
+                                            <span class="badge bg-warning bg-opacity-25 text-warning-emphasis" style="font-size: 0.65rem;">@mod.Name</span>
+                                        }
+                                        @if (unit.Modifiers.Count(m => m.IsActive) > 3)
+                                        {
+                                            <span class="text-muted" style="font-size: 0.65rem;">+@(unit.Modifiers.Count(m => m.IsActive) - 3) more</span>
+                                        }
+                                    </div>
+                                }
                             </div>
                         }
                     }
@@ -119,17 +171,15 @@
 
                 <!-- DEFENDER SIDE -->
                 <div>
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <h4 class="text-primary mb-0">
-                            <i class="fa fa-shield-alt"></i> Defender
-                        </h4>
-                        <div class="btn-group btn-group-sm">
-                            <button class="btn btn-primary" @onclick="() => ShowUnitPicker(false)">
-                                <i class="fa fa-plus"></i> Add Unit
+                    <div class="versus-section-header text-primary d-flex justify-content-between align-items-center">
+                        <span><i class="fa fa-shield-alt me-1"></i> Defender</span>
+                        <div class="d-flex gap-1">
+                            <button class="btn btn-sm btn-outline-primary" @onclick="() => ShowUnitPicker(false)">
+                                <i class="fa fa-plus"></i> Add
                             </button>
                             @if (BookmarkService.GetBookmarksByType(BookmarkType.Datasheet).Any())
                             {
-                                <button class="btn btn-outline-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
                                     <i class="fa fa-bookmark"></i>
                                 </button>
                                 <ul class="dropdown-menu">
@@ -148,30 +198,38 @@
 
                     @if (!context.DefendingUnits.Any())
                     {
-                        <div class="alert alert-info">
-                            <i class="fa fa-info-circle"></i> No defender selected. Click "Add Unit" to begin.
+                        <div class="text-muted small text-center py-4">
+                            <i class="fa fa-shield-alt fa-2x mb-2 d-block opacity-25"></i>
+                            No defender selected. Click "Add" to begin.
                         </div>
                     }
                     else
                     {
                         @foreach (var unit in context.DefendingUnits)
                         {
-                            <div class="card unit-summary-card border-primary mb-2" @onclick="() => EditUnit(unit, false)">
-                                <div class="card-header bg-primary bg-opacity-10 d-flex justify-content-between align-items-center">
-                                    <strong>@unit.DatasheetName</strong>
-                                    <button class="btn btn-sm btn-outline-danger" @onclick:stopPropagation="true" @onclick="() => RemoveUnit(unit.Id, false)">
+                            <div class="unit-summary-card border-primary rounded p-2 mb-2" @onclick="() => EditUnit(unit, false)">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <strong style="font-size: 0.9rem;">@unit.DatasheetName</strong>
+                                        <div class="text-muted" style="font-size: 0.75rem;">@unit.Models.Sum(m => m.Quantity) models</div>
+                                    </div>
+                                    <button class="btn btn-sm btn-outline-danger border-0 py-0" @onclick:stopPropagation="true" @onclick="() => RemoveUnit(unit.Id, false)">
                                         <i class="fa fa-times"></i>
                                     </button>
                                 </div>
-                                <div class="card-body p-2">
-                                    <div class="text-muted small">
-                                        <div><strong>Models:</strong> @unit.Models.Sum(m => m.Quantity)</div>
-                                        @if (unit.Modifiers.Any(m => m.IsActive))
+                                @if (unit.Modifiers.Any(m => m.IsActive))
+                                {
+                                    <div class="mt-1">
+                                        @foreach (var mod in unit.Modifiers.Where(m => m.IsActive).Take(3))
                                         {
-                                            <div><strong>Modifiers:</strong> @unit.Modifiers.Count(m => m.IsActive) active</div>
+                                            <span class="badge bg-warning bg-opacity-25 text-warning-emphasis" style="font-size: 0.65rem;">@mod.Name</span>
+                                        }
+                                        @if (unit.Modifiers.Count(m => m.IsActive) > 3)
+                                        {
+                                            <span class="text-muted" style="font-size: 0.65rem;">+@(unit.Modifiers.Count(m => m.IsActive) - 3) more</span>
                                         }
                                     </div>
-                                </div>
+                                }
                             </div>
                         }
                     }
@@ -181,55 +239,46 @@
             <!-- Results Section -->
             @if (result != null && !calculating)
             {
-                <div class="card border-success mt-3">
-                    <div class="card-header bg-success bg-opacity-10">
-                        <h5 class="mb-0"><i class="fa fa-chart-bar"></i> Results (@result.SimulationCount.ToString("N0") simulations)</h5>
+                <div class="mt-4">
+                    <div class="versus-section-header text-success">
+                        <i class="fa fa-chart-bar me-1"></i> Results <span class="fw-normal text-muted">(@result.SimulationCount.ToString("N0") simulations)</span>
                     </div>
-                    <div class="card-body">
-                        <!-- Summary Statistics -->
-                        <div class="row g-3 mb-3">
-                            <div class="col-md-3">
-                                <div class="card bg-primary text-white">
-                                    <div class="card-body p-2">
-                                        <div class="small">Average Damage</div>
-                                        <h4 class="mb-0">@result.AverageDamage.ToString("F2")</h4>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="card bg-info text-white">
-                                    <div class="card-body p-2">
-                                        <div class="small">Median Damage</div>
-                                        <h4 class="mb-0">@result.MedianDamage</h4>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="card bg-warning text-dark">
-                                    <div class="card-body p-2">
-                                        <div class="small">Models Killed</div>
-                                        <h4 class="mb-0">@result.AverageModelsKilled.ToString("F2")</h4>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="card bg-danger text-white">
-                                    <div class="card-body p-2">
-                                        <div class="small">Wipeout Chance</div>
-                                        <h4 class="mb-0">@result.WipeoutProbability.ToString("F1")%</h4>
-                                    </div>
-                                </div>
+
+                    <!-- Summary Statistics -->
+                    <div class="row g-2 mb-3">
+                        <div class="col-6 col-md-3">
+                            <div class="rounded p-2" style="background: rgba(var(--bs-primary-rgb), 0.08);">
+                                <div class="text-muted" style="font-size: 0.7rem; text-transform: uppercase;">Avg Damage</div>
+                                <div class="fw-bold text-primary" style="font-size: 1.5rem;">@result.AverageDamage.ToString("F1")</div>
                             </div>
                         </div>
+                        <div class="col-6 col-md-3">
+                            <div class="rounded p-2" style="background: rgba(var(--bs-info-rgb), 0.08);">
+                                <div class="text-muted" style="font-size: 0.7rem; text-transform: uppercase;">Median</div>
+                                <div class="fw-bold text-info" style="font-size: 1.5rem;">@result.MedianDamage</div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="rounded p-2" style="background: rgba(var(--bs-warning-rgb), 0.08);">
+                                <div class="text-muted" style="font-size: 0.7rem; text-transform: uppercase;">Models Killed</div>
+                                <div class="fw-bold text-warning" style="font-size: 1.5rem;">@result.AverageModelsKilled.ToString("F1")</div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="rounded p-2" style="background: rgba(var(--bs-danger-rgb), 0.08);">
+                                <div class="text-muted" style="font-size: 0.7rem; text-transform: uppercase;">Wipeout</div>
+                                <div class="fw-bold text-danger" style="font-size: 1.5rem;">@result.WipeoutProbability.ToString("F0")%</div>
+                            </div>
+                        </div>
+                    </div>
 
                         <!-- Detailed Statistics -->
                         <div class="row g-3 mb-3">
                             <div class="col-md-6">
-                                <div class="card">
-                                    <div class="card-header bg-secondary-subtle">
-                                        <strong>Stage Breakdown</strong>
+                                <div>
+                                    <div class="versus-section-header text-secondary">
+                                        Stage Breakdown
                                     </div>
-                                    <div class="card-body p-2">
                                         <table class="table table-sm table-borderless mb-0">
                                             <tbody>
                                                 <tr>
@@ -282,15 +331,13 @@
                                                 </tr>
                                             </tbody>
                                         </table>
-                                    </div>
                                 </div>
                             </div>
                             <div class="col-md-6">
-                                <div class="card">
-                                    <div class="card-header bg-secondary-subtle">
-                                        <strong>Damage Distribution</strong>
+                                <div>
+                                    <div class="versus-section-header text-secondary">
+                                        Damage Distribution
                                     </div>
-                                    <div class="card-body p-2">
                                         <div style="max-height: 400px; overflow-y: auto;">
                                             <table class="table table-sm table-striped mb-0">
                                                 <thead>
@@ -316,7 +363,6 @@
                                                 </tbody>
                                             </table>
                                         </div>
-                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -324,9 +370,9 @@
                         <!-- Combat Log -->
                         @if (result.SampleCombatLog.Any())
                         {
-                            <div class="card">
-                                <div class="card-header bg-secondary-subtle d-flex justify-content-between align-items-center">
-                                    <strong><i class="fa fa-scroll"></i> Combat Log (Sample Simulation)</strong>
+                            <div>
+                                <div class="versus-section-header text-secondary d-flex justify-content-between align-items-center">
+                                    <span><i class="fa fa-scroll me-1"></i> Combat Log</span>
                                     <div class="d-flex gap-2 align-items-center">
                                         <div class="form-check form-switch mb-0">
                                             <input class="form-check-input" type="checkbox" id="verboseModeSwitch" 
@@ -340,22 +386,20 @@
                                         </button>
                                     </div>
                                 </div>
-                                <div class="card-body" style="@(logExpanded ? "" : "max-height: 600px; overflow-y: auto;")">
+                                <div style="@(logExpanded ? "" : "max-height: 600px; overflow-y: auto;")">
                                     <CombatLogViewer Entries="@result.SampleCombatLog" VerboseMode="@verboseMode" />
                                 </div>
                             </div>
                         }
-                    </div>
                 </div>
             }
             else if (calculating)
             {
-                <div class="alert alert-info mt-3 text-center">
+                <div class="text-center py-4 mt-3">
                     <div class="spinner-border text-primary me-2" role="status"></div>
-                    <strong>Calculating @context.SimulationSettings.Iterations.ToString("N0") simulations...</strong>
+                    <div class="text-muted mt-2">Calculating @context.SimulationSettings.Iterations.ToString("N0") simulations...</div>
                 </div>
             }
-        </div>
     </div>
 </div>
 
@@ -500,6 +544,14 @@
     {
         verboseMode = (bool)(e.Value ?? false);
         StateHasChanged();
+    }
+
+    private int ParseAttacks(string attacks)
+    {
+        if (string.IsNullOrWhiteSpace(attacks)) return 0;
+        var cleaned = attacks.Replace("D", "").Replace("d", "").Replace("+", "").Trim();
+        if (int.TryParse(cleaned, out var result)) return result;
+        return 1;
     }
 
     public void Dispose()

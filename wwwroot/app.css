@@ -491,6 +491,26 @@ a {
     font-weight: bold;
 }
 
+/* =========================
+   MODAL MOBILE DRAWER CLEARANCE
+   Prevents modal footers/buttons from hiding
+   behind the fixed-position mobile drawer.
+========================= */
+
+@media (max-width: 640px) {
+    .modal-fullscreen .modal-footer {
+        padding-bottom: calc(var(--app-bottom-height) + 0.5rem);
+    }
+
+    .modal-fullscreen .modal-body {
+        padding-bottom: var(--app-bottom-height);
+    }
+
+    .modal-dialog-centered {
+        margin-bottom: calc(var(--app-bottom-height) + 1.5rem);
+    }
+}
+
 .bluefont {
     color: #4da3ff;
 }

@@ -113,6 +113,8 @@ namespace OmniTactica.AppCode.Services
                     var weaponsForModel = ParseLoadoutForModel(datasheet.Loadout, modelName, datasheet.Wargear);
                     foreach (var weapon in weaponsForModel)
                     {
+                        // Scale weapon quantity by model count (e.g., 4 banshees each with 1 blade = quantity 4)
+                        weapon.Quantity *= minQuantity;
                         combatModel.Weapons.Add(weapon);
                     }
 
@@ -407,10 +409,9 @@ namespace OmniTactica.AppCode.Services
 
                         if (wargear != null)
                         {
-                            for (int i = 0; i < quantity; i++)
-                            {
-                                weapons.Add(CreateCombatWeaponFromWargear(wargear));
-                            }
+                            var weapon = CreateCombatWeaponFromWargear(wargear);
+                            weapon.Quantity = quantity;
+                            weapons.Add(weapon);
                         }
                     }
                 }

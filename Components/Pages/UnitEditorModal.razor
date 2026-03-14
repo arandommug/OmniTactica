@@ -9,6 +9,18 @@
 @inject AbilityRulesService AbilityRulesService
 @inject IJSRuntime JS
 
+<style>
+    /* Hide native number input spinners for stepper-hybrid controls */
+    .stepper-input::-webkit-outer-spin-button,
+    .stepper-input::-webkit-inner-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+    }
+    .stepper-input {
+        -moz-appearance: textfield;
+    }
+</style>
+
 <div class="modal fade" id="unitEditorModal" tabindex="-1">
     <div class="modal-dialog modal-fullscreen">
         <div class="modal-content">
@@ -24,362 +36,353 @@
                     <div class="row g-3">
                         <!-- LEFT COLUMN: Datasheet Reference -->
                         <div class="col-lg-5">
-                            <div class="card">
-                                <div class="card-header bg-dark text-white">
-                                    <h6 class="mb-0"><i class="fa fa-book"></i> Datasheet Reference</h6>
-                                </div>
-                                <div class="card-body" style="max-height: calc(100vh - 200px); overflow-y: auto;">
-                                    <!-- Model Stats -->
-                                    @if (editingUnit.DatasheetDetail.Models.Any())
-                                    {
-                                        var uniqueStatlines = editingUnit.DatasheetDetail.Models
-                                            .GroupBy(m => new { m.M, m.T, m.Sv, m.W, m.Ld, m.OC, m.InvSv })
-                                            .Select(g => new
-                                            {
-                                                Names = string.Join(", ", g.Select(m => m.Name)),
-                                                g.Key.M,
-                                                g.Key.T,
-                                                g.Key.Sv,
-                                                g.Key.W,
-                                                g.Key.Ld,
-                                                g.Key.OC,
-                                                g.Key.InvSv
-                                            });
+                            <div style="max-height: calc(100vh - 200px); overflow-y: auto; padding-right: 0.5rem;">
+                                <div class="text-uppercase fw-bold mb-2" style="font-size: 0.7rem; letter-spacing: 0.08em; color: var(--bs-secondary);">Datasheet Reference</div>
 
-                                        @foreach (var statline in uniqueStatlines)
+                                <!-- Compact Stat Lines -->
+                                @if (editingUnit.DatasheetDetail.Models.Any())
+                                {
+                                    var uniqueStatlines = editingUnit.DatasheetDetail.Models
+                                        .GroupBy(m => new { m.M, m.T, m.Sv, m.W, m.Ld, m.OC, m.InvSv })
+                                        .Select(g => new
                                         {
+                                            Names = string.Join(", ", g.Select(m => m.Name)),
+                                            g.Key.M,
+                                            g.Key.T,
+                                            g.Key.Sv,
+                                            g.Key.W,
+                                            g.Key.Ld,
+                                            g.Key.OC,
+                                            g.Key.InvSv
+                                        });
+
+                                    @foreach (var statline in uniqueStatlines)
+                                    {
+                                        <div class="mb-2">
                                             @if (uniqueStatlines.Count() > 1)
                                             {
-                                                <h6 class="text-primary">@statline.Names</h6>
+                                                <div class="fw-semibold small">@statline.Names</div>
                                             }
-                                            <table class="table table-sm table-bordered text-center mb-3">
-                                                <thead class="table-dark">
-                                                    <tr>
-                                                        <th>M</th>
-                                                        <th>T</th>
-                                                        <th>SV</th>
-                                                        <th>W</th>
-                                                        <th>Ld</th>
-                                                        <th>OC</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    <tr>
-                                                        <td>@statline.M</td>
-                                                        <td>@statline.T</td>
-                                                        <td>@statline.Sv@(string.IsNullOrEmpty(statline.InvSv) || statline.InvSv == "-" ? "" : "/" + statline.InvSv + "++")</td>
-                                                        <td>@statline.W</td>
-                                                        <td>@statline.Ld</td>
-                                                        <td>@statline.OC</td>
-                                                    </tr>
-                                                </tbody>
-                                            </table>
-                                        }
+                                            <div class="d-flex gap-2 flex-wrap" style="font-size: 0.8rem;">
+                                                <span class="text-muted">M</span><strong>@statline.M</strong>
+                                                <span class="text-muted">T</span><strong>@statline.T</strong>
+                                                <span class="text-muted">Sv</span><strong>@statline.Sv@(string.IsNullOrEmpty(statline.InvSv) || statline.InvSv == "-" ? "" : "/" + statline.InvSv + "++")</strong>
+                                                <span class="text-muted">W</span><strong>@statline.W</strong>
+                                                <span class="text-muted">Ld</span><strong>@statline.Ld</strong>
+                                                <span class="text-muted">OC</span><strong>@statline.OC</strong>
+                                            </div>
+                                        </div>
                                     }
+                                }
 
                                     <!-- Unit Composition -->
                                     @if (editingUnit.DatasheetDetail.UnitComposition.Any())
                                     {
-                                        <h6 class="text-primary">Unit Composition</h6>
-                                        <ul class="list-group mb-3">
-                                            @foreach (var comp in editingUnit.DatasheetDetail.UnitComposition)
-                                            {
-                                                <li class="list-group-item">@((MarkupString)WahaDataImporter.CleanHtml(comp.Description))</li>
-                                            }
-                                        </ul>
+                                        <div class="mt-3 mb-2">
+                                            <div class="text-uppercase fw-semibold text-muted mb-1" style="font-size: 0.7rem; letter-spacing: 0.05em;">Composition</div>
+                                            <div class="small">
+                                                @foreach (var comp in editingUnit.DatasheetDetail.UnitComposition)
+                                                {
+                                                    <div>• @((MarkupString)WahaDataImporter.CleanHtml(comp.Description))</div>
+                                                }
+                                            </div>
+                                        </div>
                                     }
 
                                     <!-- Loadout -->
                                     @if (!string.IsNullOrEmpty(editingUnit.DatasheetDetail.Loadout))
                                     {
-                                        <h6 class="text-primary">Loadout</h6>
-                                        <div class="alert alert-info small">
-                                            @((MarkupString)WahaDataImporter.CleanHtml(editingUnit.DatasheetDetail.Loadout))
+                                        <div class="mt-3 mb-2">
+                                            <div class="text-uppercase fw-semibold text-muted mb-1" style="font-size: 0.7rem; letter-spacing: 0.05em;">Loadout</div>
+                                            <div class="small">
+                                                @((MarkupString)WahaDataImporter.CleanHtml(editingUnit.DatasheetDetail.Loadout))
+                                            </div>
                                         </div>
                                     }
 
                                     <!-- Available Weapons -->
-                                    <h6 class="text-primary">Available Weapons</h6>
-                                    <div class="accordion mb-3" id="weaponsAccordion">
-                                        @{
-                                            var rangedWeapons = editingUnit.DatasheetDetail.Wargear.Where(w => w.Type == "Ranged").ToList();
-                                            var meleeWeapons = editingUnit.DatasheetDetail.Wargear.Where(w => w.Type == "Melee").ToList();
-                                        }
-
-                                        @if (rangedWeapons.Any())
-                                        {
-                                            <div class="accordion-item">
-                                                <h2 class="accordion-header">
-                                                    <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#rangedWeapons">
-                                                        Ranged Weapons (@rangedWeapons.Count)
-                                                    </button>
-                                                </h2>
-                                                <div id="rangedWeapons" class="accordion-collapse collapse show">
-                                                    <div class="accordion-body p-2">
-                                                        @foreach (var weapon in rangedWeapons)
-                                                        {
-                                                            <div class="card mb-2">
-                                                                <div class="card-body p-2">
-                                                                    <div class="d-flex justify-content-between align-items-center">
-                                                                        <div>
-                                                                            <strong>@weapon.Name</strong>
-                                                                            @if (!string.IsNullOrEmpty(weapon.Description))
-                                                                            {
-                                                                                <div class="small">
-                                                                                    @foreach (var ability in weapon.Description.Split(','))
-                                                                                    {
-                                                                                        var tooltip = AbilityTooltipHelper.GetTooltipFromName(ability.Trim(), AbilityRulesService);
-                                                                                        <span class="badge bg-secondary me-1"
-                                                                                              style="cursor: help;"
-                                                                                              data-bs-toggle="tooltip"
-                                                                                              data-bs-placement="top"
-                                                                                              data-bs-html="true"
-                                                                                              title="@tooltip">@ability.Trim()</span>
-                                                                                    }
-                                                                                </div>
-                                                                            }
-                                                                        </div>
-                                                                    </div>
-                                                                    <div class="d-flex justify-content-around small mt-2">
-                                                                        <div><span class="text-muted">Range:</span> <strong>@weapon.Range</strong></div>
-                                                                        <div><span class="text-muted">A:</span> <strong>@weapon.A</strong></div>
-                                                                        <div><span class="text-muted">BS:</span> <strong>@weapon.BsWs</strong></div>
-                                                                        <div><span class="text-muted">S:</span> <strong>@weapon.S</strong></div>
-                                                                        <div><span class="text-muted">AP:</span> <strong>@weapon.AP</strong></div>
-                                                                        <div><span class="text-muted">D:</span> <strong>@weapon.D</strong></div>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        }
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        }
-
-                                        @if (meleeWeapons.Any())
-                                        {
-                                            <div class="accordion-item">
-                                                <h2 class="accordion-header">
-                                                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#meleeWeapons">
-                                                        Melee Weapons (@meleeWeapons.Count)
-                                                    </button>
-                                                </h2>
-                                                <div id="meleeWeapons" class="accordion-collapse collapse">
-                                                    <div class="accordion-body p-2">
-                                                        @foreach (var weapon in meleeWeapons)
-                                                        {
-                                                            <div class="card mb-2">
-                                                                <div class="card-body p-2">
-                                                                    <div class="d-flex justify-content-between align-items-center">
-                                                                        <div>
-                                                                            <strong>@weapon.Name</strong>
-                                                                            @if (!string.IsNullOrEmpty(weapon.Description))
-                                                                            {
-                                                                                <div class="small">
-                                                                                    @foreach (var ability in weapon.Description.Split(','))
-                                                                                    {
-                                                                                        var tooltip = AbilityTooltipHelper.GetTooltipFromName(ability.Trim(), AbilityRulesService);
-                                                                                        <span class="badge bg-secondary me-1"
-                                                                                              style="cursor: help;"
-                                                                                              data-bs-toggle="tooltip"
-                                                                                              data-bs-placement="top"
-                                                                                              data-bs-html="true"
-                                                                                              title="@tooltip">@ability.Trim()</span>
-                                                                                    }
-                                                                                </div>
-                                                                            }
-                                                                        </div>
-                                                                    </div>
-                                                                    <div class="d-flex justify-content-around small mt-2">
-                                                                        <div><span class="text-muted">Range:</span> <strong>@weapon.Range</strong></div>
-                                                                        <div><span class="text-muted">A:</span> <strong>@weapon.A</strong></div>
-                                                                        <div><span class="text-muted">WS:</span> <strong>@weapon.BsWs</strong></div>
-                                                                        <div><span class="text-muted">S:</span> <strong>@weapon.S</strong></div>
-                                                                        <div><span class="text-muted">AP:</span> <strong>@weapon.AP</strong></div>
-                                                                        <div><span class="text-muted">D:</span> <strong>@weapon.D</strong></div>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        }
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        }
+                                    <div class="mt-3 mb-2">
+                                        <div class="text-uppercase fw-semibold text-muted mb-1" style="font-size: 0.7rem; letter-spacing: 0.05em;">Available Weapons</div>
                                     </div>
+                                    @{
+                                        var rangedWeapons = editingUnit.DatasheetDetail.Wargear.Where(w => w.Type == "Ranged").ToList();
+                                        var meleeWeapons = editingUnit.DatasheetDetail.Wargear.Where(w => w.Type == "Melee").ToList();
+                                    }
+
+                                    @if (rangedWeapons.Any() || meleeWeapons.Any())
+                                    {
+                                        <table class="table table-sm mb-3" style="font-size: 0.8rem;">
+                                            <thead>
+                                                <tr class="text-muted" style="font-size: 0.7rem;">
+                                                    <th>Weapon</th>
+                                                    <th class="text-center">A</th>
+                                                    <th class="text-center">BS/WS</th>
+                                                    <th class="text-center">S</th>
+                                                    <th class="text-center">AP</th>
+                                                    <th class="text-center">D</th>
+                                                    <th>Abilities</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @if (rangedWeapons.Any())
+                                                {
+                                                    <tr><td colspan="7" class="text-uppercase text-primary fw-semibold" style="font-size: 0.65rem; letter-spacing: 0.05em; border: none; padding-top: 0.75rem;">Ranged</td></tr>
+                                                    @foreach (var weapon in rangedWeapons)
+                                                    {
+                                                        <tr>
+                                                            <td class="fw-semibold">@weapon.Name</td>
+                                                            <td class="text-center">@weapon.A</td>
+                                                            <td class="text-center">@weapon.BsWs</td>
+                                                            <td class="text-center">@weapon.S</td>
+                                                            <td class="text-center">@weapon.AP</td>
+                                                            <td class="text-center">@weapon.D</td>
+                                                            <td>
+                                                                @if (!string.IsNullOrEmpty(weapon.Description))
+                                                                {
+                                                                    @foreach (var ability in weapon.Description.Split(','))
+                                                                    {
+                                                                        var tooltip = AbilityTooltipHelper.GetTooltipFromName(ability.Trim(), AbilityRulesService);
+                                                                        <span class="badge bg-secondary bg-opacity-25 text-secondary-emphasis me-1"
+                                                                              style="cursor: help; font-size: 0.65rem; font-weight: 500;"
+                                                                              data-bs-toggle="tooltip"
+                                                                              data-bs-placement="top"
+                                                                              data-bs-html="true"
+                                                                              title="@tooltip">@ability.Trim()</span>
+                                                                    }
+                                                                }
+                                                            </td>
+                                                        </tr>
+                                                    }
+                                                }
+                                                @if (meleeWeapons.Any())
+                                                {
+                                                    <tr><td colspan="7" class="text-uppercase text-danger fw-semibold" style="font-size: 0.65rem; letter-spacing: 0.05em; border: none; padding-top: 0.75rem;">Melee</td></tr>
+                                                    @foreach (var weapon in meleeWeapons)
+                                                    {
+                                                        <tr>
+                                                            <td class="fw-semibold">@weapon.Name</td>
+                                                            <td class="text-center">@weapon.A</td>
+                                                            <td class="text-center">@weapon.BsWs</td>
+                                                            <td class="text-center">@weapon.S</td>
+                                                            <td class="text-center">@weapon.AP</td>
+                                                            <td class="text-center">@weapon.D</td>
+                                                            <td>
+                                                                @if (!string.IsNullOrEmpty(weapon.Description))
+                                                                {
+                                                                    @foreach (var ability in weapon.Description.Split(','))
+                                                                    {
+                                                                        var tooltip = AbilityTooltipHelper.GetTooltipFromName(ability.Trim(), AbilityRulesService);
+                                                                        <span class="badge bg-secondary bg-opacity-25 text-secondary-emphasis me-1"
+                                                                              style="cursor: help; font-size: 0.65rem; font-weight: 500;"
+                                                                              data-bs-toggle="tooltip"
+                                                                              data-bs-placement="top"
+                                                                              data-bs-html="true"
+                                                                              title="@tooltip">@ability.Trim()</span>
+                                                                    }
+                                                                }
+                                                            </td>
+                                                        </tr>
+                                                    }
+                                                }
+                                            </tbody>
+                                        </table>
+                                    }
 
                                     <!-- Keywords -->
                                     @if (editingUnit.DatasheetDetail.Keywords.Any())
                                     {
-                                        <h6 class="text-primary">Keywords</h6>
-                                        <div class="mb-3">
-                                            @foreach (var keyword in editingUnit.DatasheetDetail.Keywords)
-                                            {
-                                                <span class="badge bg-info me-1">@keyword</span>
-                                            }
+                                        <div class="mt-3 mb-2">
+                                            <div class="text-uppercase fw-semibold text-muted mb-1" style="font-size: 0.7rem; letter-spacing: 0.05em;">Keywords</div>
+                                            <div>
+                                                @foreach (var keyword in editingUnit.DatasheetDetail.Keywords)
+                                                {
+                                                    <span class="badge bg-info bg-opacity-10 text-info-emphasis me-1 mb-1" style="font-size: 0.7rem; font-weight: 500;">@keyword</span>
+                                                }
+                                            </div>
                                         </div>
                                     }
-                                </div>
                             </div>
                         </div>
 
                         <!-- RIGHT COLUMN: Unit Configuration -->
                         <div class="col-lg-7">
-                            <div class="card">
-                                <div class="card-header @(isAttacker ? "bg-danger" : "bg-primary") bg-opacity-10">
-                                    <h6 class="mb-0"><i class="fa fa-users"></i> Unit Configuration</h6>
-                                </div>
-                                <div class="card-body" style="max-height: calc(100vh - 200px); overflow-y: auto;">
+                            <div style="max-height: calc(100vh - 200px); overflow-y: auto;">
 
                                     <!-- Models Section -->
                                     <div class="mb-4">
-                                        <div class="d-flex justify-content-between align-items-center mb-2">
-                                            <h6 class="text-primary mb-0">Models</h6>
-                                            <button class="btn btn-sm btn-success" @onclick="() => showAddModelModal = true">
+                                        <div class="d-flex justify-content-between align-items-center mb-2" style="border-bottom: 2px solid @(isAttacker ? "var(--bs-danger)" : "var(--bs-primary)"); padding-bottom: 0.4rem;">
+                                            <div class="text-uppercase fw-bold" style="font-size: 0.8rem; letter-spacing: 0.08em; color: @(isAttacker ? "var(--bs-danger)" : "var(--bs-primary)");">Models</div>
+                                            <button class="btn btn-sm btn-outline-success" @onclick="() => showAddModelModal = true">
                                                 <i class="fa fa-plus"></i> Add Model
                                             </button>
                                         </div>
 
                                         @if (!editingUnit.Models.Any())
                                         {
-                                            <div class="alert alert-warning">No models added. Click "Add Model" to begin.</div>
+                                            <div class="text-muted small text-center py-3">No models added. Click "Add" to begin.</div>
                                         }
                                         else
                                         {
                                             @foreach (var model in editingUnit.Models)
                                             {
-                                                <div class="card mb-3 border-secondary">
-                                                    <div class="card-header bg-secondary bg-opacity-10 d-flex justify-content-between align-items-center">
-                                                        <div class="d-flex align-items-center gap-2">
-                                                            <strong>@model.Name</strong>
-                                                            <div class="btn-group btn-group-sm">
-                                                                <button class="btn btn-outline-secondary btn-sm" @onclick="() => DecrementModelQuantity(model)" disabled="@(model.Quantity <= 1)">
-                                                                    <i class="fa fa-minus"></i>
-                                                                </button>
-                                                                <button class="btn btn-info btn-sm" disabled style="min-width: 50px;">@model.Quantity</button>
-                                                                <button class="btn btn-outline-secondary btn-sm" @onclick="() => IncrementModelQuantity(model)">
-                                                                    <i class="fa fa-plus"></i>
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                        <div class="btn-group btn-group-sm">
-                                                            <button class="btn btn-outline-success" @onclick="() => AddWeaponToModel(model)" title="Add Weapon">
+                                                <div class="mb-2 pb-2" style="border-bottom: 1px solid rgba(0,0,0,0.12);">
+                                                    <div class="d-flex align-items-center gap-1 mb-1">
+                                                        <strong style="font-size: 0.9rem;">@model.Name</strong>
+                                                        <div class="d-inline-flex align-items-center border rounded" style="height: 1.6rem; overflow: hidden;">
+                                                            <button class="btn btn-sm border-0 px-1 py-0 text-secondary" style="font-size: 0.7rem; line-height: 1;" @onclick="() => DecrementModelQuantity(model)" disabled="@(model.Quantity <= 1)">
+                                                                <i class="fa fa-minus"></i>
+                                                            </button>
+                                                            <input type="number" class="stepper-input form-control form-control-sm border-0 border-start border-end text-center fw-semibold" 
+                                                                   style="width: 2.2rem; height: 100%; font-size: 0.85rem; padding: 0; border-radius: 0;"
+                                                                   @bind="model.Quantity" min="1" max="20" 
+                                                                   @bind:event="oninput" @onchange="() => OnModelQuantityChanged(model)" />
+                                                            <button class="btn btn-sm border-0 px-1 py-0 text-secondary" style="font-size: 0.7rem; line-height: 1;" @onclick="() => IncrementModelQuantity(model)" disabled="@(model.Quantity >= 20)">
                                                                 <i class="fa fa-plus"></i>
                                                             </button>
-                                                            <button class="btn btn-outline-warning" @onclick="() => ShowModifierModal(model, null, null, ModifierTarget.Model)" title="Add Modifier">
-                                                                <i class="fa fa-magic"></i>
-                                                            </button>
-                                                            <button class="btn btn-outline-danger" @onclick="() => RemoveModel(model)" title="Remove">
-                                                                <i class="fa fa-times"></i>
-                                                            </button>
                                                         </div>
+                                                        <button class="btn btn-sm btn-outline-warning border-0 p-0 lh-1 ms-1" style="font-size: 0.7rem;" @onclick="() => ShowModifierModal(model, null, null, ModifierTarget.Model)" title="Add Modifier">
+                                                            <i class="fa fa-magic"></i>
+                                                        </button>
+                                                        <button class="btn btn-sm btn-outline-danger border-0 p-0 lh-1" style="font-size: 0.7rem;" @onclick="() => RemoveModel(model)" title="Remove">
+                                                            <i class="fa fa-times"></i>
+                                                        </button>
+                                                        <span class="text-muted ms-2" style="font-size: 0.7rem;">T@(model.T) Sv@(model.Sv)+@(model.InvSv > 0 ? $" Inv{model.InvSv}++" : "") W@(model.W)</span>
                                                     </div>
-                                                    <div class="card-body p-2">
-                                                        <!-- Model Stats Summary -->
-                                                        <div class="small mb-2">
-                                                            <span class="badge bg-light text-dark me-1">T: @model.T</span>
-                                                            <span class="badge bg-light text-dark me-1">Sv: @model.Sv+</span>
-                                                            @if (model.InvSv > 0)
-                                                            {
-                                                                <span class="badge bg-light text-dark me-1">Inv: @model.InvSv++</span>
-                                                            }
-                                                            <span class="badge bg-light text-dark me-1">W: @model.W</span>
-                                                        </div>
 
                                                         <!-- Weapons -->
-                                                        @if (model.Weapons.Any())
-                                                        {
-                                                            <div class="mb-2">
-                                                                <strong class="small">Weapons:</strong>
+                                                        <div class="mb-1">
+                                                            <div class="d-flex justify-content-between align-items-center">
+                                                                <span class="text-uppercase fw-semibold text-muted" style="font-size: 0.6rem; letter-spacing: 0.05em;">Weapons</span>
+                                                                <button class="btn btn-sm btn-outline-success border-0 py-0" style="font-size: 0.7rem;" @onclick="() => AddWeaponToModel(model)" title="Add Weapon">
+                                                                    <i class="fa fa-plus"></i> Add Weapon
+                                                                </button>
+                                                            </div>
+                                                            @if (model.Weapons.Any())
+                                                            {
                                                                 @foreach (var weapon in model.Weapons)
                                                                 {
-                                                                    <div class="d-flex align-items-center justify-content-between mb-1 p-2 border rounded @(weapon.IsSelected ? "bg-success bg-opacity-10" : "bg-light")">
-                                                                        <div class="d-flex align-items-center flex-grow-1">
-                                                                            <div class="form-check">
-                                                                                <input type="checkbox" class="form-check-input" id="weapon-@weapon.Id" @bind="weapon.IsSelected" />
-                                                                                <label class="form-check-label" for="weapon-@weapon.Id">
-                                                                                    <span class="small">@weapon.Name</span>
-                                                                                </label>
-                                                                            </div>
-                                                                                    <span class="badge bg-secondary ms-2 small">@weapon.Type</span>
-                                                                                    @if (weapon.Modifiers.Any(m => m.IsActive))
-                                                                                    {
-                                                                                        @foreach (var mod in weapon.Modifiers.Where(m => m.IsActive))
-                                                                                        {
-                                                                                            var modDisplayName = string.IsNullOrWhiteSpace(mod.Name) || mod.Name == "Custom" ? "Custom" : mod.Name.Replace(" (Built-in)", "");
-                                                                                            var tooltip = AbilityTooltipHelper.GetTooltipFromName(modDisplayName, AbilityRulesService);
-                                                                                            <span class="badge bg-warning ms-1 small"
-                                                                                                  style="cursor: help;"
-                                                                                                  data-bs-toggle="tooltip" 
-                                                                                                  data-bs-placement="top"
-                                                                                                  data-bs-html="true"
-                                                                                                  title="@tooltip">
-                                                                                                @modDisplayName
-                                                                                            </span>
-                                                                                        }
-                                                                                    }
-                                                                            </div>
-                                                                        <div class="btn-group btn-group-sm">
-                                                                            <button class="btn btn-sm btn-outline-warning" @onclick="() => ShowModifierModal(model, weapon, null, ModifierTarget.Weapon)" title="Add Modifier">
+                                                                    <div class="d-flex align-items-center gap-2 py-1 @(weapon.IsSelected ? "" : "opacity-50")" style="font-size: 0.8rem;">
+                                                                        <input type="checkbox" class="form-check-input flex-shrink-0" style="margin: 0;" @bind="weapon.IsSelected" />
+                                                                        <span class="fw-semibold text-truncate" style="min-width: 0;">@weapon.Name</span>
+                                                                        <span class="d-inline-flex align-items-center border rounded flex-shrink-0" style="height: 1.4rem; overflow: hidden;">
+                                                                            <button class="btn btn-sm border-0 px-1 py-0 text-secondary" style="font-size: 0.6rem; line-height: 1;" @onclick="() => DecrementWeaponQuantity(model, weapon)" disabled="@(weapon.Quantity <= 1)">
+                                                                                <i class="fa fa-minus"></i>
+                                                                            </button>
+                                                                            <input type="number" class="stepper-input form-control form-control-sm border-0 border-start border-end text-center p-0 flex-shrink-0"
+                                                                                   style="width: 1.8rem; height: 100%; font-size: 0.75rem; border-radius: 0;"
+                                                                                   @bind="weapon.Quantity" min="1" @bind:event="oninput" />
+                                                                            <button class="btn btn-sm border-0 px-1 py-0 text-secondary" style="font-size: 0.6rem; line-height: 1;" @onclick="() => IncrementWeaponQuantity(weapon)">
+                                                                                <i class="fa fa-plus"></i>
+                                                                            </button>
+                                                                        </span>
+                                                                        <span class="badge @(weapon.Type == "Melee" ? "bg-danger" : "bg-primary") bg-opacity-75 flex-shrink-0" style="font-size: 0.55rem;">@weapon.Type</span>
+                                                                        @if (weapon.Modifiers.Any(m => m.IsActive))
+                                                                        {
+                                                                            @foreach (var mod in weapon.Modifiers.Where(m => m.IsActive))
+                                                                            {
+                                                                                var modDisplayName = string.IsNullOrWhiteSpace(mod.Name) || mod.Name == "Custom" ? "Custom" : mod.Name.Replace(" (Built-in)", "");
+                                                                                var tooltip = AbilityTooltipHelper.GetTooltipFromName(modDisplayName, AbilityRulesService);
+                                                                                <span class="badge bg-warning bg-opacity-25 text-warning-emphasis flex-shrink-0"
+                                                                                      style="cursor: help; font-size: 0.55rem; font-weight: 500;"
+                                                                                      data-bs-toggle="tooltip"
+                                                                                      data-bs-placement="top"
+                                                                                      data-bs-html="true"
+                                                                                      title="@tooltip">@modDisplayName</span>
+                                                                            }
+                                                                        }
+                                                                        <span class="flex-shrink-0 ms-auto d-flex gap-1">
+                                                                            <button class="btn btn-sm btn-outline-warning border-0 p-0 lh-1" style="font-size: 0.7rem;" @onclick="() => ShowModifierModal(model, weapon, null, ModifierTarget.Weapon)" title="Modifier">
                                                                                 <i class="fa fa-magic"></i>
                                                                             </button>
-                                                                            <button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveWeapon(model, weapon)" title="Remove">
+                                                                            <button class="btn btn-sm btn-outline-danger border-0 p-0 lh-1" style="font-size: 0.7rem;" @onclick="() => RemoveWeapon(model, weapon)" title="Remove">
                                                                                 <i class="fa fa-times"></i>
                                                                             </button>
-                                                                        </div>
+                                                                        </span>
                                                                     </div>
                                                                 }
-                                                            </div>
-                                                        }
+                                                            }
+                                                            else
+                                                            {
+                                                                <div class="text-muted small fst-italic">No weapons equipped.</div>
+                                                            }
+                                                        </div>
 
-                                                        <!-- Model Modifiers -->
-                                                        @if (model.Modifiers.Any(m => m.IsActive))
-                                                        {
-                                                            <div>
-                                                                <strong class="small">Model Modifiers:</strong>
-                                                                <div class="d-flex flex-wrap gap-1">
-                                                                    @foreach (var modifier in model.Modifiers.Where(m => m.IsActive))
-                                                                    {
-                                                                        <span class="badge bg-warning" @onclick="() => RemoveModifier(model, modifier, ModifierTarget.Model)" style="cursor: pointer;" title="Click to remove">
-                                                                            @modifier.Name <i class="fa fa-times ms-1"></i>
-                                                                        </span>
-                                                                    }
-                                                                </div>
-                                                            </div>
-                                                        }
-                                                    </div>
-                                                </div>
-                                            }
-                                        }
-                                    </div>
+                                                                        <!-- Model Modifiers -->
+                                                                        @if (model.Modifiers.Any(m => m.IsActive))
+                                                                        {
+                                                                            <div>
+                                                                                <span class="text-uppercase fw-semibold text-muted" style="font-size: 0.65rem; letter-spacing: 0.05em;">Modifiers</span>
+                                                                                <div class="d-flex flex-wrap gap-1 mt-1">
+                                                                                    @foreach (var modifier in model.Modifiers.Where(m => m.IsActive))
+                                                                                    {
+                                                                                        <span class="badge bg-warning bg-opacity-25 text-warning-emphasis" @onclick="() => RemoveModifier(model, modifier, ModifierTarget.Model)" style="cursor: pointer; font-size: 0.7rem; font-weight: 500;" title="Click to remove">
+                                                                                            @modifier.Name <i class="fa fa-times ms-1" style="font-size: 0.6rem;"></i>
+                                                                                        </span>
+                                                                                    }
+                                                                                </div>
+                                                                            </div>
+                                                                        }
+                                                                    </div>
+                                                                }
+                                                            }
+                                                        </div>
 
                                     <!-- Unit-Level Modifiers -->
                                     <div class="mb-4">
-                                        <div class="d-flex justify-content-between align-items-center mb-2">
-                                            <h6 class="text-primary mb-0">Unit Modifiers</h6>
-                                            <button class="btn btn-sm btn-warning" @onclick="() => ShowModifierModal(null, null, null, ModifierTarget.Unit)">
+                                        <div class="d-flex justify-content-between align-items-center mb-2" style="border-bottom: 2px solid var(--bs-warning); padding-bottom: 0.4rem;">
+                                            <div class="text-uppercase fw-bold" style="font-size: 0.8rem; letter-spacing: 0.08em; color: var(--bs-warning);">Modifiers</div>
+                                            <button class="btn btn-sm btn-outline-warning" @onclick="() => ShowModifierModal(null, null, null, ModifierTarget.Unit)">
                                                 <i class="fa fa-plus"></i> Add Modifier
                                             </button>
                                         </div>
 
                                         @if (!editingUnit.Modifiers.Any(m => m.IsActive))
                                         {
-                                            <div class="alert alert-secondary small">No unit-level modifiers applied.</div>
+                                            <div class="text-muted small">No unit-level modifiers applied.</div>
                                         }
                                         else
                                         {
                                             <div class="d-flex flex-wrap gap-2">
                                                 @foreach (var modifier in editingUnit.Modifiers.Where(m => m.IsActive))
                                                 {
-                                                    <span class="badge bg-warning p-2" @onclick="() => RemoveModifier(null, modifier, ModifierTarget.Unit)" style="cursor: pointer;" title="Click to remove">
+                                                    <span class="badge bg-warning bg-opacity-25 text-warning-emphasis p-2" @onclick="() => RemoveModifier(null, modifier, ModifierTarget.Unit)" style="cursor: pointer; font-weight: 500;" title="Click to remove">
                                                         @modifier.Name
-                                                        <div class="small">@GetModifierDescription(modifier)</div>
-                                                        <i class="fa fa-times ms-1"></i>
+                                                        <div class="small" style="font-weight: 400; opacity: 0.8;">@GetModifierDescription(modifier)</div>
+                                                        <i class="fa fa-times ms-1" style="font-size: 0.7rem;"></i>
                                                     </span>
                                                 }
                                             </div>
                                         }
                                     </div>
-                                </div>
+
+                                    <!-- Combat Summary -->
+                                    @{
+                                        var totalModels = editingUnit.Models.Sum(m => m.Quantity);
+                                        var selectedWeapons = editingUnit.Models.SelectMany(m => m.Weapons.Where(w => w.IsSelected)).ToList();
+                                        var rangedSelected = selectedWeapons.Where(w => w.Type == "Ranged").ToList();
+                                        var meleeSelected = selectedWeapons.Where(w => w.Type == "Melee").ToList();
+                                    }
+                                    @if (selectedWeapons.Any())
+                                    {
+                                        <div class="mb-4">
+                                            <div class="text-uppercase fw-bold mb-2" style="font-size: 0.8rem; letter-spacing: 0.08em; color: var(--bs-success); border-bottom: 2px solid var(--bs-success); padding-bottom: 0.4rem;">Combat Summary</div>
+                                            <div class="rounded p-2" style="background: rgba(var(--bs-success-rgb), 0.05); font-size: 0.8rem;">
+                                                <div class="mb-1"><strong>@totalModels</strong> models</div>
+                                                @if (rangedSelected.Any())
+                                                {
+                                                    <div class="text-muted" style="font-size: 0.75rem;">Ranged: @rangedSelected.Sum(w => ParseWeaponAttacks(w.A) * w.Quantity) attacks</div>
+                                                }
+                                                @if (meleeSelected.Any())
+                                                {
+                                                    <div class="text-muted" style="font-size: 0.75rem;">Melee: @meleeSelected.Sum(w => ParseWeaponAttacks(w.A) * w.Quantity) attacks</div>
+                                                }
+                                                @if (editingUnit.Modifiers.Any(m => m.IsActive))
+                                                {
+                                                    <div class="text-muted" style="font-size: 0.75rem;">@editingUnit.Modifiers.Count(m => m.IsActive) active modifier(s)</div>
+                                                }
+                                            </div>
+                                        </div>
+                                    }
                             </div>
                         </div>
                     </div>
@@ -519,6 +522,45 @@
         model.MaxWounds = model.W;
         model.CurrentWounds = model.W;
 
+        // Copy weapons from an existing model of the same type (default loadout)
+        var existingModel = editingUnit.Models.FirstOrDefault(m =>
+            m.Name.Equals(profile.Name, StringComparison.OrdinalIgnoreCase) ||
+            (m.DatasheetModel != null && m.DatasheetModel.Name.Equals(profile.Name, StringComparison.OrdinalIgnoreCase)));
+        if (existingModel != null)
+        {
+            foreach (var existingWeapon in existingModel.Weapons)
+            {
+                var weaponCopy = new CombatWeapon
+                {
+                    Name = existingWeapon.Name,
+                    Range = existingWeapon.Range,
+                    Type = existingWeapon.Type,
+                    A = existingWeapon.A,
+                    BsWs = existingWeapon.BsWs,
+                    S = existingWeapon.S,
+                    AP = existingWeapon.AP,
+                    D = existingWeapon.D,
+                    DatasheetWargear = existingWeapon.DatasheetWargear,
+                    Abilities = existingWeapon.Abilities,
+                    IsSelected = existingWeapon.IsSelected,
+                    Quantity = 1
+                };
+                // Copy built-in modifiers
+                foreach (var mod in existingWeapon.Modifiers.Where(m => !m.IsCustom))
+                {
+                    weaponCopy.Modifiers.Add(new ConditionalModifier
+                    {
+                        Name = mod.Name,
+                        Condition = mod.Condition,
+                        Effect = mod.Effect,
+                        IsActive = mod.IsActive,
+                        IsCustom = mod.IsCustom
+                    });
+                }
+                model.Weapons.Add(weaponCopy);
+            }
+        }
+
         VersusService.AddModelToUnit(editingUnit.Id, model);
         showAddModelModal = false;
         StateHasChanged();
@@ -537,11 +579,35 @@
         showQuantityModal = true;
     }
 
+    private void OnModelQuantityChanged(CombatModel model)
+    {
+        if (model.Quantity < 1) model.Quantity = 1;
+        if (model.Quantity > 20) model.Quantity = 20;
+        StateHasChanged();
+    }
+
+    private int ParseWeaponAttacks(string attacks)
+    {
+        if (string.IsNullOrWhiteSpace(attacks)) return 0;
+        var cleaned = attacks.Replace("D", "").Replace("d", "").Replace("+", "").Trim();
+        if (int.TryParse(cleaned, out var result)) return result;
+        return 1;
+    }
+
     private void IncrementModelQuantity(CombatModel model)
     {
         if (model.Quantity < 20) // Reasonable max limit
         {
+            var oldQuantity = model.Quantity;
             model.Quantity++;
+            // Auto-scale weapon quantities that match model count (1-per-model weapons)
+            foreach (var weapon in model.Weapons)
+            {
+                if (weapon.Quantity == oldQuantity)
+                {
+                    weapon.Quantity++;
+                }
+            }
             StateHasChanged();
         }
     }
@@ -550,7 +616,31 @@
     {
         if (model.Quantity > 1)
         {
+            var oldQuantity = model.Quantity;
             model.Quantity--;
+            // Auto-scale weapon quantities that match model count (1-per-model weapons)
+            foreach (var weapon in model.Weapons)
+            {
+                if (weapon.Quantity == oldQuantity)
+                {
+                    weapon.Quantity--;
+                }
+            }
+            StateHasChanged();
+        }
+    }
+
+    private void IncrementWeaponQuantity(CombatWeapon weapon)
+    {
+        weapon.Quantity++;
+        StateHasChanged();
+    }
+
+    private void DecrementWeaponQuantity(CombatModel model, CombatWeapon weapon)
+    {
+        if (weapon.Quantity > 1)
+        {
+            weapon.Quantity--;
             StateHasChanged();
         }
     }
@@ -565,6 +655,17 @@
     {
         if (editingUnit == null) return;
 
+        // Check if this weapon already exists on the model - if so, increment its quantity
+        var existingWeapon = model.Weapons.FirstOrDefault(w =>
+            w.Name.Equals(wargear.Name, StringComparison.OrdinalIgnoreCase));
+        if (existingWeapon != null)
+        {
+            existingWeapon.Quantity += model.Quantity;
+            showAddWeaponModal = false;
+            StateHasChanged();
+            return;
+        }
+
         var weapon = new CombatWeapon
         {
             Name = wargear.Name,
@@ -577,7 +678,8 @@
             D = wargear.D,
             DatasheetWargear = wargear,
             Abilities = ParseWeaponAbilities(wargear.Description),
-            IsSelected = true
+            IsSelected = true,
+            Quantity = model.Quantity
         };
 
         // Auto-apply built-in modifiers from abilities
