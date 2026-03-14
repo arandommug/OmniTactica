@@ -74,25 +74,10 @@
                                 <!-- Models (Stat Line) -->
                                 @if (datasheet.Models.Count > 0)
                                 {
-                                    var uniqueStatlines = datasheet.Models
-                                        .GroupBy(d => new { d.M, d.T, d.Sv, d.W, d.Ld, d.OC, d.InvSv, d.InvSvDescr })
-                                        .Select(grp => new
-                                        {
-                                            Names = string.Join(", ", grp.Select(m => m.Name)),
-                                            grp.Key.M,
-                                            grp.Key.T,
-                                            grp.Key.Sv,
-                                            grp.Key.W,
-                                            grp.Key.Ld,
-                                            grp.Key.OC,
-                                            grp.Key.InvSv,
-                                            grp.Key.InvSvDescr
-                                        }).AsEnumerable();
-
                                     @foreach (var statline in uniqueStatlines)
                                     {
-                                        var hasInvDesc = !string.IsNullOrEmpty(statline.InvSvDescr.Trim());
-                                        if (uniqueStatlines.Count() > 1)
+                                        var hasInvDesc = !string.IsNullOrWhiteSpace(statline.InvSvDescr);
+                                        if (uniqueStatlines.Count > 1)
                                         {
                                         <div class="card bg-primary mb-2">
                                             <div class="card-header p-2 fw-bold">@statline.Names</div>
@@ -115,7 +100,7 @@
                                                     <td>@statline.T</td>
                                                     <td>
                                                         @statline.Sv
-                                                        @if (!string.IsNullOrEmpty(statline.InvSv.Trim()) && statline.InvSv.Trim() != "-")
+                                                        @if (!string.IsNullOrWhiteSpace(statline.InvSv) && statline.InvSv.Trim() != "-")
                                                         {
                                                             @("/" + statline.InvSv + "++" + (hasInvDesc ? "*" : ""))
                                                         }
@@ -290,9 +275,11 @@
                                     <div class="accordion">
                                         @foreach (var ability in datasheet.Abilities)
                                         {
+                                            var shouldExpand = ShouldExpandAbility(ability.Type);
+
                                             <div class="accordion-item">
                                                 <h2 class="accordion-header">
-                                                    <button class="accordion-button @("Datasheet|Wargear|Primarch|Fortification (левая колонка)".Contains(ability.Type) ? "" : "collapsed")" type="button" data-bs-toggle="collapse" data-bs-target="#ability-@(ability.Line)" aria-expanded="false">
+                                                    <button class="accordion-button @(shouldExpand ? "" : "collapsed")" type="button" data-bs-toggle="collapse" data-bs-target="#ability-@(ability.Line)" aria-expanded="@shouldExpand.ToString().ToLower()">
                                                         @ability.Name
                                                         @if (!string.IsNullOrEmpty(ability.Type) && ability.Type != "Fortification (левая колонка)" && ability.Type != "Special (правая колонка)")
                                                         {
@@ -304,7 +291,7 @@
                                                         }
                                                     </button>
                                                 </h2>
-                                                <div id="ability-@(ability.Line)" class="accordion-collapse collapse @("Datasheet|Wargear|Primarch|Fortification (левая колонка)".Contains(ability.Type) ? "show" : "")">
+                                                <div id="ability-@(ability.Line)" class="accordion-collapse collapse @(shouldExpand ? "show" : "")">
                                                     <div class="accordion-body rule-content">
                                                         @((MarkupString)WahaDataImporter.CleanHtml(ability.Description))
                                                     </div>
@@ -455,7 +442,7 @@
                         {
                             <div class="mb-2">
                                 <span class="text-muted me-2">Faction Keyword(s):</span>
-                                @foreach (var kw in datasheet.FactionKeywords.OrderBy(k => k))
+                                @foreach (var kw in sortedFactionKeywords)
                                 {
                                     <span class="badge bg-primary me-1">@kw</span>
                                 }
@@ -465,7 +452,7 @@
                         {
                             <div class="@(datasheet.FactionKeywords.Count > 0 ? "" : "mb-0")">
                                 <span class="text-muted me-2">Keywords:</span>
-                                @foreach (var kw in datasheet.Keywords.OrderBy(k => k))
+                                @foreach (var kw in sortedKeywords)
                                 {
                                     <span class="badge bg-info me-1">@kw</span>
                                 }
@@ -558,21 +545,6 @@
                         <div class="p-1 col-12 col-lg-6">
                             @if (datasheet.Stratagems.Count > 0)
                             {
-                                var groupedStratagems = datasheet.Stratagems
-                                    .GroupBy(s => new { 
-                                        Name = s.Name?.Trim().ToUpperInvariant() ?? "",
-                                        CpCost = s.CpCost?.Trim() ?? "",
-                                        Phase = s.Phase?.Trim().ToUpperInvariant() ?? ""
-                                    })
-                                    .Select(g => new {
-                                        Stratagem = g.First(),
-                                        Detachments = g.Select(s => s.Detachment).Distinct().Where(d => !string.IsNullOrEmpty(d)).OrderBy(d => d).ToList(),
-                                        AllStratagems = g.ToList()
-                                    })
-                                    .ToList();
-
-                                var organizedStratagems = OrganizeStratagemsByPhase(groupedStratagems.Select(g => g.Stratagem).ToList());
-
                                 <div class="mb-4">
                                     @foreach (var phaseGroup in organizedStratagems)
                                     {
@@ -581,7 +553,7 @@
                                             <div class="accordion">
                                             @foreach (var strat in phaseGroup.Value.OrderBy(s => GetTurnSortOrder(s.Turn)).ThenBy(s => s.Name))
                                             {
-                                                var group = groupedStratagems.First(g => g.Stratagem.Id == strat.Id);
+                                                var detachments = stratagemDetachmentsById.TryGetValue(strat.Id, out var groupDetachments) ? groupDetachments : [];
                                                 var turnBadgeClass = GetTurnBadgeClass(strat.Turn);
 
                                                 <div class="accordion-item">
@@ -607,9 +579,9 @@
                                                     <div id="strat-@(strat.Id)" class="accordion-collapse collapse">
                                                         <div class="accordion-body rule-content">
                                                             <div class="mb-2">
-                                                                @if (group.Detachments.Count > 1)
+                                                                @if (detachments.Count > 1)
                                                                 {
-                                                                    <span class="badge bg-secondary me-1 mb-1">Found in @group.Detachments.Count detachments</span>
+                                                                    <span class="badge bg-secondary me-1 mb-1">Found in @detachments.Count detachments</span>
                                                                 }
                                                                 else if (!string.IsNullOrEmpty(strat.Type))
                                                                 {
@@ -658,9 +630,21 @@
     private int datasheetId;
     private DatasheetDetail? datasheet;
     private List<Detachment> availableDetachments = new();
+    private List<StatlineView> uniqueStatlines = new();
+    private List<string> sortedFactionKeywords = new();
+    private List<string> sortedKeywords = new();
+    private Dictionary<int, List<string>> stratagemDetachmentsById = new();
+    private Dictionary<string, List<Stratagem>> organizedStratagems = new();
     private int selectedDetachmentId = 0;
     private bool loading = true;
     private string previousDatasheetIdStr = string.Empty;
+    private static readonly HashSet<string> ExpandedAbilityTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Datasheet",
+        "Wargear",
+        "Primarch",
+        "Fortification (левая колонка)"
+    };
 
     protected override async Task OnInitializedAsync()
     {
@@ -725,6 +709,8 @@
         // 1. Query parameter (InitialDetachmentId)
         // 2. Shared state (ViewerState.SelectedDetachmentId)
         // 3. None (0)
+        selectedDetachmentId = 0;
+
         if (InitialDetachmentId.HasValue && availableDetachments.Any(d => d.Id == InitialDetachmentId.Value))
         {
             selectedDetachmentId = InitialDetachmentId.Value;
@@ -743,6 +729,62 @@
     {
         int? detachmentFilter = selectedDetachmentId > 0 ? selectedDetachmentId : null;
         datasheet = await Data.GetDatasheetDetailAsync(datasheetId, detachmentFilter);
+
+        if (datasheet == null)
+        {
+            uniqueStatlines.Clear();
+            sortedFactionKeywords.Clear();
+            sortedKeywords.Clear();
+            stratagemDetachmentsById.Clear();
+            organizedStratagems.Clear();
+            return;
+        }
+
+        uniqueStatlines = datasheet.Models
+            .GroupBy(d => new { d.M, d.T, d.Sv, d.W, d.Ld, d.OC, d.InvSv, d.InvSvDescr })
+            .Select(grp => new StatlineView(
+                string.Join(", ", grp.Select(m => m.Name)),
+                grp.Key.M,
+                grp.Key.T,
+                grp.Key.Sv,
+                grp.Key.W,
+                grp.Key.Ld,
+                grp.Key.OC,
+                grp.Key.InvSv,
+                grp.Key.InvSvDescr))
+            .ToList();
+
+        sortedFactionKeywords = datasheet.FactionKeywords
+            .OrderBy(keyword => keyword)
+            .ToList();
+
+        sortedKeywords = datasheet.Keywords
+            .OrderBy(keyword => keyword)
+            .ToList();
+
+        var groupedStratagems = datasheet.Stratagems
+            .GroupBy(s => new
+            {
+                Name = s.Name?.Trim().ToUpperInvariant() ?? string.Empty,
+                CpCost = s.CpCost?.Trim() ?? string.Empty,
+                Phase = s.Phase?.Trim().ToUpperInvariant() ?? string.Empty
+            })
+            .Select(group => new
+            {
+                Stratagem = group.First(),
+                Detachments = group.Select(s => s.Detachment)
+                    .Distinct()
+                    .Where(detachment => !string.IsNullOrEmpty(detachment))
+                    .OrderBy(detachment => detachment)
+                    .ToList()
+            })
+            .ToList();
+
+        stratagemDetachmentsById = groupedStratagems.ToDictionary(
+            group => group.Stratagem.Id,
+            group => group.Detachments);
+
+        organizedStratagems = OrganizeStratagemsByPhase(groupedStratagems.Select(group => group.Stratagem).ToList());
     }
 
     private async Task OnDetachmentChanged()
@@ -764,9 +806,9 @@
         return StratagemHelper.OrganizeStratagemsByPhase(stratagems);
     }
 
-    private List<string> DeterminePhases(string phase)
+    private static bool ShouldExpandAbility(string? abilityType)
     {
-        return StratagemHelper.DeterminePhases(phase);
+        return !string.IsNullOrWhiteSpace(abilityType) && ExpandedAbilityTypes.Contains(abilityType);
     }
 
     private string GetTurnBadgeClass(string turn)
@@ -795,5 +837,16 @@
 
         return 99; // Unknown/other turns go last
     }
+
+    private sealed record StatlineView(
+        string Names,
+        string M,
+        string T,
+        string Sv,
+        string W,
+        string Ld,
+        string OC,
+        string InvSv,
+        string InvSvDescr);
 }
 

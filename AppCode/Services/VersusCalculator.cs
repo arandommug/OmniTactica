@@ -8,8 +8,6 @@ namespace OmniTactica.AppCode.Services
     /// </summary>
     public static class VersusCalculator
     {
-        private static readonly Random _random = new Random();
-
         public static VersusResult Calculate(VersusContext context)
         {
             var settings = context.SimulationSettings;
@@ -866,7 +864,7 @@ namespace OmniTactica.AppCode.Services
             {
                 WoundAllocationMethod.TargetWeakest => allModels.OrderBy(m => m.CurrentWounds).ToList(),
                 WoundAllocationMethod.TargetStrongest => allModels.OrderByDescending(m => m.CurrentWounds).ToList(),
-                WoundAllocationMethod.RandomAllocation => allModels.OrderBy(_ => _random.Next()).ToList(),
+                WoundAllocationMethod.RandomAllocation => allModels.OrderBy(_ => Random.Shared.Next()).ToList(),
                 _ => allModels
             };
         }
@@ -1016,9 +1014,13 @@ namespace OmniTactica.AppCode.Services
             };
 
             // Sample log from first simulation
-            if (simulations.Any() && simulations[0].Log != null)
+            if (simulations.Any())
             {
-                result.SampleCombatLog = simulations[0].Log;
+                var sampleLog = simulations[0].Log;
+                if (sampleLog != null)
+                {
+                    result.SampleCombatLog = new List<CombatLogEntry>(sampleLog);
+                }
             }
 
             return result;
@@ -1038,7 +1040,7 @@ namespace OmniTactica.AppCode.Services
                    weapon.Range.Equals("-", StringComparison.OrdinalIgnoreCase);
         }
 
-        private static int RollD6() => _random.Next(1, 7);
+        private static int RollD6() => Random.Shared.Next(1, 7);
 
         private static int RollDamage(string damageString)
         {
@@ -1059,7 +1061,7 @@ namespace OmniTactica.AppCode.Services
                 var total = 0;
                 for (int i = 0; i < numDice; i++)
                 {
-                    total += _random.Next(1, diceSize + 1);
+                    total += Random.Shared.Next(1, diceSize + 1);
                 }
                 return total + modifier;
             }

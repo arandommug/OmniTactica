@@ -44,9 +44,8 @@
                 else
                 {
                     <div class="list-group" style="max-height: 400px; overflow-y: auto;">
-                        @foreach (var unit in FilteredUnits)
-                        {
-                            <button type="button" class="list-group-item list-group-item-action" 
+                        <Virtualize Items="FilteredUnits" Context="unit" ItemSize="56" OverscanCount="4">
+                            <button type="button" class="list-group-item list-group-item-action" @key="unit.Id"
                                     @onclick="() => SelectUnit(unit.Id)">
                                 <div class="d-flex justify-content-between align-items-center">
                                     <div>
@@ -63,7 +62,7 @@
                                     <i class="fa fa-chevron-right text-muted"></i>
                                 </div>
                             </button>
-                        }
+                        </Virtualize>
                     </div>
                 }
             </div>
@@ -81,7 +80,7 @@
     private string searchTerm = "";
     private bool loading = false;
 
-    private IEnumerable<Datasheet> FilteredUnits
+    private List<Datasheet> FilteredUnits
     {
         get
         {
@@ -92,7 +91,7 @@
                 filtered = filtered.Where(u => u.Name.Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
             }
 
-            return filtered.OrderBy(u => u.Name);
+            return filtered.OrderBy(u => u.Name).ToList();
         }
     }
 
@@ -103,7 +102,7 @@
 
     public async Task Show()
     {
-        await JS.InvokeVoidAsync("eval", "new bootstrap.Modal(document.getElementById('unitPickerModal')).show()");
+        await JS.InvokeVoidAsync("bootstrapInterop.showModal", "unitPickerModal");
 
         if (!units.Any() && !string.IsNullOrEmpty(selectedFactionId))
         {
@@ -126,7 +125,7 @@
 
     private async Task SelectUnit(int datasheetId)
     {
-        await JS.InvokeVoidAsync("eval", "$('#unitPickerModal').modal('hide')");
+        await JS.InvokeVoidAsync("bootstrapInterop.hideModal", "unitPickerModal");
         await OnUnitSelected.InvokeAsync(datasheetId);
     }
 }

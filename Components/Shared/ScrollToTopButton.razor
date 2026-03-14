@@ -1,4 +1,5 @@
 @inject IJSRuntime JS
+@implements IAsyncDisposable
 
 @if (isVisible)
 {
@@ -10,13 +11,14 @@
 @code {
     private bool isVisible = false;
     private DotNetObjectReference<ScrollToTopButton>? dotNetRef;
+    private readonly string listenerId = Guid.NewGuid().ToString("N");
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
             dotNetRef = DotNetObjectReference.Create(this);
-            await JS.InvokeVoidAsync("initScrollToTop", dotNetRef);
+            await JS.InvokeVoidAsync("initScrollToTop", listenerId, dotNetRef);
         }
     }
 
@@ -35,8 +37,9 @@
         await JS.InvokeVoidAsync("scrollToTop");
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
+        await JS.InvokeVoidAsync("disposeScrollToTop", listenerId);
         dotNetRef?.Dispose();
     }
 }

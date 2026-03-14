@@ -51,7 +51,7 @@ namespace OmniTactica.AppCode.Repositories
                 FROM Datasheets d";
 
             var conditions = new List<string> { "d.faction_id = @factionId", "d.virtual = 0" };
-            var parameters = new List<(string, object)> { ("@factionId", factionId) };
+            var parameters = new List<(string Name, object? Value)> { ("@factionId", factionId) };
 
             // Handle include keywords
             if (includeKeywords != null && includeKeywords.Count > 0)
@@ -359,7 +359,7 @@ namespace OmniTactica.AppCode.Repositories
                 WHERE dda.datasheet_id = @id
                 AND da.faction_id = @factionId";
 
-            var parameters = new List<(string, object)>
+            var parameters = new List<(string Name, object? Value)>
             {
                 ("@id", datasheet.Id),
                 ("@factionId", datasheet.FactionId)
@@ -393,7 +393,7 @@ namespace OmniTactica.AppCode.Repositories
                 WHERE de.datasheet_id = @id
                 AND e.faction_id = @factionId";
 
-            var parameters = new List<(string, object)>
+            var parameters = new List<(string Name, object? Value)>
             {
                 ("@id", datasheet.Id),
                 ("@factionId", datasheet.FactionId)
@@ -429,7 +429,7 @@ namespace OmniTactica.AppCode.Repositories
                 WHERE ds.datasheet_id = @id
                 AND s.faction_id = @factionId";
 
-            var parameters = new List<(string, object)>
+            var parameters = new List<(string Name, object? Value)>
             {
                 ("@id", datasheet.Id),
                 ("@factionId", datasheet.FactionId)

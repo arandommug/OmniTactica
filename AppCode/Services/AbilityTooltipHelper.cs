@@ -1,4 +1,5 @@
 using OmniTactica.AppCode.Models.Core;
+using System.Net;
 using System.Text.Json;
 
 namespace OmniTactica.AppCode.Services
@@ -64,7 +65,7 @@ namespace OmniTactica.AppCode.Services
 
             // Header
             sb.Append("<div style=\"font-weight:700;font-size:1.1em;border-bottom:1px solid rgba(255,255,255,0.3);padding-bottom:4px;margin-bottom:8px;\">");
-            sb.Append(System.Web.HttpUtility.HtmlEncode(displayName));
+            sb.Append(WebUtility.HtmlEncode(displayName));
             sb.Append("</div>");
 
             // Details table
@@ -84,7 +85,7 @@ namespace OmniTactica.AppCode.Services
             {
                 sb.Append("<tr>");
                 sb.Append("<td style=\"color:#adb5bd;padding:2px 8px 2px 0;vertical-align:top;white-space:nowrap;\">Parameter</td>");
-                sb.Append($"<td style=\"padding:2px 0;\">{System.Web.HttpUtility.HtmlEncode(parameter)}</td>");
+                sb.Append($"<td style=\"padding:2px 0;\">{WebUtility.HtmlEncode(parameter)}</td>");
                 sb.Append("</tr>");
             }
 
@@ -204,11 +205,11 @@ namespace OmniTactica.AppCode.Services
 
             // Header
             sb.Append("<div style=\"font-weight:700;font-size:1.1em;border-bottom:1px solid rgba(255,255,255,0.3);padding-bottom:4px;margin-bottom:8px;\">");
-            sb.Append(System.Web.HttpUtility.HtmlEncode(displayName));
+            sb.Append(WebUtility.HtmlEncode(displayName));
             sb.Append("</div>");
 
             // Description
-            sb.Append($"<div style=\"margin-bottom:6px;color:#20c997;font-weight:600;line-height:1.4;\">{System.Web.HttpUtility.HtmlEncode(description)}</div>");
+            sb.Append($"<div style=\"margin-bottom:6px;color:#20c997;font-weight:600;line-height:1.4;\">{WebUtility.HtmlEncode(description)}</div>");
 
             // Additional fields if available
             var hasDetails = value.HasValue || !string.IsNullOrEmpty(parameter);
@@ -228,7 +229,7 @@ namespace OmniTactica.AppCode.Services
                 {
                     sb.Append("<tr>");
                     sb.Append("<td style=\"color:#adb5bd;padding:2px 8px 2px 0;vertical-align:top;white-space:nowrap;\">Parameter</td>");
-                    sb.Append($"<td style=\"padding:2px 0;\">{System.Web.HttpUtility.HtmlEncode(parameter)}</td>");
+                    sb.Append($"<td style=\"padding:2px 0;\">{WebUtility.HtmlEncode(parameter)}</td>");
                     sb.Append("</tr>");
                 }
 

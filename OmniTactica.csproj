@@ -1,9 +1,12 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk.Razor">
 
     <PropertyGroup>
-        <TargetFrameworks>net10.0-android</TargetFrameworks>
-        <TargetFrameworks Condition="!$([MSBuild]::IsOSPlatform('linux'))">$(TargetFrameworks);net10.0-ios;net10.0-maccatalyst</TargetFrameworks>
-        <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('windows'))">$(TargetFrameworks);net10.0-windows10.0.19041.0</TargetFrameworks>
+		<TargetFrameworks>
+			net10.0-android;
+			net10.0-ios;
+			net10.0-maccatalyst;
+			net10.0-windows10.0.19041.0
+		</TargetFrameworks>
 
         <!-- Note for MacCatalyst:
             The default runtime is maccatalyst-x64, except in Release config, in which case the default is maccatalyst-x64;maccatalyst-arm64.
@@ -66,6 +69,8 @@
 
     <PropertyGroup Condition="'$(Configuration)|$(TargetFramework)|$(Platform)'=='Release|net10.0-android|AnyCPU'">
       <ApplicationIdGuid>mug.arandom.omnitactica</ApplicationIdGuid>
+      <DebugSymbols>true</DebugSymbols>
+      <AndroidIncludeDebugSymbols>true</AndroidIncludeDebugSymbols>
     </PropertyGroup>
 
     <PropertyGroup Condition="'$(Configuration)|$(TargetFramework)|$(Platform)'=='Release|net10.0-ios|AnyCPU'">
@@ -82,10 +87,10 @@
 
     <ItemGroup>
         <!-- App Icon -->
-        <MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#512BD4" />
+        <MauiIcon Include="Resources\AppIcon\appicon.svg" />
 
         <!-- Splash Screen -->
-        <MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#512BD4" BaseSize="128,128" />
+        <MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#353535" BaseSize="401,800" />
 
         <!-- Images -->
         <MauiImage Include="Resources\Images\*" />
@@ -99,6 +104,8 @@
     </ItemGroup>
 
     <ItemGroup>
+      <MauiImage Remove="Resources\AppIcon\appicon.svg" />
+      <MauiImage Remove="Resources\AppIcon\appiconfg.svg" />
       <AndroidResource Remove="wwwroot\css\**" />
       <AndroidResource Remove="wwwroot\darkpan-1.0.0\**" />
       <Compile Remove="wwwroot\css\**" />
@@ -155,6 +162,7 @@
 
     <ItemGroup>
       <Folder Include="AppCode\Models\Datasheets\" />
+      <Folder Include="Resources\SplashScreen\" />
     </ItemGroup>
 
 </Project>

@@ -1,36 +1,20 @@
 ﻿using HtmlAgilityPack;
-using System;
-using System.Collections.Generic;
 using System.Net;
-using System.Text;
 
 namespace OmniTactica.AppCode.Utilities
 {
-    internal class HtmlUtility
+    internal static class HtmlUtility
     {
         public static string ConvertHtmlToPlainText(string html)
         {
-            // 1. Create a new HtmlDocument instance
-            HtmlDocument doc = new HtmlDocument();
-
-            // 2. Load the HTML content
+            var doc = new HtmlDocument();
             doc.LoadHtml(html);
-
-            // 3. Access the InnerText property of the main document node
-            string plainText = doc.DocumentNode.InnerText;
-
-            // 4. Decode HTML entities for a cleaner result
-            // Note: In modern .NET, use WebUtility.HtmlDecode. 
-            // If using older .NET frameworks, you might need System.Web.HttpUtility.HtmlDecode
-            return WebUtility.HtmlDecode(plainText);
+            return WebUtility.HtmlDecode(doc.DocumentNode.InnerText);
         }
 
         public static string StripHtml(string html)
         {
-            if (string.IsNullOrEmpty(html))
-                return string.Empty;
-
-            return ConvertHtmlToPlainText(html);
+            return string.IsNullOrEmpty(html) ? string.Empty : ConvertHtmlToPlainText(html);
         }
     }
 }

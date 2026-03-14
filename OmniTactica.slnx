@@ -1,5 +1,8 @@
 <Solution>
+  <Project Path="BenchmarkSuite1/BenchmarkSuite1.csproj">
+    <Deploy />
+  </Project>
   <Project Path="OmniTactica.csproj">
-    <Deploy Solution="Debug|*" />
+    <Deploy />
   </Project>
 </Solution>

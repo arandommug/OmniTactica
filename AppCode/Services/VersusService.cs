@@ -35,14 +35,7 @@ namespace OmniTactica.AppCode.Services
         /// </summary>
         public async Task<CombatUnit> AddAttackingUnitAsync(int datasheetId)
         {
-            var datasheet = await _datasheetRepo.GetDatasheetDetailAsync(datasheetId);
-            if (datasheet == null)
-                throw new InvalidOperationException($"Datasheet {datasheetId} not found");
-
-            var unit = await CreateCombatUnitFromDatasheet(datasheet);
-            _context.AttackingUnits.Add(unit);
-            OnContextChanged?.Invoke();
-            return unit;
+            return await AddUnitAsync(_context.AttackingUnits, datasheetId);
         }
 
         /// <summary>
@@ -50,12 +43,19 @@ namespace OmniTactica.AppCode.Services
         /// </summary>
         public async Task<CombatUnit> AddDefendingUnitAsync(int datasheetId)
         {
+            return await AddUnitAsync(_context.DefendingUnits, datasheetId);
+        }
+
+        private async Task<CombatUnit> AddUnitAsync(List<CombatUnit> units, int datasheetId)
+        {
             var datasheet = await _datasheetRepo.GetDatasheetDetailAsync(datasheetId);
             if (datasheet == null)
+            {
                 throw new InvalidOperationException($"Datasheet {datasheetId} not found");
+            }
 
             var unit = await CreateCombatUnitFromDatasheet(datasheet);
-            _context.DefendingUnits.Add(unit);
+            units.Add(unit);
             OnContextChanged?.Invoke();
             return unit;
         }
@@ -79,30 +79,7 @@ namespace OmniTactica.AppCode.Services
             // Create combat models based on composition
             foreach (var (modelName, minQuantity, maxQuantity) in modelComposition)
             {
-                // Find matching model profile - try exact match first, then partial match, then use datasheet name or first profile
-                var modelProfile = datasheet.Models.FirstOrDefault(m =>
-                    m.Name.Equals(modelName, StringComparison.OrdinalIgnoreCase));
-
-                if (modelProfile == null)
-                {
-                    // Try partial match (e.g., "Kill Team Veterans" matches "KILL TEAM VETERANS")
-                    modelProfile = datasheet.Models.FirstOrDefault(m =>
-                        m.Name.Replace(" ", "").Contains(modelName.Replace(" ", ""), StringComparison.OrdinalIgnoreCase) ||
-                        modelName.Replace(" ", "").Contains(m.Name.Replace(" ", ""), StringComparison.OrdinalIgnoreCase));
-                }
-
-                if (modelProfile == null)
-                {
-                    // Try matching with datasheet name (many units use datasheet name as the model profile)
-                    modelProfile = datasheet.Models.FirstOrDefault(m =>
-                        m.Name.Equals(datasheet.Name, StringComparison.OrdinalIgnoreCase));
-                }
-
-                if (modelProfile == null)
-                {
-                    // Use first model profile as fallback
-                    modelProfile = datasheet.Models.FirstOrDefault();
-                }
+                var modelProfile = FindModelProfile(datasheet, modelName);
 
                 if (modelProfile != null)
                 {
@@ -182,6 +159,126 @@ namespace OmniTactica.AppCode.Services
         /// Creates ConditionalModifier objects from weapon abilities.
         /// </summary>
         private void CreateModifiersFromAbilities(CombatWeapon weapon, WeaponAbilities abilities)
+        {
+            // Apply modifiers that are built into the weapon abilities
+            if (weapon.Abilities.Torrent)
+            {
+                weapon.Modifiers.Add(new ConditionalModifier
+                {
+                    Name = "Torrent (Built-in)",
+                    Condition = new ModifierCondition { Type = ConditionType.Always },
+                    Effect = new ModifierEffect { Type = EffectType.AddHitModifier, IntValue = 100 },
+                    IsActive = true,
+                    IsCustom = false
+                });
+            }
+
+            if (weapon.Abilities.TwinLinked)
+            {
+                weapon.Modifiers.Add(new ConditionalModifier
+                {
+                    Name = "Twin-Linked (Built-in)",
+                    Condition = new ModifierCondition { Type = ConditionType.Always },
+                    Effect = new ModifierEffect { Type = EffectType.RerollWounds },
+                    IsActive = true,
+                    IsCustom = false
+                });
+            }
+
+            if (weapon.Abilities.LethalHits)
+            {
+                weapon.Modifiers.Add(new ConditionalModifier
+                {
+                    Name = "Lethal Hits (Built-in)",
+                    Condition = new ModifierCondition { Type = ConditionType.CriticalHit },
+                    Effect = new ModifierEffect { Type = EffectType.AutoWoundOnCrit },
+                    IsActive = true,
+                    IsCustom = false
+                });
+            }
+
+            if (weapon.Abilities.DevastatingWounds)
+            {
+                weapon.Modifiers.Add(new ConditionalModifier
+                {
+                    Name = "Devastating Wounds (Built-in)",
+                    Condition = new ModifierCondition { Type = ConditionType.CriticalWound },
+                    Effect = new ModifierEffect { Type = EffectType.ConvertToMortalWounds },
+                    IsActive = true,
+                    IsCustom = false
+                });
+            }
+
+            if (weapon.Abilities.SustainedHits.HasValue)
+            {
+                weapon.Modifiers.Add(new ConditionalModifier
+                {
+                    Name = $"Sustained Hits {weapon.Abilities.SustainedHits} (Built-in)",
+                    Condition = new ModifierCondition { Type = ConditionType.CriticalHit },
+                    Effect = new ModifierEffect { Type = EffectType.AddExtraHitsOnCrit, IntValue = weapon.Abilities.SustainedHits.Value },
+                    IsActive = true,
+                    IsCustom = false
+                });
+            }
+
+            if (weapon.Abilities.RapidFire.HasValue)
+            {
+                weapon.Modifiers.Add(new ConditionalModifier
+                {
+                    Name = $"Rapid Fire {weapon.Abilities.RapidFire} (Built-in)",
+                    Condition = new ModifierCondition { Type = ConditionType.TargetWithinHalfRange },
+                    Effect = new ModifierEffect { Type = EffectType.AddAttacks, IntValue = weapon.Abilities.RapidFire.Value },
+                    IsActive = true,
+                    IsCustom = false
+                });
+            }
+
+            if (weapon.Abilities.Melta.HasValue)
+            {
+                weapon.Modifiers.Add(new ConditionalModifier
+                {
+                    Name = $"Melta {weapon.Abilities.Melta} (Built-in)",
+                    Condition = new ModifierCondition { Type = ConditionType.TargetWithinHalfRange },
+                    Effect = new ModifierEffect { Type = EffectType.AddDamageModifier, IntValue = weapon.Abilities.Melta.Value },
+                    IsActive = true,
+                    IsCustom = false
+                });
+            }
+
+            if (weapon.Abilities.IgnoresCover)
+            {
+                weapon.Modifiers.Add(new ConditionalModifier
+                {
+                    Name = "Ignores Cover (Built-in)",
+                    Condition = new ModifierCondition { Type = ConditionType.Always },
+                    Effect = new ModifierEffect { Type = EffectType.IgnoreCover },
+                    IsActive = true,
+                    IsCustom = false
+                });
+            }
+
+            // Anti-X Y+ (generic keyword support) - Handle multiple Anti keywords
+            foreach (var antiAbility in weapon.Abilities.GetAntiAbilities())
+            {
+                // Extract keyword from the ability ID (e.g., "anti_vehicle" -> "vehicle")
+                var keyword = antiAbility.Id.Replace("anti_", "").Replace("_", " ");
+                var threshold = antiAbility.Value ?? 4; // Default to 4+ if not specified
+
+                weapon.Modifiers.Add(new ConditionalModifier
+                {
+                    Name = $"{antiAbility.DisplayName} (Built-in)",
+                    Condition = new ModifierCondition
+                    {
+                        Type = ConditionType.TargetHasKeyword,
+                        Value = keyword
+                    },
+                    Effect = new ModifierEffect { Type = EffectType.CriticalWoundOn, IntValue = threshold },
+                    IsActive = true,
+                    IsCustom = false
+                });
+            }
+        }
+        private void _CreateModifiersFromAbilities(CombatWeapon weapon, WeaponAbilities abilities)
         {
             // Anti-X Y+ (e.g., Anti-Infantry 4+, Anti-Vehicle 4+) - Handle multiple Anti keywords
             foreach (var antiAbility in abilities.GetAntiAbilities())
@@ -395,17 +492,7 @@ namespace OmniTactica.AppCode.Services
                         }
 
                         // Try to match with the name as-is, then without trailing 's' for plurals
-                        var wargear = allWargear.FirstOrDefault(w =>
-                            w.Name.Equals(cleanedName, StringComparison.OrdinalIgnoreCase) ||
-                            cleanedName.Contains(w.Name, StringComparison.OrdinalIgnoreCase));
-
-                        if (wargear == null && cleanedName.EndsWith('s'))
-                        {
-                            var singular = cleanedName[..^1];
-                            wargear = allWargear.FirstOrDefault(w =>
-                                w.Name.Equals(singular, StringComparison.OrdinalIgnoreCase) ||
-                                singular.Contains(w.Name, StringComparison.OrdinalIgnoreCase));
-                        }
+                        var wargear = FindWargear(allWargear, cleanedName);
 
                         if (wargear != null)
                         {
@@ -418,6 +505,34 @@ namespace OmniTactica.AppCode.Services
             }
 
             return weapons;
+        }
+
+        private DatasheetModel? FindModelProfile(DatasheetDetail datasheet, string modelName)
+        {
+            var normalizedModelName = modelName.Replace(" ", string.Empty);
+
+            return datasheet.Models.FirstOrDefault(model =>
+                       model.Name.Equals(modelName, StringComparison.OrdinalIgnoreCase))
+                   ?? datasheet.Models.FirstOrDefault(model =>
+                       model.Name.Replace(" ", string.Empty).Contains(normalizedModelName, StringComparison.OrdinalIgnoreCase) ||
+                       normalizedModelName.Contains(model.Name.Replace(" ", string.Empty), StringComparison.OrdinalIgnoreCase))
+                   ?? datasheet.Models.FirstOrDefault(model =>
+                       model.Name.Equals(datasheet.Name, StringComparison.OrdinalIgnoreCase))
+                   ?? datasheet.Models.FirstOrDefault();
+        }
+
+        private static DatasheetWargear? FindWargear(IEnumerable<DatasheetWargear> allWargear, string weaponName)
+        {
+            var singularWeaponName = weaponName.EndsWith('s') ? weaponName[..^1] : null;
+
+            return allWargear.FirstOrDefault(wargear =>
+                       wargear.Name.Equals(weaponName, StringComparison.OrdinalIgnoreCase) ||
+                       weaponName.Contains(wargear.Name, StringComparison.OrdinalIgnoreCase))
+                   ?? (singularWeaponName != null
+                       ? allWargear.FirstOrDefault(wargear =>
+                           wargear.Name.Equals(singularWeaponName, StringComparison.OrdinalIgnoreCase) ||
+                           singularWeaponName.Contains(wargear.Name, StringComparison.OrdinalIgnoreCase))
+                       : null);
         }
 
         /// <summary>
@@ -438,9 +553,6 @@ namespace OmniTactica.AppCode.Services
 
             // Remove common suffixes
             value = value.Replace("+", "").Replace("\"", "").Replace("'", "").Trim();
-
-            // Handle quotes
-            value = value.Replace("'", "").Replace("'", "");
 
             if (int.TryParse(value, out var result))
                 return result;
@@ -464,6 +576,16 @@ namespace OmniTactica.AppCode.Services
         {
             return _context.AttackingUnits.FirstOrDefault(u => u.Id == unitId) ??
                    _context.DefendingUnits.FirstOrDefault(u => u.Id == unitId);
+        }
+
+        private CombatModel? FindModel(string unitId, string modelId)
+        {
+            return GetUnit(unitId)?.Models.FirstOrDefault(model => model.Id == modelId);
+        }
+
+        private CombatWeapon? FindWeapon(string unitId, string modelId, string weaponId)
+        {
+            return FindModel(unitId, modelId)?.Weapons.FirstOrDefault(weapon => weapon.Id == weaponId);
         }
 
         // ===== Model Management =====
@@ -507,8 +629,7 @@ namespace OmniTactica.AppCode.Services
 
         public void AddWeaponToModel(string unitId, string modelId, CombatWeapon weapon)
         {
-            var unit = GetUnit(unitId);
-            var model = unit?.Models.FirstOrDefault(m => m.Id == modelId);
+            var model = FindModel(unitId, modelId);
             if (model != null)
             {
                 model.Weapons.Add(weapon);
@@ -518,8 +639,7 @@ namespace OmniTactica.AppCode.Services
 
         public void RemoveWeaponFromModel(string unitId, string modelId, string weaponId)
         {
-            var unit = GetUnit(unitId);
-            var model = unit?.Models.FirstOrDefault(m => m.Id == modelId);
+            var model = FindModel(unitId, modelId);
             if (model != null)
             {
                 model.Weapons.RemoveAll(w => w.Id == weaponId);
@@ -529,9 +649,7 @@ namespace OmniTactica.AppCode.Services
 
         public void ToggleWeaponSelection(string unitId, string modelId, string weaponId)
         {
-            var unit = GetUnit(unitId);
-            var model = unit?.Models.FirstOrDefault(m => m.Id == modelId);
-            var weapon = model?.Weapons.FirstOrDefault(w => w.Id == weaponId);
+            var weapon = FindWeapon(unitId, modelId, weaponId);
             if (weapon != null)
             {
                 weapon.IsSelected = !weapon.IsSelected;
@@ -541,8 +659,7 @@ namespace OmniTactica.AppCode.Services
 
         public void UpdateWeapon(string unitId, string modelId, string weaponId, CombatWeapon updatedWeapon)
         {
-            var unit = GetUnit(unitId);
-            var model = unit?.Models.FirstOrDefault(m => m.Id == modelId);
+            var model = FindModel(unitId, modelId);
             if (model != null)
             {
                 var index = model.Weapons.FindIndex(w => w.Id == weaponId);
@@ -579,8 +696,7 @@ namespace OmniTactica.AppCode.Services
 
         public void AddModelModifier(string unitId, string modelId, ConditionalModifier modifier)
         {
-            var unit = GetUnit(unitId);
-            var model = unit?.Models.FirstOrDefault(m => m.Id == modelId);
+            var model = FindModel(unitId, modelId);
             if (model != null)
             {
                 model.Modifiers.Add(modifier);
@@ -590,8 +706,7 @@ namespace OmniTactica.AppCode.Services
 
         public void RemoveModelModifier(string unitId, string modelId, string modifierId)
         {
-            var unit = GetUnit(unitId);
-            var model = unit?.Models.FirstOrDefault(m => m.Id == modelId);
+            var model = FindModel(unitId, modelId);
             if (model != null)
             {
                 model.Modifiers.RemoveAll(m => m.Id == modifierId);
@@ -601,9 +716,7 @@ namespace OmniTactica.AppCode.Services
 
         public void AddWeaponModifier(string unitId, string modelId, string weaponId, ConditionalModifier modifier)
         {
-            var unit = GetUnit(unitId);
-            var model = unit?.Models.FirstOrDefault(m => m.Id == modelId);
-            var weapon = model?.Weapons.FirstOrDefault(w => w.Id == weaponId);
+            var weapon = FindWeapon(unitId, modelId, weaponId);
             if (weapon != null)
             {
                 weapon.Modifiers.Add(modifier);
@@ -613,9 +726,7 @@ namespace OmniTactica.AppCode.Services
 
         public void RemoveWeaponModifier(string unitId, string modelId, string weaponId, string modifierId)
         {
-            var unit = GetUnit(unitId);
-            var model = unit?.Models.FirstOrDefault(m => m.Id == modelId);
-            var weapon = model?.Weapons.FirstOrDefault(w => w.Id == weaponId);
+            var weapon = FindWeapon(unitId, modelId, weaponId);
             if (weapon != null)
             {
                 weapon.Modifiers.RemoveAll(m => m.Id == modifierId);

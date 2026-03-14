@@ -69,7 +69,7 @@
 
 @if (Entries != null && Entries.Any())
 {
-    <div class="combat-log-container">
+    <div class="combat-log-container" @ref="containerRef">
         @{
             var groupedLogs = GroupLogsByAttack(Entries);
             var currentFightPhase = "";
@@ -391,9 +391,14 @@ else
     [Parameter]
     public bool VerboseMode { get; set; } = false;
 
+    private ElementReference containerRef;
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        await JS.InvokeVoidAsync("initTooltips");
+        if (Entries != null && Entries.Any())
+        {
+            await JS.InvokeVoidAsync("initTooltips", containerRef);
+        }
     }
 
     private List<AttackGroupLog> GroupLogsByAttack(List<CombatLogEntry> entries)
@@ -508,8 +513,7 @@ else
                     else if (entry.Message.Contains("[DICE]"))
                     {
                         var diceStr = entry.Message.Replace("[DICE]", "").Trim();
-                        currentGroup.HitDice = diceStr.Split(',', StringSplitOptions.RemoveEmptyEntries)
-                            .Select(d => int.TryParse(d.Trim(), out var v) ? v : 0).Where(v => v > 0).ToList();
+                        currentGroup.HitDice = ParseDiceList(diceStr);
                     }
                     break;
 
@@ -541,8 +545,7 @@ else
                     else if (entry.Message.Contains("[DICE]"))
                     {
                         var diceStr = entry.Message.Replace("[DICE]", "").Trim();
-                        currentGroup.WoundDice = diceStr.Split(',', StringSplitOptions.RemoveEmptyEntries)
-                            .Select(d => int.TryParse(d.Trim(), out var v) ? v : 0).Where(v => v > 0).ToList();
+                        currentGroup.WoundDice = ParseDiceList(diceStr);
                     }
                     break;
 
@@ -593,8 +596,7 @@ else
                     else if (entry.Message.Contains("[DICE]"))
                     {
                         var diceStr = entry.Message.Replace("[DICE]", "").Trim();
-                        currentGroup.SaveDice = diceStr.Split(',', StringSplitOptions.RemoveEmptyEntries)
-                            .Select(d => int.TryParse(d.Trim(), out var v) ? v : 0).Where(v => v > 0).ToList();
+                        currentGroup.SaveDice = ParseDiceList(diceStr);
                     }
                     break;
 
@@ -636,6 +638,14 @@ else
         }
 
         return groups;
+    }
+
+    private static List<int> ParseDiceList(string diceStr)
+    {
+        return diceStr.Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(die => int.TryParse(die.Trim(), out var value) ? value : 0)
+            .Where(value => value > 0)
+            .ToList();
     }
 
     private string GetPhaseClass(AttackGroupLog log)

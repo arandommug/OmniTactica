@@ -54,12 +54,13 @@
                                             g.Key.Ld,
                                             g.Key.OC,
                                             g.Key.InvSv
-                                        });
+                                        })
+                                        .ToList();
 
                                     @foreach (var statline in uniqueStatlines)
                                     {
                                         <div class="mb-2">
-                                            @if (uniqueStatlines.Count() > 1)
+                                            @if (uniqueStatlines.Count > 1)
                                             {
                                                 <div class="fw-semibold small">@statline.Names</div>
                                             }
@@ -139,15 +140,15 @@
                                                             <td>
                                                                 @if (!string.IsNullOrEmpty(weapon.Description))
                                                                 {
-                                                                    @foreach (var ability in weapon.Description.Split(','))
+                                                                    @foreach (var ability in GetWeaponDescriptionAbilities(weapon.Description))
                                                                     {
-                                                                        var tooltip = AbilityTooltipHelper.GetTooltipFromName(ability.Trim(), AbilityRulesService);
+                                                                        var tooltip = AbilityTooltipHelper.GetTooltipFromName(ability, AbilityRulesService);
                                                                         <span class="badge bg-secondary bg-opacity-25 text-secondary-emphasis me-1"
                                                                               style="cursor: help; font-size: 0.65rem; font-weight: 500;"
                                                                               data-bs-toggle="tooltip"
                                                                               data-bs-placement="top"
                                                                               data-bs-html="true"
-                                                                              title="@tooltip">@ability.Trim()</span>
+                                                                              title="@tooltip">@ability</span>
                                                                     }
                                                                 }
                                                             </td>
@@ -169,15 +170,15 @@
                                                             <td>
                                                                 @if (!string.IsNullOrEmpty(weapon.Description))
                                                                 {
-                                                                    @foreach (var ability in weapon.Description.Split(','))
+                                                                    @foreach (var ability in GetWeaponDescriptionAbilities(weapon.Description))
                                                                     {
-                                                                        var tooltip = AbilityTooltipHelper.GetTooltipFromName(ability.Trim(), AbilityRulesService);
+                                                                        var tooltip = AbilityTooltipHelper.GetTooltipFromName(ability, AbilityRulesService);
                                                                         <span class="badge bg-secondary bg-opacity-25 text-secondary-emphasis me-1"
                                                                               style="cursor: help; font-size: 0.65rem; font-weight: 500;"
                                                                               data-bs-toggle="tooltip"
                                                                               data-bs-placement="top"
                                                                               data-bs-html="true"
-                                                                              title="@tooltip">@ability.Trim()</span>
+                                                                              title="@tooltip">@ability</span>
                                                                     }
                                                                 }
                                                             </td>
@@ -261,6 +262,7 @@
                                                             {
                                                                 @foreach (var weapon in model.Weapons)
                                                                 {
+                                                                    @* ApplyBuiltInModifiers(weapon); *@
                                                                     <div class="d-flex align-items-center gap-2 py-1 @(weapon.IsSelected ? "" : "opacity-50")" style="font-size: 0.8rem;">
                                                                         <input type="checkbox" class="form-check-input flex-shrink-0" style="margin: 0;" @bind="weapon.IsSelected" />
                                                                         <span class="fw-semibold text-truncate" style="min-width: 0;">@weapon.Name</span>
@@ -497,7 +499,7 @@
         this.editingUnit = unit;
         this.isAttacker = isAttacker;
         StateHasChanged();
-        await JS.InvokeVoidAsync("eval", "new bootstrap.Modal(document.getElementById('unitEditorModal')).show()");
+        await JS.InvokeVoidAsync("bootstrapInterop.showModal", "unitEditorModal");
         await JS.InvokeVoidAsync("initTooltips");
     }
 
@@ -868,12 +870,20 @@
         return WeaponAbilityParser.Parse(description);
     }
 
+    private static List<string> GetWeaponDescriptionAbilities(string description)
+    {
+        return description.Split(',')
+            .Select(ability => ability.Trim())
+            .Where(ability => !string.IsNullOrWhiteSpace(ability))
+            .ToList();
+    }
+
     private int ParseStatValue(string value)
     {
         if (string.IsNullOrEmpty(value) || value == "-" || value == "N/A")
             return 0;
 
-        value = value.Replace("+", "").Replace("\"", "").Replace("'", "").Replace("'", "").Trim();
+        value = value.Replace("+", "").Replace("\"", "").Replace("'", "").Trim();
 
         if (int.TryParse(value, out var result))
             return result;

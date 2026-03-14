@@ -177,37 +177,13 @@ namespace OmniTactica.AppCode.Services
         public async Task DuplicateUnitAsync(string unitId)
         {
             var armyList = EnsureActiveList();
-            var unit = armyList.Units.FirstOrDefault(existingUnit => existingUnit.Id == unitId);
+            var unit = FindUnit(unitId);
             if (unit == null)
             {
                 return;
             }
 
-            var duplicate = new ArmyListUnit
-            {
-                DatasheetId = unit.DatasheetId,
-                DatasheetName = unit.DatasheetName,
-                Role = unit.Role,
-                Keywords = new List<string>(unit.Keywords),
-                Composition = new List<string>(unit.Composition),
-                Models = CloneModels(unit.Models),
-                CostOptions = unit.CostOptions
-                    .Select(cost => new ArmyListCostOption
-                    {
-                        Line = cost.Line,
-                        Description = cost.Description,
-                        Cost = cost.Cost
-                    })
-                    .ToList(),
-                SelectedCostLine = unit.SelectedCostLine,
-                SelectedCostDescription = unit.SelectedCostDescription,
-                SelectedPoints = unit.SelectedPoints,
-                CanTakeEnhancement = unit.CanTakeEnhancement,
-                EnhancementId = unit.EnhancementId,
-                EnhancementName = unit.EnhancementName,
-                EnhancementCost = unit.EnhancementCost,
-                Notes = unit.Notes
-            };
+            var duplicate = CloneUnit(unit);
 
             armyList.Units.Add(duplicate);
             await PersistAsync();
@@ -216,7 +192,7 @@ namespace OmniTactica.AppCode.Services
         public async Task RemoveUnitAsync(string unitId)
         {
             var armyList = EnsureActiveList();
-            var unit = armyList.Units.FirstOrDefault(existingUnit => existingUnit.Id == unitId);
+            var unit = FindUnit(unitId);
             if (unit == null)
             {
                 return;
@@ -229,7 +205,7 @@ namespace OmniTactica.AppCode.Services
         public async Task SetUnitCostAsync(string unitId, int selectedCostLine)
         {
             var armyList = EnsureActiveList();
-            var unit = armyList.Units.FirstOrDefault(existingUnit => existingUnit.Id == unitId);
+            var unit = FindUnit(unitId);
             var cost = unit?.CostOptions.FirstOrDefault(option => option.Line == selectedCostLine);
             if (unit == null || cost == null)
             {
@@ -252,8 +228,7 @@ namespace OmniTactica.AppCode.Services
 
         public async Task SetModelQuantityAsync(string unitId, string modelId, int quantity)
         {
-            var armyList = EnsureActiveList();
-            var unit = armyList.Units.FirstOrDefault(existingUnit => existingUnit.Id == unitId);
+            var unit = FindUnit(unitId);
             var model = unit?.Models.FirstOrDefault(existingModel => existingModel.Id == modelId);
             if (unit == null || model == null)
             {
@@ -274,7 +249,7 @@ namespace OmniTactica.AppCode.Services
             }
 
             var armyList = EnsureActiveList();
-            var unit = armyList.Units.FirstOrDefault(existingUnit => existingUnit.Id == unitId);
+            var unit = FindUnit(unitId);
             var model = unit?.Models.FirstOrDefault(existingModel => existingModel.Id == modelId);
             if (unit == null || model == null)
             {
@@ -309,7 +284,7 @@ namespace OmniTactica.AppCode.Services
         public async Task RemoveWeaponAsync(string unitId, string modelId, string weaponId)
         {
             var model = FindModel(unitId, modelId);
-            var weapon = model?.Weapons.FirstOrDefault(existingWeapon => existingWeapon.Id == weaponId);
+            var weapon = FindWeapon(unitId, modelId, weaponId);
             if (model == null || weapon == null)
             {
                 return;
@@ -321,8 +296,7 @@ namespace OmniTactica.AppCode.Services
 
         public async Task SetWeaponQuantityAsync(string unitId, string modelId, string weaponId, int quantity)
         {
-            var model = FindModel(unitId, modelId);
-            var weapon = model?.Weapons.FirstOrDefault(existingWeapon => existingWeapon.Id == weaponId);
+            var weapon = FindWeapon(unitId, modelId, weaponId);
             if (weapon == null)
             {
                 return;
@@ -334,8 +308,7 @@ namespace OmniTactica.AppCode.Services
 
         public async Task SetWeaponSelectedAsync(string unitId, string modelId, string weaponId, bool isSelected)
         {
-            var model = FindModel(unitId, modelId);
-            var weapon = model?.Weapons.FirstOrDefault(existingWeapon => existingWeapon.Id == weaponId);
+            var weapon = FindWeapon(unitId, modelId, weaponId);
             if (weapon == null)
             {
                 return;
@@ -347,8 +320,7 @@ namespace OmniTactica.AppCode.Services
 
         public async Task SetUnitEnhancementAsync(string unitId, Enhancement? enhancement)
         {
-            var armyList = EnsureActiveList();
-            var unit = armyList.Units.FirstOrDefault(existingUnit => existingUnit.Id == unitId);
+            var unit = FindUnit(unitId);
             if (unit == null)
             {
                 return;
@@ -362,8 +334,7 @@ namespace OmniTactica.AppCode.Services
 
         public async Task SetUnitNotesAsync(string unitId, string? notes)
         {
-            var armyList = EnsureActiveList();
-            var unit = armyList.Units.FirstOrDefault(existingUnit => existingUnit.Id == unitId);
+            var unit = FindUnit(unitId);
             if (unit == null)
             {
                 return;
@@ -424,7 +395,7 @@ namespace OmniTactica.AppCode.Services
             EnsureActiveList();
         }
 
-        private async Task PersistAsync()
+        private Task PersistAsync()
         {
             try
             {
@@ -438,7 +409,7 @@ namespace OmniTactica.AppCode.Services
                 System.Diagnostics.Debug.WriteLine($"[ArmyListService] Error saving army list: {ex.Message}");
             }
 
-            await Task.CompletedTask;
+            return Task.CompletedTask;
         }
 
         private ArmyList EnsureActiveList()
@@ -489,32 +460,42 @@ namespace OmniTactica.AppCode.Services
                 DetachmentId = source.DetachmentId,
                 DetachmentName = source.DetachmentName,
                 PointsLimit = source.PointsLimit,
-                Units = source.Units.Select(unit => new ArmyListUnit
-                {
-                    DatasheetId = unit.DatasheetId,
-                    DatasheetName = unit.DatasheetName,
-                    Role = unit.Role,
-                    Keywords = new List<string>(unit.Keywords),
-                    Composition = new List<string>(unit.Composition),
-                    Models = CloneModels(unit.Models),
-                    CostOptions = unit.CostOptions.Select(cost => new ArmyListCostOption
-                    {
-                        Line = cost.Line,
-                        Description = cost.Description,
-                        Cost = cost.Cost
-                    }).ToList(),
-                    SelectedCostLine = unit.SelectedCostLine,
-                    SelectedCostDescription = unit.SelectedCostDescription,
-                    SelectedPoints = unit.SelectedPoints,
-                    CanTakeEnhancement = unit.CanTakeEnhancement,
-                    EnhancementId = unit.EnhancementId,
-                    EnhancementName = unit.EnhancementName,
-                    EnhancementCost = unit.EnhancementCost,
-                    Notes = unit.Notes
-                }).ToList(),
+                Units = source.Units.Select(CloneUnit).ToList(),
                 CreatedUtc = DateTime.UtcNow,
                 UpdatedUtc = DateTime.UtcNow
             };
+        }
+
+        private ArmyListUnit CloneUnit(ArmyListUnit unit)
+        {
+            return new ArmyListUnit
+            {
+                DatasheetId = unit.DatasheetId,
+                DatasheetName = unit.DatasheetName,
+                Role = unit.Role,
+                Keywords = new List<string>(unit.Keywords),
+                Composition = new List<string>(unit.Composition),
+                Models = CloneModels(unit.Models),
+                CostOptions = CloneCostOptions(unit.CostOptions),
+                SelectedCostLine = unit.SelectedCostLine,
+                SelectedCostDescription = unit.SelectedCostDescription,
+                SelectedPoints = unit.SelectedPoints,
+                CanTakeEnhancement = unit.CanTakeEnhancement,
+                EnhancementId = unit.EnhancementId,
+                EnhancementName = unit.EnhancementName,
+                EnhancementCost = unit.EnhancementCost,
+                Notes = unit.Notes
+            };
+        }
+
+        private static List<ArmyListCostOption> CloneCostOptions(IEnumerable<ArmyListCostOption> costOptions)
+        {
+            return costOptions.Select(cost => new ArmyListCostOption
+            {
+                Line = cost.Line,
+                Description = cost.Description,
+                Cost = cost.Cost
+            }).ToList();
         }
 
         private List<ArmyListUnitModel> CreateUnitModels(DatasheetDetail detail, string? selectedCostDescription = null)
@@ -586,11 +567,13 @@ namespace OmniTactica.AppCode.Services
 
         private DatasheetModel? FindModelProfile(DatasheetDetail detail, string modelName)
         {
+            var normalizedModelName = modelName.Replace(" ", string.Empty);
+
             return detail.Models.FirstOrDefault(model =>
                        model.Name.Equals(modelName, StringComparison.OrdinalIgnoreCase))
                    ?? detail.Models.FirstOrDefault(model =>
-                       model.Name.Replace(" ", string.Empty).Contains(modelName.Replace(" ", string.Empty), StringComparison.OrdinalIgnoreCase) ||
-                       modelName.Replace(" ", string.Empty).Contains(model.Name.Replace(" ", string.Empty), StringComparison.OrdinalIgnoreCase))
+                       model.Name.Replace(" ", string.Empty).Contains(normalizedModelName, StringComparison.OrdinalIgnoreCase) ||
+                       normalizedModelName.Contains(model.Name.Replace(" ", string.Empty), StringComparison.OrdinalIgnoreCase))
                    ?? detail.Models.FirstOrDefault(model =>
                        model.Name.Equals(detail.Name, StringComparison.OrdinalIgnoreCase))
                    ?? detail.Models.FirstOrDefault();
@@ -726,13 +709,15 @@ namespace OmniTactica.AppCode.Services
 
         private DatasheetWargear? FindWargear(IEnumerable<DatasheetWargear> allWargear, string weaponName)
         {
+            var singularWeaponName = weaponName.EndsWith('s') ? weaponName[..^1] : null;
+
             return allWargear.FirstOrDefault(wargear =>
                        wargear.Name.Equals(weaponName, StringComparison.OrdinalIgnoreCase) ||
                        weaponName.Contains(wargear.Name, StringComparison.OrdinalIgnoreCase))
-                   ?? (weaponName.EndsWith('s')
+                   ?? (singularWeaponName != null
                        ? allWargear.FirstOrDefault(wargear =>
-                           wargear.Name.Equals(weaponName[..^1], StringComparison.OrdinalIgnoreCase) ||
-                           weaponName[..^1].Contains(wargear.Name, StringComparison.OrdinalIgnoreCase))
+                           wargear.Name.Equals(singularWeaponName, StringComparison.OrdinalIgnoreCase) ||
+                           singularWeaponName.Contains(wargear.Name, StringComparison.OrdinalIgnoreCase))
                        : null);
         }
 
@@ -833,12 +818,19 @@ namespace OmniTactica.AppCode.Services
             };
         }
 
+        private ArmyListUnit? FindUnit(string unitId)
+        {
+            return EnsureActiveList().Units.FirstOrDefault(unit => unit.Id == unitId);
+        }
+
         private ArmyListUnitModel? FindModel(string unitId, string modelId)
         {
-            var armyList = EnsureActiveList();
-            return armyList.Units
-                .FirstOrDefault(unit => unit.Id == unitId)?
-                .Models.FirstOrDefault(model => model.Id == modelId);
+            return FindUnit(unitId)?.Models.FirstOrDefault(model => model.Id == modelId);
+        }
+
+        private ArmyListUnitWeapon? FindWeapon(string unitId, string modelId, string weaponId)
+        {
+            return FindModel(unitId, modelId)?.Weapons.FirstOrDefault(weapon => weapon.Id == weaponId);
         }
 
         private List<ArmyListUnitModel> CloneModels(IEnumerable<ArmyListUnitModel> models)

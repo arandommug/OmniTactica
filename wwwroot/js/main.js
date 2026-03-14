@@ -1,9 +1,46 @@
+window.scrollToTopListeners = window.scrollToTopListeners || new Map();
+
 // Scroll to top functionality
-window.initScrollToTop = (dotNetRef) => {
-    window.addEventListener('scroll', () => {
+window.initScrollToTop = (listenerId, dotNetRef) => {
+    window.disposeScrollToTop(listenerId);
+
+    let ticking = false;
+    let lastVisible = false;
+
+    const updateVisibility = () => {
+        ticking = false;
+
         const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
-        dotNetRef.invokeMethodAsync('UpdateVisibility', scrollTop > 300);
-    });
+        const isVisible = scrollTop > 300;
+        if (isVisible === lastVisible) {
+            return;
+        }
+
+        lastVisible = isVisible;
+        dotNetRef.invokeMethodAsync('UpdateVisibility', isVisible);
+    };
+
+    const onScroll = () => {
+        if (ticking) {
+            return;
+        }
+
+        ticking = true;
+        window.requestAnimationFrame(updateVisibility);
+    };
+
+    window.scrollToTopListeners.set(listenerId, onScroll);
+    window.addEventListener('scroll', onScroll, { passive: true });
+};
+
+window.disposeScrollToTop = (listenerId) => {
+    const onScroll = window.scrollToTopListeners.get(listenerId);
+    if (!onScroll) {
+        return;
+    }
+
+    window.removeEventListener('scroll', onScroll);
+    window.scrollToTopListeners.delete(listenerId);
 };
 
 window.scrollToTop = () => {
@@ -27,24 +64,51 @@ window.restoreScrollPosition = (key) => {
     }
 };
 
-// Initialize Bootstrap tooltips
-window.initTooltips = () => {
-    // Dispose existing tooltips first to avoid duplicates
-    const existingTooltips = document.querySelectorAll('[data-bs-toggle="tooltip"]');
-    existingTooltips.forEach(el => {
-        const existing = bootstrap.Tooltip.getInstance(el);
-        if (existing) {
-            existing.dispose();
+window.bootstrapInterop = {
+    showModal: (id) => {
+        const element = document.getElementById(id);
+        if (!element) {
+            return;
         }
+
+        const modal = bootstrap.Modal.getOrCreateInstance(element);
+        modal.show();
+    },
+
+    hideModal: (id) => {
+        const element = document.getElementById(id);
+        if (!element) {
+            return;
+        }
+
+        const modal = bootstrap.Modal.getInstance(element);
+        modal?.hide();
+    }
+};
+
+// Initialize Bootstrap tooltips
+window.initTooltips = (root) => {
+    const container = root instanceof Element ? root : document;
+    const tooltipElements = [];
+
+    if (container.matches?.('[data-bs-toggle="tooltip"]')) {
+        tooltipElements.push(container);
+    }
+
+    tooltipElements.push(...container.querySelectorAll?.('[data-bs-toggle="tooltip"]') ?? []);
+
+    tooltipElements.forEach((element) => {
+        if (bootstrap.Tooltip.getInstance(element)) {
+            return;
+        }
+
+        new bootstrap.Tooltip(element, {
+            html: true,
+            trigger: 'hover',
+            sanitize: false,
+            customClass: 'ability-tooltip'
+        });
     });
-    // Initialize all tooltips on the page
-    const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
-    const tooltipList = [...tooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl, {
-        html: true,
-        trigger: 'hover',
-        sanitize: false,
-        customClass: 'ability-tooltip'
-    }));
 };
 
 // Auto-initialize tooltips when DOM changes (for Blazor dynamic content)
@@ -52,11 +116,22 @@ document.addEventListener('DOMContentLoaded', () => {
     window.initTooltips();
 
     if (typeof MutationObserver !== 'undefined') {
+        let pendingRoots = [];
+
         const observer = new MutationObserver((mutations) => {
-            // Debounce tooltip initialization
             clearTimeout(window.tooltipInitTimeout);
+
+            pendingRoots = mutations
+                .flatMap(mutation => [...mutation.addedNodes])
+                .filter(node => node.nodeType === Node.ELEMENT_NODE);
+
             window.tooltipInitTimeout = setTimeout(() => {
-                window.initTooltips();
+                if (!pendingRoots.length) {
+                    return;
+                }
+
+                pendingRoots.forEach(root => window.initTooltips(root));
+                pendingRoots = [];
             }, 200);
         });
 

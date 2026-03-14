@@ -61,6 +61,12 @@
         border-radius: 0.75rem;
     }
 
+    .unit-browser-item,
+    .play-mode-unit-card {
+        content-visibility: auto;
+        contain: layout paint style;
+    }
+
     .role-picker-grid {
         display: grid;
         gap: 0.75rem;
@@ -308,6 +314,11 @@
     }
 
     @@media (max-width: 640px) {
+        .play-mode-toolbar,
+        .fullscreen-toolbar {
+            backdrop-filter: none;
+        }
+
         .fullscreen-overlay.modal-fullscreen {
             overflow-y: auto;
             padding-bottom: calc(var(--app-bottom-height) + 1rem);
@@ -627,15 +638,14 @@
                                                 </div>
                                             </div>
 
-                                            @if (!filteredDatasheets.Any())
+                                            @if (!FilteredDatasheets.Any())
                                             {
                                                 <div class="text-muted">No @roleGroup.Role units match the current search.</div>
                                             }
                                             else
                                             {
                                                 <div class="unit-browser-list d-flex flex-column gap-2">
-                                                    @foreach (var datasheet in filteredDatasheets)
-                                                    {
+                                                    <Virtualize Items="FilteredDatasheets" Context="datasheet" ItemSize="88" OverscanCount="4">
                                                         <div class="unit-browser-item p-3" @key="datasheet.Id">
                                                             <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
                                                                 <div>
@@ -645,7 +655,7 @@
                                                                         {
                                                                             <span class="badge text-bg-success role-chip">@datasheet.PointsCost.Value pts</span>
                                                                         }
-                                                                        
+
                                                                         @if (datasheet.Keywords.Any())
                                                                         {
                                                                             <div class="text-muted small">
@@ -660,7 +670,7 @@
                                                                 </button>
                                                             </div>
                                                         </div>
-                                                    }
+                                                    </Virtualize>
                                                 </div>
                                             }
                                         </div>
@@ -1402,10 +1412,11 @@
         .OrderBy(group => GetRoleSortOrder(group.Role))
         .ThenBy(group => group.Role);
 
-    private IEnumerable<Datasheet> filteredDatasheets => datasheets
+    private List<Datasheet> FilteredDatasheets => datasheets
         .Where(datasheet => string.IsNullOrWhiteSpace(selectedRole) || string.Equals(GetRoleDisplay(datasheet.Role), selectedRole, StringComparison.OrdinalIgnoreCase))
         .Where(datasheet => string.IsNullOrWhiteSpace(unitSearch) || datasheet.Name.Contains(unitSearch, StringComparison.OrdinalIgnoreCase))
-        .OrderBy(datasheet => datasheet.Name);
+        .OrderBy(datasheet => datasheet.Name)
+        .ToList();
 
     private string roleFilter
     {
@@ -1427,11 +1438,12 @@
         .ThenBy(role => role)
         .ToList();
 
-    private IEnumerable<ArmyListUnit> FilteredPlayModeUnits => armyList.Units
+    private List<ArmyListUnit> FilteredPlayModeUnits => armyList.Units
         .Where(unit => string.IsNullOrWhiteSpace(playModeSearch) || unit.DatasheetName.Contains(playModeSearch, StringComparison.OrdinalIgnoreCase))
         .Where(unit => string.IsNullOrWhiteSpace(playModeRoleFilter) || string.Equals(GetRoleDisplay(unit.Role), playModeRoleFilter, StringComparison.OrdinalIgnoreCase))
         .OrderBy(unit => GetRoleSortOrder(GetRoleDisplay(unit.Role)))
-        .ThenBy(unit => unit.DatasheetName);
+        .ThenBy(unit => unit.DatasheetName)
+        .ToList();
 
     protected override async Task OnInitializedAsync()
     {
@@ -1665,10 +1677,10 @@
         var detachment = await Data.GetDetachmentDetailsAsync(detachmentId);
         availableEnhancements = detachment?.Enhancements
             .OrderBy(enhancement => enhancement.Name)
-            .ToList() ?? new List<Enhancement>();
+            .ToList() ?? [];
         detachmentStratagems = detachment?.Stratagems
             .DistinctBy(stratagem => stratagem.Id)
-            .ToList() ?? new List<Stratagem>();
+            .ToList() ?? [];
     }
 
     private async Task AddUnitAsync(Datasheet datasheet)
@@ -2036,10 +2048,10 @@
         => LoadoutEditorUnit == null ? null : GetDatasheetDetail(LoadoutEditorUnit.DatasheetId);
 
     private List<DatasheetWargear> LoadoutEditorRangedWeapons
-        => LoadoutEditorDetail?.Wargear.Where(wargear => wargear.Type == "Ranged").ToList() ?? new List<DatasheetWargear>();
+        => LoadoutEditorDetail?.Wargear.Where(wargear => wargear.Type == "Ranged").ToList() ?? [];
 
     private List<DatasheetWargear> LoadoutEditorMeleeWeapons
-        => LoadoutEditorDetail?.Wargear.Where(wargear => wargear.Type == "Melee").ToList() ?? new List<DatasheetWargear>();
+        => LoadoutEditorDetail?.Wargear.Where(wargear => wargear.Type == "Melee").ToList() ?? [];
 
     private async Task OpenLoadoutEditorAsync(string unitId)
     {

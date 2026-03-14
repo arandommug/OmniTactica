@@ -142,8 +142,7 @@
                                 {
                                     var combinedText = $"{ability.Legend} {ability.Description}";
                                     var matchesFilter = KeywordFilterHelper.MatchesKeywordFilter(combinedText, includeKeywords, excludeKeywords, useAndLogic);
-                                    var matchedKeywords = matchesFilter ? KeywordFilterHelper.GetMatchedKeywords(combinedText, includeKeywords) : new List<string>();
-                                    var passesFilter = KeywordFilterHelper.PassesFilter(combinedText, includeKeywords, excludeKeywords, useAndLogic);
+                                    var matchedKeywords = GetMatchedKeywordsForDisplay(combinedText, matchesFilter);
 
                                     <div class="accordion-item">
                                         <h2 class="accordion-header">
@@ -196,7 +195,7 @@
                                         {
                                             var combinedText = $"{strat.Legend} {strat.Description}";
                                             var matchesFilter = KeywordFilterHelper.MatchesKeywordFilter(combinedText, includeKeywords, excludeKeywords, useAndLogic);
-                                            var matchedKeywords = matchesFilter ? KeywordFilterHelper.GetMatchedKeywords(combinedText, includeKeywords) : new List<string>();
+                                            var matchedKeywords = GetMatchedKeywordsForDisplay(combinedText, matchesFilter);
                                             var turnBadgeClass = GetTurnBadgeClass(strat.Turn);
 
                                             <div class="accordion-item">
@@ -267,8 +266,7 @@
                                 {
                                     var combinedText = $"{enhancement.Legend} {enhancement.Description}";
                                     var matchesFilter = KeywordFilterHelper.MatchesKeywordFilter(combinedText, includeKeywords, excludeKeywords, useAndLogic);
-                                    var matchedKeywords = matchesFilter ? KeywordFilterHelper.GetMatchedKeywords(combinedText, includeKeywords) : new List<string>();
-                                    var passesFilter = KeywordFilterHelper.PassesFilter(combinedText, includeKeywords, excludeKeywords, useAndLogic);
+                                    var matchedKeywords = GetMatchedKeywordsForDisplay(combinedText, matchesFilter);
 
                                     <div class="accordion-item">
                                         <h2 class="accordion-header">
@@ -440,9 +438,9 @@
         return StratagemHelper.OrganizeStratagemsByPhase(stratagems);
     }
 
-    private List<string> DeterminePhases(string phase)
+    private List<string> GetMatchedKeywordsForDisplay(string combinedText, bool matchesFilter)
     {
-        return StratagemHelper.DeterminePhases(phase);
+        return matchesFilter ? KeywordFilterHelper.GetMatchedKeywords(combinedText, includeKeywords) : [];
     }
 
     private string GetTurnBadgeClass(string turn)

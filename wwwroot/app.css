@@ -66,9 +66,6 @@ html, body {
     -webkit-overflow-scrolling: touch;
     /* Optimize scrolling on mobile */
     overscroll-behavior-y: contain;
-    /* High refresh rate support */
-    image-rendering: -webkit-optimize-contrast;
-    image-rendering: crisp-edges;
     /* DON'T set position or overflow on body/html - breaks scrolling */
 }
 
@@ -151,13 +148,6 @@ a {
    PERFORMANCE OPTIMIZATIONS
 ========================= */
 
-/* Force high refresh rate rendering */
-@media (prefers-reduced-motion: no-preference) {
-    * {
-        animation-timing-function: linear;
-    }
-}
-
 /* High-DPI optimization */
 @media (min-resolution: 2dppx) {
     html {
@@ -168,8 +158,6 @@ a {
 
 /* Card optimizations */
 .card:not(.mobileDrawer):not(.desktopNav) {
-    transform: translateZ(0);
-    will-change: auto;
     contain: layout style;
 }
 
@@ -184,18 +172,10 @@ a {
 .list-group-item,
 .factionList .card {
     contain: layout style paint;
-    transform: translateZ(0);
-    backface-visibility: hidden;
 }
 
 .card-body:not(.navMenu .card-body) {
     contain: layout style;
-}
-
-/* Virtualization optimizations */
-.virtualize-container {
-    transform: translateZ(0);
-    will-change: scroll-position;
 }
 
 /* =========================
@@ -219,6 +199,17 @@ a {
 .clickable-card:active {
     transform: scale(0.99);
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+}
+
+@media (pointer: coarse) {
+    .clickable-card {
+        transition: none;
+    }
+
+    .clickable-card:active {
+        transform: none;
+        box-shadow: none;
+    }
 }
 
 /* =========================

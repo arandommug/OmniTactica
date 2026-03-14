@@ -124,7 +124,7 @@
         if (withinHalfRange)
             rangeString = "";
 
-        await JS.InvokeVoidAsync("eval", "new bootstrap.Modal(document.getElementById('simulationSettingsModal')).show()");
+        await JS.InvokeVoidAsync("bootstrapInterop.showModal", "simulationSettingsModal");
     }
 
     private void HandleHalfRangeToggle()
@@ -152,6 +152,6 @@
         }
 
         await OnSettingsChanged.InvokeAsync(localSettings);
-        await JS.InvokeVoidAsync("eval", "bootstrap.Modal.getInstance(document.getElementById('simulationSettingsModal')).hide()");
+        await JS.InvokeVoidAsync("bootstrapInterop.hideModal", "simulationSettingsModal");
     }
 }

@@ -1,4 +1,23 @@
-<?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<svg width="456" height="456" viewBox="0 0 456 456" version="1.1" xmlns="http://www.w3.org/2000/svg">
-    <rect x="0" y="0" width="456" height="456" fill="#512BD4" />
+<?xml version="1.0" encoding="utf-8"?>
+<!--License: CC Attribution. Made by wishforge.games: https://www.wishforge.games/-->
+<svg version="1.1" id="Icons" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 201 201" xml:space="preserve">
+  <rect width="201" height="201" rx="24" fill="rgba(85, 85, 85, 1)"/>
+  <rect x="10" y="10" width="181" height="181" rx="20" fill="rgba(53, 53, 53, 1)"/>
+  <circle cy="101" cx="101" r="70" fill="rgba(21, 140, 186)"/>
+  <rect width="25" height="15" rx="2" x="90" y="20" fill="rgba(21, 140, 186)" transform="rotate(0 101 101)"/>
+  <rect width="25" height="15" rx="2" x="90" y="20" fill="rgba(21, 140, 186)" transform="rotate(36 101 101)"/>
+  <rect width="25" height="15" rx="2" x="90" y="20" fill="rgba(21, 140, 186)" transform="rotate(72 101 101)"/>
+  <rect width="25" height="15" rx="2" x="90" y="20" fill="rgba(21, 140, 186)" transform="rotate(108 101 101)"/>
+  <rect width="25" height="15" rx="2" x="90" y="20" fill="rgba(21, 140, 186)" transform="rotate(144 101 101)"/>
+  <rect width="25" height="15" rx="2" x="90" y="20" fill="rgba(21, 140, 186)" transform="rotate(180 101 101)"/>
+  <rect width="25" height="15" rx="2" x="90" y="20" fill="rgba(21, 140, 186)" transform="rotate(216 101 101)"/>
+  <rect width="25" height="15" rx="2" x="90" y="20" fill="rgba(21, 140, 186)" transform="rotate(252 101 101)"/>
+  <rect width="25" height="15" rx="2" x="90" y="20" fill="rgba(21, 140, 186)" transform="rotate(288 101 101)"/>
+  <rect width="25" height="15" rx="2" x="90" y="20" fill="rgba(21, 140, 186)" transform="rotate(324 101 101)"/>
+  <circle cy="101" cx="101" r="55" fill="rgba(222, 226, 230, 1)"/>
+  <g transform="translate(60 60) scale(5, 5)" stroke="rgba(85,85,85,1)" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" fill="none">
+    <path d="m1.75 11.25h3v3h6.5v-3h3s1-9.5-6.25-9.5-6.25 9.5-6.25 9.5z"/>
+    <circle cx="5.25" cy="7.75" r=".5" fill="rgba(85,85,85,1)"/>
+    <circle cx="10.75" cy="7.75" r=".5" fill="rgba(85,85,85,1)"/>
+  </g>
 </svg>
