@@ -14,9 +14,7 @@
 <div class="p-2">
     <div class="card bg-secondary-subtle">
         <div class="card-header d-flex align-items-center">
-            <NavLink class="btn btn-dark btn-sm w-auto" href="@($"/faction/{FactionId}")">
-                <i class="fa fa-chevron-left" aria-hidden="true"></i>
-            </NavLink>
+            <BackButton FallbackHref="@($"/faction/{FactionId}")" />
 
             <h1 class="text-primary m-0 ms-3">Units</h1>
         </div>

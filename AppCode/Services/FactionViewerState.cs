@@ -73,6 +73,16 @@ namespace OmniTactica.AppCode.Services
         }
 
         /// <summary>
+        /// Preselects faction-scoped state before navigation.
+        /// </summary>
+        public void SetFactionContext(string factionId, int? detachmentId)
+        {
+            ResetForFaction(factionId);
+            SelectedFactionDetachmentId = detachmentId;
+            SelectedDetachmentId = detachmentId;
+        }
+
+        /// <summary>
         /// Checks if there are active keyword filters.
         /// </summary>
         public bool HasKeywordFilters => SelectedKeywords.Count > 0 || ExcludedKeywords.Count > 0;

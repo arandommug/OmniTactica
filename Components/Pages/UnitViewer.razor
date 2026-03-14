@@ -19,18 +19,7 @@
             <div class="card bg-secondary-subtle d-flex flex-column" style="min-height: 0; height: 100%;">
                 <div class="card-header d-flex align-items-center justify-content-between flex-shrink-0">
                     <div class="d-flex align-items-center">
-                        @if (!string.IsNullOrEmpty(FactionId))
-                        {
-                            <NavLink class="btn btn-dark btn-sm w-auto" href="@($"/faction/{FactionId}/units")">
-                                <i class="fa fa-chevron-left" aria-hidden="true"></i>
-                            </NavLink>
-                        }
-                        else
-                        {
-                            <NavLink class="btn btn-dark btn-sm w-auto" href="/">
-                                <i class="fa fa-chevron-left" aria-hidden="true"></i>
-                            </NavLink>
-                        }
+                        <BackButton FallbackHref="@(string.IsNullOrEmpty(FactionId) ? "/" : $"/faction/{FactionId}/units")" />
 
                         @if (loading || datasheet == null)
                         {
@@ -60,7 +49,9 @@
                     </div>
                     @if (!loading && datasheet != null)
                     {
-                        <DatasheetBookmarkButton DatasheetId="@datasheetId" DatasheetName="@datasheet.Name" FactionId="@FactionId" />
+                        <div class="d-flex align-items-center gap-2">
+                            <DatasheetBookmarkButton DatasheetId="@datasheetId" DatasheetName="@datasheet.Name" FactionId="@FactionId" />
+                        </div>
                     }
                 </div>
                 <div class="card-body overlay-scrollbar" style="overflow-y: auto; overflow-x: hidden; flex: 1 1 auto; min-height: 0;">

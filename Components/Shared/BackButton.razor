@@ -1,0 +1,26 @@
+@using OmniTactica.AppCode.Services
+@inject NavigationHistoryService NavigationHistory
+
+<button type="button" class="@CssClass" @onclick="NavigateBack">
+    <i class="fa fa-chevron-left" aria-hidden="true"></i>
+    @if (!string.IsNullOrWhiteSpace(Text))
+    {
+        <span class="ms-1">@Text</span>
+    }
+</button>
+
+@code {
+    [Parameter]
+    public string FallbackHref { get; set; } = "/";
+
+    [Parameter]
+    public string CssClass { get; set; } = "btn btn-dark btn-sm w-auto";
+
+    [Parameter]
+    public string Text { get; set; } = string.Empty;
+
+    private void NavigateBack()
+    {
+        NavigationHistory.GoBack(FallbackHref);
+    }
+}

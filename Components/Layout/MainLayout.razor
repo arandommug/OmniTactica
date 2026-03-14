@@ -1,4 +1,6 @@
 ﻿@inherits LayoutComponentBase
+@using OmniTactica.AppCode.Services
+@inject NavigationHistoryService NavigationHistory
 
 <div class="page">
     <NavMenu />
@@ -7,3 +9,10 @@
         @Body
     </main>
 </div>
+
+@code {
+    protected override void OnInitialized()
+    {
+        NavigationHistory.Initialize();
+    }
+}

@@ -69,6 +69,12 @@ namespace OmniTactica.AppCode.Services
         }
 
         /// <summary>
+        /// Gets all detachments for a faction.
+        /// </summary>
+        public Task<List<Detachment>> GetDetachmentsByFactionAsync(string factionId)
+            => _detachments.GetByFactionAsync(factionId);
+
+        /// <summary>
         /// Gets complete detachment details including all abilities, stratagems, and enhancements.
         /// </summary>
         public Task<Detachment?> GetDetachmentDetailsAsync(int detachmentId)

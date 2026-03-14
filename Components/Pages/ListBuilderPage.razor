@@ -1,0 +1,2167 @@
+@page "/list-builder"
+@page "/list-builder/{FactionId}"
+@using OmniTactica.AppCode.Data.Database
+@using OmniTactica.AppCode.Data.Import
+@using OmniTactica.AppCode.Models.Core
+@using OmniTactica.AppCode.Models.Rules
+@using OmniTactica.AppCode.Services
+
+@inject WahaSQLiteService DB
+@inject WahaDataService Data
+@inject ArmyListService ArmyListService
+@inject FactionViewerState ViewerState
+@inject NavigationManager Navigation
+@implements IDisposable
+
+<style>
+    .unit-browser-list,
+    .roster-scroll {
+        max-height: 60vh;
+        overflow-y: auto;
+    }
+
+    .roster-unit-card {
+        border: 1px solid rgba(var(--bs-primary-rgb), 0.15);
+        border-radius: 0.75rem;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .roster-unit-card:hover {
+        border-color: rgba(var(--bs-primary-rgb), 0.35);
+        box-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.08);
+    }
+
+    .role-chip,
+    .keyword-chip {
+        font-size: 0.7rem;
+        font-weight: 600;
+    }
+
+    .summary-stat {
+        border-radius: 0.75rem;
+        padding: 0.75rem;
+        background: rgba(var(--bs-primary-rgb), 0.06);
+    }
+
+    .summary-stat .label {
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--bs-secondary);
+    }
+
+    .summary-stat .value {
+        font-size: 1.4rem;
+        font-weight: 700;
+        line-height: 1.1;
+    }
+
+    .unit-browser-item {
+        border: 1px solid rgba(0, 0, 0, 0.08);
+        border-radius: 0.75rem;
+    }
+
+    .role-picker-grid {
+        display: grid;
+        gap: 0.75rem;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    }
+
+    .role-picker-button {
+        text-align: left;
+        border-radius: 0.9rem;
+        padding: 0.9rem 1rem;
+    }
+
+    .role-picker-button.active {
+        box-shadow: 0 0.5rem 1.25rem rgba(var(--bs-primary-rgb), 0.2);
+    }
+
+    .model-editor-card,
+    .play-mode-unit-card,
+    .play-mode-panel {
+        border: 1px solid rgba(0, 0, 0, 0.08);
+        border-radius: 0.85rem;
+        background: var(--bs-body-bg);
+    }
+
+    .qty-stepper {
+        display: inline-flex;
+        align-items: center;
+        border: 1px solid rgba(0, 0, 0, 0.12);
+        border-radius: 999px;
+        overflow: hidden;
+    }
+
+    .qty-stepper button {
+        border: 0;
+        background: transparent;
+        width: 2rem;
+        height: 2rem;
+    }
+
+    .qty-stepper .value {
+        min-width: 2rem;
+        text-align: center;
+        font-weight: 600;
+    }
+
+    .weapon-editor-row {
+        border: 1px solid rgba(0, 0, 0, 0.06);
+        border-radius: 0.75rem;
+        padding: 0.65rem 0.75rem;
+    }
+
+    .loadout-editor-table th,
+    .loadout-editor-table td {
+        padding-top: 0.35rem;
+        padding-bottom: 0.35rem;
+        font-size: 0.8rem;
+        vertical-align: middle;
+        white-space: nowrap;
+    }
+
+    .loadout-model-card {
+        padding: 0.85rem 1rem;
+    }
+
+    .loadout-model-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+    }
+
+    .loadout-weapon-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .loadout-weapon-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.5rem 0.65rem;
+        border: 1px solid rgba(0, 0, 0, 0.06);
+        border-radius: 0.7rem;
+    }
+
+    .loadout-weapon-meta {
+        min-width: 0;
+        flex: 1 1 auto;
+        display: flex;
+        flex-direction: column;
+        gap: 0.2rem;
+    }
+
+    .loadout-weapon-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
+
+    .loadout-compact-text {
+        font-size: 0.78rem;
+    }
+
+    .fullscreen-overlay.modal-fullscreen {
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        padding-bottom: var(--app-bottom-height);
+    }
+
+    .fullscreen-overlay.modal-fullscreen .modal-body,
+    .loadout-editor-body {
+        flex: 1 1 auto;
+        overflow: hidden;
+        padding-bottom: calc(var(--app-bottom-height) + 1.5rem);
+    }
+
+    .loadout-editor-shell {
+        height: 100%;
+        overflow: hidden;
+    }
+
+    .loadout-editor-panel {
+        max-height: calc(100vh - 200px);
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding-right: 0.5rem;
+    }
+
+    .loadout-editor-panel-right {
+        max-height: calc(100vh - 200px);
+        overflow-y: auto;
+        overflow-x: hidden;
+    }
+
+    .play-mode-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 1200;
+        background: var(--bs-body-bg);
+        overflow-y: auto;
+    }
+
+    .play-mode-toolbar {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        backdrop-filter: blur(12px);
+        background: rgba(var(--bs-body-bg-rgb), 0.92);
+        border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    }
+
+    .play-mode-panel {
+        padding: 1rem;
+    }
+
+    .play-mode-statline th,
+    .play-mode-statline td,
+    .play-mode-weapon-table th,
+    .play-mode-weapon-table td {
+        white-space: nowrap;
+        vertical-align: middle;
+    }
+
+    .sticky-play-panel {
+        position: sticky;
+        top: 6rem;
+    }
+
+    .builder-toggle {
+        width: 100%;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 0.75rem;
+        text-align: left;
+        color: inherit;
+        text-decoration: none;
+    }
+
+    .builder-toggle:hover {
+        color: inherit;
+    }
+
+    .role-roster-section {
+        border: 1px solid rgba(var(--bs-primary-rgb), 0.12);
+        border-radius: 0.9rem;
+        overflow: hidden;
+    }
+
+    .role-roster-header {
+        background: rgba(var(--bs-primary-rgb), 0.05);
+        padding: 0.9rem 1rem;
+        border-bottom: 1px solid rgba(var(--bs-primary-rgb), 0.08);
+    }
+
+    .role-picker-panel {
+        padding: 1rem;
+        background: rgba(var(--bs-primary-rgb), 0.02);
+        border-bottom: 1px solid rgba(var(--bs-primary-rgb), 0.08);
+    }
+
+    .role-roster-body {
+        padding: 1rem;
+    }
+
+    .fullscreen-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 1250;
+        background: var(--bs-body-bg);
+        overflow-y: auto;
+    }
+
+    .fullscreen-toolbar {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        backdrop-filter: blur(12px);
+        background: rgba(var(--bs-body-bg-rgb), 0.94);
+        border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    }
+
+    .reference-panel {
+        border: 1px solid rgba(0, 0, 0, 0.08);
+        border-radius: 0.85rem;
+        padding: 1rem;
+        background: rgba(var(--bs-primary-rgb), 0.03);
+    }
+
+    @@media (max-width: 991.98px) {
+        .unit-browser-list,
+        .roster-scroll {
+            max-height: none;
+        }
+
+        .sticky-play-panel {
+            position: static;
+        }
+    }
+
+    @@media (max-width: 640px) {
+        .fullscreen-overlay.modal-fullscreen {
+            overflow-y: auto;
+            padding-bottom: calc(var(--app-bottom-height) + 1rem);
+        }
+
+        .fullscreen-overlay.modal-fullscreen .modal-body,
+        .loadout-editor-body {
+            overflow: visible;
+            padding-bottom: calc(var(--app-bottom-height) + 4rem) !important;
+        }
+
+        .loadout-editor-shell {
+            height: auto;
+            overflow: visible;
+        }
+
+        .loadout-editor-panel,
+        .loadout-editor-panel-right {
+            max-height: none;
+            overflow: visible;
+            padding-right: 0;
+        }
+
+        .loadout-model-header {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .loadout-model-header > div:last-child {
+            width: 100%;
+            justify-content: space-between;
+        }
+
+        .loadout-model-header .form-select {
+            min-width: 0 !important;
+            flex: 1 1 auto;
+        }
+
+        .loadout-weapon-row {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .loadout-weapon-actions {
+            width: 100%;
+            justify-content: space-between;
+        }
+
+        .loadout-weapon-actions .form-check {
+            margin-right: auto;
+        }
+
+        .reference-panel,
+        .loadout-model-card {
+            overflow-x: hidden;
+        }
+    }
+</style>
+
+<div class="p-2 pb-4">
+    <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap mb-3">
+        <div>
+            <h1 class="text-primary mb-1">
+                <i class="fa fa-list-check me-2"></i>List Builder
+            </h1>
+            <div class="text-muted">Responsive roster planning for Warhammer 40,000 armies.</div>
+        </div>
+
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+            <span class="badge @(armyList.RemainingPoints < 0 ? "bg-danger" : "bg-success") fs-6">
+                @armyList.TotalPoints / @armyList.PointsLimit pts
+            </span>
+            <button class="btn btn-sm btn-outline-primary" @onclick="OpenPlayModeAsync" disabled="@(loading || !armyList.Units.Any())">
+                <i class="fa fa-display me-1"></i>Play Mode
+            </button>
+            <button class="btn btn-sm btn-outline-danger" @onclick="ResetListAsync" disabled="@loading">
+                <i class="fa fa-trash me-1"></i>Clear Active List
+            </button>
+        </div>
+    </div>
+
+    @if (!DB.DatabaseExists)
+    {
+        <div class="alert alert-warning">
+            Database not installed. Go to Settings to download data before building a list.
+        </div>
+    }
+    else if (loading)
+    {
+        <div class="d-flex align-items-center py-4">
+            <div class="spinner-border text-primary me-2" role="status"></div>
+            <div>Loading army builder data...</div>
+        </div>
+    }
+    else
+    {
+        <div class="d-flex flex-column gap-3">
+            <div class="card">
+                <div class="card-header">
+                    <button type="button" class="btn btn-link builder-toggle p-0" @onclick="ToggleSavedListsPanel">
+                        <span class="d-flex align-items-center gap-2">
+                            <span class="fw-semibold text-body">Saved Lists</span>
+                            <span class="badge bg-secondary">@armyLists.Count saved</span>
+                        </span>
+                        <i class="fa @(showSavedListsPanel ? "fa-chevron-up" : "fa-chevron-down")"></i>
+                    </button>
+                </div>
+                @if (showSavedListsPanel)
+                {
+                    <div class="card-body d-flex flex-column gap-3">
+                        <div>
+                            <label class="form-label">Active list</label>
+                            <select class="form-select" @bind="activeListId" @bind:after="HandleActiveListChangedAsync">
+                                @foreach (var list in armyLists)
+                                {
+                                    <option value="@list.Id">@FormatListOption(list)</option>
+                                }
+                            </select>
+                        </div>
+
+                        <div class="d-flex gap-2 flex-wrap">
+                            <button class="btn btn-outline-primary flex-fill" @onclick="CreateNewListAsync">
+                                <i class="fa fa-plus me-1"></i>New
+                            </button>
+                            <button class="btn btn-outline-secondary flex-fill" @onclick="DuplicateActiveListAsync">
+                                <i class="fa fa-copy me-1"></i>Duplicate
+                            </button>
+                            <button class="btn btn-outline-danger flex-fill" @onclick="DeleteActiveListAsync" disabled="@(armyLists.Count <= 1)">
+                                <i class="fa fa-trash me-1"></i>Delete
+                            </button>
+                        </div>
+
+                        <div class="small text-muted">
+                            Last updated @armyList.UpdatedUtc.ToLocalTime().ToString("g")
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <div class="card bg-secondary-subtle">
+                <div class="card-header">
+                    <button type="button" class="btn btn-link builder-toggle p-0" @onclick="ToggleArmySetupPanel">
+                        <span class="fw-semibold text-body">Army Setup</span>
+                        <i class="fa @(showArmySetupPanel ? "fa-chevron-up" : "fa-chevron-down")"></i>
+                    </button>
+                </div>
+                @if (showArmySetupPanel)
+                {
+                    <div class="card-body d-flex flex-column gap-3">
+                        <div>
+                            <label class="form-label">List name</label>
+                            <input class="form-control"
+                                   value="@armyList.Name"
+                                   @onchange="HandleListNameChanged" />
+                        </div>
+
+                        <div>
+                            <label class="form-label">Points limit</label>
+                            <input class="form-control"
+                                   type="number"
+                                   min="500"
+                                   step="50"
+                                   value="@armyList.PointsLimit"
+                                   @onchange="HandlePointsLimitChanged" />
+                        </div>
+
+                        <div>
+                            <label class="form-label">Faction</label>
+                            <select class="form-select" @bind="selectedFactionId" @bind:after="HandleFactionChangedAsync">
+                                <option value="">-- Choose faction --</option>
+                                @foreach (var faction in factions)
+                                {
+                                    <option value="@faction.Id">@faction.Name</option>
+                                }
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="form-label">Detachment</label>
+                            <select class="form-select"
+                                    @bind="selectedDetachmentId"
+                                    @bind:after="HandleDetachmentChangedAsync"
+                                    disabled="@(detachments.Count == 0)">
+                                <option value="">-- Optional --</option>
+                                @foreach (var detachment in detachments)
+                                {
+                                    <option value="@detachment.Id.ToString()">@detachment.Name</option>
+                                }
+                            </select>
+                        </div>
+
+                        @if (!string.IsNullOrWhiteSpace(armyList.FactionId))
+                        {
+                            <div class="d-grid gap-2">
+                                <button type="button" class="btn btn-outline-primary" @onclick="NavigateToFactionRules">
+                                    <i class="fa fa-book-open me-2"></i>Browse faction rules
+                                </button>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Summary</h5>
+                    <span class="badge bg-secondary">@armyList.Units.Count unit@(armyList.Units.Count == 1 ? string.Empty : "s")</span>
+                </div>
+                <div class="card-body d-flex flex-column gap-3">
+                    <div class="row g-2">
+                        <div class="col-6 col-md-3">
+                            <div class="summary-stat">
+                                <div class="label">Total</div>
+                                <div class="value text-primary">@armyList.TotalPoints</div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="summary-stat">
+                                <div class="label">Remaining</div>
+                                <div class="value @(armyList.RemainingPoints < 0 ? "text-danger" : "text-success")">@armyList.RemainingPoints</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    @if (!string.IsNullOrWhiteSpace(armyList.FactionName))
+                    {
+                        <div>
+                            <div class="small text-muted text-uppercase fw-semibold mb-1">Current roster</div>
+                            <div class="fw-semibold">@armyList.Name</div>
+                            <div class="text-muted">@armyList.FactionName@if (!string.IsNullOrWhiteSpace(armyList.DetachmentName))
+                                {
+                                    <span> · @armyList.DetachmentName</span>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    @if (armyList.Units.Any())
+                    {
+                        <div>
+                            <div class="small text-muted text-uppercase fw-semibold mb-2">Role breakdown</div>
+                            <div class="d-flex flex-wrap gap-2">
+                                @foreach (var group in RoleGroups)
+                                {
+                                    <span class="badge text-bg-secondary">@group.Key: @group.Count()</span>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    @if (armyList.RemainingPoints < 0)
+                    {
+                        <div class="alert alert-danger mb-0">The roster is over the selected points limit.</div>
+                    }
+                    else if (armyList.RemainingPoints == 0 && armyList.Units.Any())
+                    {
+                        <div class="alert alert-success mb-0">The roster is exactly on target.</div>
+                    }
+                    else if (string.IsNullOrWhiteSpace(armyList.FactionId))
+                    {
+                        <div class="alert alert-info mb-0">Choose a faction to start adding units.</div>
+                    }
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center gap-2 flex-wrap">
+                    <h5 class="mb-0">Roster</h5>
+                    <span class="text-muted small">Units are grouped by role. Use the + button in each role header to add units.</span>
+                </div>
+                <div class="card-body d-flex flex-column gap-3">
+                    @if (string.IsNullOrWhiteSpace(armyList.FactionId))
+                    {
+                        <div class="text-center text-muted py-4">
+                            <i class="fa fa-layer-group fa-2x d-block mb-2 opacity-50"></i>
+                            Choose a faction first, then add units from each role section.
+                        </div>
+                    }
+                    else
+                    {
+                        @foreach (var roleGroup in RolePickerGroups)
+                        {
+                            var roleUnits = GetUnitsForRole(roleGroup.Role).ToList();
+
+                            <div class="role-roster-section">
+                                <div class="role-roster-header d-flex justify-content-between align-items-center gap-2 flex-wrap">
+                                    <div>
+                                        <div class="fw-semibold">@roleGroup.Role</div>
+                                        <div class="small text-muted">@roleUnits.Count unit@(roleUnits.Count == 1 ? string.Empty : "s") in roster · @roleGroup.Count available datasheet@(roleGroup.Count == 1 ? string.Empty : "s")</div>
+                                    </div>
+
+                                    <div class="d-flex gap-2 flex-wrap">
+                                        <button class="btn btn-sm btn-outline-secondary" @onclick="() => ToggleRoleSection(roleGroup.Role)">
+                                            <i class="fa @(IsRoleSectionExpanded(roleGroup.Role) ? "fa-chevron-up" : "fa-chevron-down")"></i>
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-primary" @onclick="() => SelectRole(roleGroup.Role)">
+                                            <i class="fa @(string.Equals(selectedRole, roleGroup.Role, StringComparison.OrdinalIgnoreCase) ? "fa-times" : "fa-plus") me-1"></i>
+                                            @(string.Equals(selectedRole, roleGroup.Role, StringComparison.OrdinalIgnoreCase) ? "Close" : "Add")
+                                        </button>
+                                    </div>
+                                </div>
+
+                                @if (IsRoleSectionExpanded(roleGroup.Role))
+                                {
+                                    @if (string.Equals(selectedRole, roleGroup.Role, StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        <div class="role-picker-panel d-flex flex-column gap-3">
+                                            <div class="row g-2 align-items-end">
+                                                <div class="col-12 col-lg-8">
+                                                    <label class="form-label">Search @roleGroup.Role units</label>
+                                                    <input class="form-control" placeholder="Search units..." @bind="unitSearch" @bind:event="oninput" />
+                                                </div>
+                                                <div class="col-12 col-lg-4 text-lg-end">
+                                                    <button class="btn btn-outline-secondary" @onclick="CloseRolePicker">
+                                                        <i class="fa fa-xmark me-1"></i>Done
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            @if (!filteredDatasheets.Any())
+                                            {
+                                                <div class="text-muted">No @roleGroup.Role units match the current search.</div>
+                                            }
+                                            else
+                                            {
+                                                <div class="unit-browser-list d-flex flex-column gap-2">
+                                                    @foreach (var datasheet in filteredDatasheets)
+                                                    {
+                                                        <div class="unit-browser-item p-3" @key="datasheet.Id">
+                                                            <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+                                                                <div>
+                                                                    <div class="fw-semibold">@datasheet.Name</div>
+                                                                    <div class="d-flex flex-wrap gap-1 mt-2">
+                                                                        @if (datasheet.PointsCost.HasValue)
+                                                                        {
+                                                                            <span class="badge text-bg-success role-chip">@datasheet.PointsCost.Value pts</span>
+                                                                        }
+                                                                        
+                                                                        @if (datasheet.Keywords.Any())
+                                                                        {
+                                                                            <div class="text-muted small">
+                                                                                @string.Join(", ", datasheet.Keywords.Take(5))@(datasheet.Keywords.Count > 5 ? "..." : string.Empty)
+                                                                            </div>
+                                                                        }
+                                                                    </div>
+                                                                </div>
+
+                                                                <button class="btn btn-sm btn-primary" @onclick="() => AddUnitAsync(datasheet)">
+                                                                    <i class="fa fa-plus me-1"></i>Add
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    }
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+
+                                    <div class="role-roster-body">
+                                        @if (!roleUnits.Any())
+                                        {
+                                            <div class="text-muted small fst-italic">No @roleGroup.Role units added yet.</div>
+                                        }
+                                        else
+                                        {
+                                            <div class="d-flex flex-column gap-2">
+                                                @foreach (var unit in roleUnits)
+                                                {
+                                                    <div class="roster-unit-card p-3 clickable-card"
+                                                         @key="unit.Id"
+                                                         @onclick="() => ToggleUnitAsync(unit.Id, unit.DatasheetId)">
+                                                    <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+                                                        <div class="flex-grow-1">
+                                                            <span class="fw-semibold text-body">@unit.DatasheetName</span>
+                                                            <div class="d-inline-flex flex-wrap gap-1 mt-2">
+                                                                <span class="badge text-bg-primary role-chip">@unit.SelectedPoints pts</span>
+                                                                @if (unit.HasEnhancement)
+                                                                {
+                                                                    <span class="badge text-bg-warning role-chip">@unit.EnhancementName (+@unit.EnhancementCost)</span>
+                                                                }
+                                                            </div>
+                                                        </div>
+
+                                                        <div class="d-flex gap-1" @onclick:stopPropagation="true">
+                                                            <button class="btn btn-sm btn-outline-primary" @onclick="() => OpenLoadoutEditorAsync(unit.Id)">
+                                                                <i class="fa fa-screwdriver-wrench"></i>
+                                                            </button>
+                                                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => DuplicateUnitAsync(unit.Id)" title="Duplicate unit">
+                                                                <i class="fa fa-copy"></i>
+                                                            </button>
+                                                            <button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveUnitAsync(unit.Id)" title="Remove unit">
+                                                                <i class="fa fa-times"></i>
+                                                            </button>
+                                                        </div>
+                                                    </div>
+
+                                                    @if (expandedUnits.Contains(unit.Id))
+                                                    {
+                                                        <div class="border-top mt-3 pt-3 d-flex flex-column gap-3" @onclick:stopPropagation="true">
+                                                            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                                                                <div>
+                                                                @if (unit.Composition.Any())
+                                                                {
+                                                                    <div class="text-muted small mt-2">@unit.Composition.First()</div>
+                                                                }
+
+                                                                @if (GetLoadoutSummary(unit).Any())
+                                                                {
+                                                                    <div class="d-flex flex-wrap gap-1 mt-2">
+                                                                        @foreach (var summary in GetLoadoutSummary(unit).Take(4))
+                                                                        {
+                                                                            <span class="badge text-bg-light role-chip">@summary</span>
+                                                                        }
+                                                                    </div>
+                                                                }
+                                                                </div>
+                                                                <div class="d-flex gap-2 flex-wrap">
+                                                                 @*    <button class="btn btn-sm btn-outline-primary" @onclick="() => OpenLoadoutEditorAsync(unit.Id)">
+                                                                        <i class="fa fa-screwdriver-wrench me-1"></i>Edit loadout
+                                                                        </button> *@
+                                                                    <NavLink class="btn btn-sm btn-outline-primary" href="@GetDatasheetRoute(unit)">
+                                                                        <i class="fa fa-book-open me-1"></i>Open datasheet
+                                                                    </NavLink>
+                                                                </div>
+                                                            </div>
+
+                                                            @if (availableEnhancements.Any() && unit.CanTakeEnhancement)
+                                                            {
+                                                                <div>
+                                                                    <label class="form-label">Enhancement</label>
+                                                                    <select class="form-select" value="@unit.EnhancementId?.ToString()" @onchange="@(args => UpdateUnitEnhancementAsync(unit, args.Value?.ToString()))">
+                                                                        <option value="">-- None --</option>
+                                                                        @foreach (var enhancement in availableEnhancements)
+                                                                        {
+                                                                            var assignedElsewhere = IsEnhancementAssignedElsewhere(unit, enhancement.Id);
+                                                                            <option value="@enhancement.Id.ToString()" disabled="@assignedElsewhere">
+                                                                                @enhancement.Name (@enhancement.Cost pts)@(assignedElsewhere ? " — assigned" : string.Empty)
+                                                                            </option>
+                                                                        }
+                                                                    </select>
+                                                                </div>
+                                                            }
+
+                                                            <div>
+                                                                <label class="form-label">Notes</label>
+                                                                <textarea class="form-control" rows="2" @onchange="@(args => UpdateUnitNotesAsync(unit.Id, args.Value?.ToString()))">@unit.Notes</textarea>
+                                                            </div>
+
+                                                            @if (unit.Keywords.Any())
+                                                            {
+                                                                <div>
+                                                                    <div class="small text-muted text-uppercase fw-semibold mb-2">Keywords</div>
+                                                                    <div class="d-flex flex-wrap gap-1">
+                                                                        @foreach (var keyword in unit.Keywords)
+                                                                        {
+                                                                            <span class="badge text-bg-primary keyword-chip">@keyword</span>
+                                                                        }
+                                                                    </div>
+                                                                </div>
+                                                            }
+
+                                                            @* <div class="d-flex gap-2 flex-wrap">
+                                                                <NavLink class="btn btn-sm btn-outline-primary" href="@GetDatasheetRoute(unit)">
+                                                                    <i class="fa fa-book-open me-1"></i>Open datasheet
+                                                                </NavLink>
+                                                            </div> *@
+                                                        </div>
+                                                    }
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@if (loadoutEditorOpen && LoadoutEditorUnit != null)
+{
+    <div class="fullscreen-overlay modal-fullscreen">
+        <div class="fullscreen-toolbar px-3 py-3">
+            <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+                <div>
+                    <div class="text-uppercase small text-muted fw-semibold">Loadout Editor</div>
+                    <h2 class="h4 mb-1">@LoadoutEditorUnit.DatasheetName</h2>
+                    <div class="text-muted">@GetRoleDisplay(LoadoutEditorUnit.Role) · @GetUnitSizeSummary(LoadoutEditorUnit)</div>
+                </div>
+
+                <div class="d-flex gap-2 flex-wrap">
+                    <button class="btn btn-outline-secondary" @onclick="CloseLoadoutEditor">
+                        <i class="fa fa-times me-1"></i>Close
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="container-fluid modal-body loadout-editor-body">
+            @if (loadoutEditorLoading)
+            {
+                <div class="d-flex align-items-center py-4">
+                    <div class="spinner-border text-primary me-2" role="status"></div>
+                    <div>Loading unit editor...</div>
+                </div>
+            }
+            else
+            {
+                <div class="d-flex flex-column gap-3">
+                    @if (LoadoutEditorUnit.CostOptions.Count > 1)
+                    {
+                        <div class="reference-panel">
+                            <label class="form-label">Unit size / cost</label>
+                            <select class="form-select"
+                                    value="@LoadoutEditorUnit.SelectedCostLine?.ToString()"
+                                    @onchange="@(args => UpdateUnitCostAsync(LoadoutEditorUnit.Id, args.Value?.ToString()))">
+                                @foreach (var cost in LoadoutEditorUnit.CostOptions)
+                                {
+                                    <option value="@cost.Line.ToString()">@cost.Description (@cost.Cost pts)</option>
+                                }
+                            </select>
+                        </div>
+                    }
+
+                    <div class="row g-3 loadout-editor-shell">
+                    <div class="col-12 col-xl-5">
+                        <div class="reference-panel d-flex flex-column gap-3 loadout-editor-panel">
+                            @if (LoadoutEditorDetail?.Models.Any() == true)
+                            {
+                                <div>
+                                    <div class="text-uppercase fw-semibold text-muted mb-2" style="font-size: 0.75rem; letter-spacing: 0.05em;">Datasheet Statlines</div>
+                                    <div class="table-responsive">
+                                        <table class="table table-sm loadout-editor-table mb-0">
+                                            <thead>
+                                                <tr>
+                                                    <th>Model</th>
+                                                    <th>M</th>
+                                                    <th>T</th>
+                                                    <th>Sv</th>
+                                                    <th>W</th>
+                                                    <th>Ld</th>
+                                                    <th>OC</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var model in LoadoutEditorDetail.Models)
+                                                {
+                                                    <tr>
+                                                        <td>@model.Name</td>
+                                                        <td>@model.M</td>
+                                                        <td>@model.T</td>
+                                                        <td>@model.Sv@(string.IsNullOrWhiteSpace(model.InvSv) || model.InvSv == "-" ? string.Empty : $"/{model.InvSv}++")</td>
+                                                        <td>@model.W</td>
+                                                        <td>@model.Ld</td>
+                                                        <td>@model.OC</td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            }
+
+                            @if (LoadoutEditorUnit.Composition.Any())
+                            {
+                                <div>
+                                    <div class="text-uppercase fw-semibold text-muted mb-2" style="font-size: 0.75rem; letter-spacing: 0.05em;">Composition</div>
+                                    <div class="small d-flex flex-column gap-1">
+                                        @foreach (var composition in LoadoutEditorUnit.Composition)
+                                        {
+                                            <div>• @composition</div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+
+                            @if (!string.IsNullOrWhiteSpace(LoadoutEditorDetail?.Loadout))
+                            {
+                                <div>
+                                    <div class="text-uppercase fw-semibold text-muted mb-2" style="font-size: 0.75rem; letter-spacing: 0.05em;">Default Loadout</div>
+                                    <div class="small">@((MarkupString)WahaDataImporter.CleanHtml(LoadoutEditorDetail.Loadout))</div>
+                                </div>
+                            }
+
+                            @if (LoadoutEditorDetail?.Options.Any() == true)
+                            {
+                                <div>
+                                    <div class="text-uppercase fw-semibold text-muted mb-2" style="font-size: 0.75rem; letter-spacing: 0.05em;">Wargear Options</div>
+                                    <div class="small d-flex flex-column gap-2 rule-content">
+                                        @foreach (var option in LoadoutEditorDetail.Options.OrderBy(option => option.Line))
+                                        {
+                                            <div>
+                                                @if (!string.IsNullOrWhiteSpace(option.Button))
+                                                {
+                                                    <span class="fw-semibold me-1">@option.Button</span>
+                                                }
+                                                @((MarkupString)WahaDataImporter.CleanHtml(option.Description))
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+
+                            @if (LoadoutEditorRangedWeapons.Any())
+                            {
+                                <div>
+                                    <div class="text-uppercase fw-semibold text-muted mb-2" style="font-size: 0.75rem; letter-spacing: 0.05em;">Ranged Weapons</div>
+                                    <div class="table-responsive">
+                                        <table class="table table-sm loadout-editor-table mb-0">
+                                            <thead>
+                                                <tr>
+                                                    <th>Weapon</th>
+                                                    <th>Range</th>
+                                                    <th>A</th>
+                                                    <th>BS/WS</th>
+                                                    <th>S</th>
+                                                    <th>AP</th>
+                                                    <th>D</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var weapon in LoadoutEditorRangedWeapons)
+                                                {
+                                                    <tr>
+                                                        <td class="fw-semibold">@weapon.Name</td>
+                                                        <td>@weapon.Range</td>
+                                                        <td>@weapon.A</td>
+                                                        <td>@weapon.BsWs</td>
+                                                        <td>@weapon.S</td>
+                                                        <td>@weapon.AP</td>
+                                                        <td>@weapon.D</td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            }
+
+                            @if (LoadoutEditorMeleeWeapons.Any())
+                            {
+                                <div>
+                                    <div class="text-uppercase fw-semibold text-muted mb-2" style="font-size: 0.75rem; letter-spacing: 0.05em;">Melee Weapons</div>
+                                    <div class="table-responsive">
+                                        <table class="table table-sm loadout-editor-table mb-0">
+                                            <thead>
+                                                <tr>
+                                                    <th>Weapon</th>
+                                                    <th>Range</th>
+                                                    <th>A</th>
+                                                    <th>WS</th>
+                                                    <th>S</th>
+                                                    <th>AP</th>
+                                                    <th>D</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var weapon in LoadoutEditorMeleeWeapons)
+                                                {
+                                                    <tr>
+                                                        <td class="fw-semibold">@weapon.Name</td>
+                                                        <td>@weapon.Range</td>
+                                                        <td>@weapon.A</td>
+                                                        <td>@weapon.BsWs</td>
+                                                        <td>@weapon.S</td>
+                                                        <td>@weapon.AP</td>
+                                                        <td>@weapon.D</td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="col-12 col-xl-7 d-flex flex-column gap-3 loadout-editor-panel-right">
+                        @foreach (var model in LoadoutEditorUnit.Models)
+                        {
+                            <div class="model-editor-card loadout-model-card d-flex flex-column gap-2">
+                                <div class="loadout-model-header">
+                                    <div>
+                                        <div class="fw-semibold">@model.Name</div>
+                                        <div class="small text-muted loadout-compact-text">@GetModelStatline(model)</div>
+                                    </div>
+
+                                    <div class="d-flex align-items-center gap-2 flex-wrap justify-content-end">
+                                        <select class="form-select form-select-sm"
+                                                style="min-width: 180px;"
+                                                value="@GetPendingWeaponName(LoadoutEditorUnit.Id, model.Id)"
+                                                @onchange="args => SetPendingWeapon(LoadoutEditorUnit.Id, model.Id, args.Value?.ToString())">
+                                            <option value="">Add weapon...</option>
+                                            @foreach (var weaponChoice in GetAvailableWeaponChoices(LoadoutEditorUnit))
+                                            {
+                                                <option value="@weaponChoice">@weaponChoice</option>
+                                            }
+                                        </select>
+                                        <button class="btn btn-sm btn-outline-success"
+                                                @onclick="() => AddWeaponToModelAsync(LoadoutEditorUnit, model)"
+                                                disabled="@string.IsNullOrWhiteSpace(GetPendingWeaponName(LoadoutEditorUnit.Id, model.Id))">
+                                            <i class="fa fa-plus"></i>
+                                        </button>
+                                        <span class="small text-muted">@model.MinQuantity-@model.MaxQuantity</span>
+                                        <div class="qty-stepper">
+                                            <button type="button"
+                                                    @onclick="() => ChangeModelQuantityAsync(LoadoutEditorUnit.Id, model, -1)"
+                                                    disabled="@(model.Quantity <= model.MinQuantity)">
+                                                <i class="fa fa-minus"></i>
+                                            </button>
+                                            <span class="value">@model.Quantity</span>
+                                            <button type="button"
+                                                    @onclick="() => ChangeModelQuantityAsync(LoadoutEditorUnit.Id, model, 1)"
+                                                    disabled="@(model.Quantity >= model.MaxQuantity)">
+                                                <i class="fa fa-plus"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                @if (model.Weapons.Any())
+                                {
+                                    <div class="loadout-weapon-list">
+                                        @foreach (var weapon in model.Weapons)
+                                        {
+                                            <div class="loadout-weapon-row">
+                                                <div class="loadout-weapon-meta">
+                                                    <div class="fw-semibold">@weapon.Name</div>
+                                                    <div class="small text-muted loadout-compact-text">@GetCompactWeaponProfile(weapon)</div>
+                                                    @if (!string.IsNullOrWhiteSpace(weapon.Description))
+                                                    {
+                                                        <div class="small text-muted loadout-compact-text">@weapon.Description</div>
+                                                    }
+                                                </div>
+
+                                                <div class="loadout-weapon-actions">
+                                                    <div class="form-check m-0">
+                                                        <input class="form-check-input"
+                                                               type="checkbox"
+                                                               checked="@weapon.IsSelected"
+                                                               @onchange="args => UpdateWeaponSelectedAsync(LoadoutEditorUnit.Id, model.Id, weapon.Id, args)" />
+                                                        <label class="form-check-label small">Equipped</label>
+                                                    </div>
+
+                                                    <div class="qty-stepper">
+                                                        <button type="button"
+                                                                @onclick="() => ChangeWeaponQuantityAsync(LoadoutEditorUnit.Id, model.Id, weapon, -1)"
+                                                                disabled="@(weapon.Quantity <= 1)">
+                                                            <i class="fa fa-minus"></i>
+                                                        </button>
+                                                        <span class="value">@weapon.Quantity</span>
+                                                        <button type="button"
+                                                                @onclick="() => ChangeWeaponQuantityAsync(LoadoutEditorUnit.Id, model.Id, weapon, 1)">
+                                                            <i class="fa fa-plus"></i>
+                                                        </button>
+                                                    </div>
+
+                                                    <button class="btn btn-sm btn-outline-danger"
+                                                            @onclick="() => RemoveWeaponAsync(LoadoutEditorUnit.Id, model.Id, weapon.Id)">
+                                                        <i class="fa fa-times"></i>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="text-muted small fst-italic">No weapons configured yet.</div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@if (playModeOpen)
+{
+    <div class="play-mode-overlay">
+        <div class="play-mode-toolbar px-3 py-3">
+            <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+                <div>
+                    <div class="text-uppercase small text-muted fw-semibold">Play Mode</div>
+                    <h2 class="h4 mb-1">@armyList.Name</h2>
+                    <div class="text-muted">@armyList.FactionName@if (!string.IsNullOrWhiteSpace(armyList.DetachmentName))
+                        {
+                            <span> · @armyList.DetachmentName</span>
+                        } · @armyList.TotalPoints / @armyList.PointsLimit pts</div>
+                </div>
+
+                <div class="d-flex gap-2 flex-wrap">
+                    <button class="btn btn-outline-secondary" @onclick="ClosePlayMode">
+                        <i class="fa fa-times me-1"></i>Exit Play Mode
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="container-fluid py-3">
+            @if (playModeLoading)
+            {
+                <div class="d-flex align-items-center py-4">
+                    <div class="spinner-border text-primary me-2" role="status"></div>
+                    <div>Preparing live reference...</div>
+                </div>
+            }
+            else
+            {
+                <div class="row g-3">
+                    <div class="col-12 col-xl-8">
+                        <div class="play-mode-panel mb-3">
+                            <div class="row g-2">
+                                <div class="col-12 col-lg-8">
+                                    <label class="form-label">Search units</label>
+                                    <input class="form-control" placeholder="Filter your roster..." @bind="playModeSearch" @bind:event="oninput" />
+                                </div>
+                                <div class="col-12 col-lg-4">
+                                    <label class="form-label">Role filter</label>
+                                    <select class="form-select" @bind="playModeRoleFilter">
+                                        <option value="">All roles</option>
+                                        @foreach (var role in PlayModeRoles)
+                                        {
+                                            <option value="@role">@role</option>
+                                        }
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="d-flex flex-column gap-3">
+                            @foreach (var unit in FilteredPlayModeUnits)
+                            {
+                                var detail = GetDatasheetDetail(unit.DatasheetId);
+                                var selectedEnhancement = GetSelectedEnhancement(unit);
+                                var equippedWeapons = GetEquippedWeapons(unit).ToList();
+
+                                <div class="play-mode-unit-card p-3">
+                                    <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap mb-3">
+                                        <div>
+                                            <div class="h5 mb-1">@unit.DatasheetName</div>
+                                            <div class="d-flex flex-wrap gap-1">
+                                                <span class="badge text-bg-secondary">@GetRoleDisplay(unit.Role)</span>
+                                                <span class="badge text-bg-primary">@unit.TotalPoints pts</span>
+                                                <span class="badge text-bg-light">@GetUnitSizeSummary(unit)</span>
+                                                @if (selectedEnhancement != null)
+                                                {
+                                                    <span class="badge text-bg-warning">@selectedEnhancement.Name</span>
+                                                }
+                                            </div>
+                                        </div>
+
+                                        @if (!string.IsNullOrWhiteSpace(unit.Notes))
+                                        {
+                                            <div class="small text-muted">@unit.Notes</div>
+                                        }
+                                    </div>
+
+                                    <div class="row g-3">
+                                        <div class="col-12 col-lg-5">
+                                            <div class="small text-muted text-uppercase fw-semibold mb-2">Statlines</div>
+                                            <div class="table-responsive">
+                                                <table class="table table-sm play-mode-statline mb-0">
+                                                    <thead>
+                                                        <tr>
+                                                            <th>Model</th>
+                                                            <th>Qty</th>
+                                                            <th>M</th>
+                                                            <th>T</th>
+                                                            <th>Sv</th>
+                                                            <th>W</th>
+                                                            <th>Ld</th>
+                                                            <th>OC</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        @foreach (var model in unit.Models)
+                                                        {
+                                                            <tr>
+                                                                <td>@model.Name</td>
+                                                                <td>@model.Quantity</td>
+                                                                <td>@model.M</td>
+                                                                <td>@model.T</td>
+                                                                <td>@FormatSave(model)</td>
+                                                                <td>@model.W</td>
+                                                                <td>@model.Ld</td>
+                                                                <td>@model.OC</td>
+                                                            </tr>
+                                                        }
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+
+                                        <div class="col-12 col-lg-7">
+                                            <div class="small text-muted text-uppercase fw-semibold mb-2">Equipped weapons</div>
+                                            @if (equippedWeapons.Any())
+                                            {
+                                                <div class="table-responsive">
+                                                    <table class="table table-sm play-mode-weapon-table mb-0">
+                                                        <thead>
+                                                            <tr>
+                                                                <th>Weapon</th>
+                                                                <th>Qty</th>
+                                                                <th>Range</th>
+                                                                <th>A</th>
+                                                                <th>BS/WS</th>
+                                                                <th>S</th>
+                                                                <th>AP</th>
+                                                                <th>D</th>
+                                                                <th>Abilities</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            @foreach (var weapon in equippedWeapons)
+                                                            {
+                                                                <tr>
+                                                                    <td>
+                                                                        <div class="fw-semibold">@weapon.Name</div>
+                                                                        <div class="small text-muted">@weapon.ModelName</div>
+                                                                    </td>
+                                                                    <td>@weapon.Quantity</td>
+                                                                    <td>@weapon.Range</td>
+                                                                    <td>@weapon.A</td>
+                                                                    <td>@weapon.BsWs</td>
+                                                                    <td>@weapon.S</td>
+                                                                    <td>@weapon.AP</td>
+                                                                    <td>@weapon.D</td>
+                                                                    <td>@weapon.Description</td>
+                                                                </tr>
+                                                            }
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            }
+                                            else
+                                            {
+                                                <div class="text-muted small fst-italic">No equipped weapons selected.</div>
+                                            }
+                                        </div>
+                                    </div>
+
+                                    @if (detail?.Abilities.Any() == true)
+                                    {
+                                        <div class="mt-3">
+                                            <div class="small text-muted text-uppercase fw-semibold mb-2">Abilities</div>
+                                            <div class="d-flex flex-column gap-2 small">
+                                                @foreach (var ability in detail.Abilities.OrderBy(ability => ability.Type).ThenBy(ability => ability.Name))
+                                                {
+                                                    <div>
+                                                        <span class="fw-semibold">@ability.Name</span>
+                                                        @if (!string.IsNullOrWhiteSpace(ability.Type))
+                                                        {
+                                                            <span class="text-muted"> · @ability.Type</span>
+                                                        }
+                                                        @if (!string.IsNullOrWhiteSpace(ability.Description))
+                                                        {
+                                                            <div>@((MarkupString)WahaDataImporter.CleanHtml(ability.Description))</div>
+                                                        }
+                                                    </div>
+                                                }
+                                            </div>
+                                        </div>
+                                    }
+
+                                    @if (selectedEnhancement != null)
+                                    {
+                                        <div class="mt-3">
+                                            <div class="small text-muted text-uppercase fw-semibold mb-2">Enhancement</div>
+                                            <div class="fw-semibold">@selectedEnhancement.Name (@selectedEnhancement.Cost pts)</div>
+                                            @if (!string.IsNullOrWhiteSpace(selectedEnhancement.Description))
+                                            {
+                                                <div class="small">@((MarkupString)WahaDataImporter.CleanHtml(selectedEnhancement.Description))</div>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="col-12 col-xl-4">
+                        <div class="sticky-play-panel d-flex flex-column gap-3">
+                            <div class="play-mode-panel">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <div class="small text-muted text-uppercase fw-semibold">Roster cues</div>
+                                    <span class="badge text-bg-secondary">@FilteredPlayModeUnits.Count() / @armyList.Units.Count units</span>
+                                </div>
+                                <div class="d-flex flex-wrap gap-2">
+                                    @foreach (var group in RoleGroups)
+                                    {
+                                        <span class="badge text-bg-light">@group.Key: @group.Count()</span>
+                                    }
+                                </div>
+                            </div>
+
+                            <div class="play-mode-panel">
+                                <div class="small text-muted text-uppercase fw-semibold mb-2">Stratagems by phase</div>
+
+                                @if (!detachmentStratagems.Any())
+                                {
+                                    <div class="text-muted small">Select a detachment to surface its stratagems here.</div>
+                                }
+                                else
+                                {
+                                    <div class="d-flex flex-column gap-3">
+                                        @foreach (var phaseGroup in GetSortedStratagemPhaseGroups())
+                                        {
+                                            <div>
+                                                <div class="fw-semibold mb-2">@phaseGroup.Key</div>
+                                                <div class="d-flex flex-column gap-2">
+                                                    @foreach (var stratagem in phaseGroup.OrderBy(stratagem => GetTurnSortOrder(stratagem.Turn)).ThenBy(stratagem => stratagem.Name))
+                                                    {
+                                                        <div class="border rounded p-2">
+                                                            <div class="d-flex justify-content-between align-items-start gap-2">
+                                                                <div class="fw-semibold">@stratagem.Name</div>
+                                                                <span class="badge text-bg-primary">@stratagem.CpCost CP</span>
+                                                            </div>
+                                                            <div class="small text-muted mb-1">@FormatTurn(stratagem.Turn)</div>
+                                                            <div class="small">@((MarkupString)WahaDataImporter.CleanHtml(stratagem.Description))</div>
+                                                        </div>
+                                                    }
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public string? FactionId { get; set; }
+
+    private static readonly string[] PreferredRoleOrder =
+    {
+        "Characters",
+        "Battleline",
+        "Dedicated Transports",
+        "Other Datasheets"
+    };
+
+    private ArmyList armyList = new();
+    private List<ArmyList> armyLists = new();
+    private List<Faction> factions = new();
+    private List<Detachment> detachments = new();
+    private List<Datasheet> datasheets = new();
+    private List<Enhancement> availableEnhancements = new();
+    private List<Stratagem> detachmentStratagems = new();
+    private HashSet<string> expandedUnits = new();
+    private HashSet<string> collapsedRoleSections = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<int, DatasheetDetail> datasheetDetailCache = new();
+    private Dictionary<string, string> pendingWeapons = new();
+    private string activeListId = string.Empty;
+    private string selectedFactionId = string.Empty;
+    private string selectedDetachmentId = string.Empty;
+    private string selectedRole = string.Empty;
+    private string unitSearch = string.Empty;
+    private string playModeSearch = string.Empty;
+    private string playModeRoleFilter = string.Empty;
+    private bool loading = true;
+    private bool initialized;
+    private bool showSavedListsPanel;
+    private bool showArmySetupPanel;
+    private bool loadoutEditorOpen;
+    private bool loadoutEditorLoading;
+    private bool playModeOpen;
+    private bool playModeLoading;
+    private string editingLoadoutUnitId = string.Empty;
+
+    private IEnumerable<IGrouping<string, ArmyListUnit>> RoleGroups => armyList.Units
+        .GroupBy(unit => GetRoleDisplay(unit.Role))
+        .OrderBy(group => GetRoleSortOrder(group.Key))
+        .ThenBy(group => group.Key);
+
+    private IEnumerable<(string Role, int Count)> RolePickerGroups => datasheets
+        .GroupBy(datasheet => GetRoleDisplay(datasheet.Role))
+        .Select(group => (Role: group.Key, Count: group.Count()))
+        .OrderBy(group => GetRoleSortOrder(group.Role))
+        .ThenBy(group => group.Role);
+
+    private IEnumerable<Datasheet> filteredDatasheets => datasheets
+        .Where(datasheet => string.IsNullOrWhiteSpace(selectedRole) || string.Equals(GetRoleDisplay(datasheet.Role), selectedRole, StringComparison.OrdinalIgnoreCase))
+        .Where(datasheet => string.IsNullOrWhiteSpace(unitSearch) || datasheet.Name.Contains(unitSearch, StringComparison.OrdinalIgnoreCase))
+        .OrderBy(datasheet => datasheet.Name);
+
+    private string roleFilter
+    {
+        get => selectedRole;
+        set => selectedRole = value;
+    }
+
+    private List<string> AvailableRoles => datasheets
+        .Select(datasheet => GetRoleDisplay(datasheet.Role))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderBy(role => GetRoleSortOrder(role))
+        .ThenBy(role => role)
+        .ToList();
+
+    private List<string> PlayModeRoles => armyList.Units
+        .Select(unit => GetRoleDisplay(unit.Role))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderBy(role => GetRoleSortOrder(role))
+        .ThenBy(role => role)
+        .ToList();
+
+    private IEnumerable<ArmyListUnit> FilteredPlayModeUnits => armyList.Units
+        .Where(unit => string.IsNullOrWhiteSpace(playModeSearch) || unit.DatasheetName.Contains(playModeSearch, StringComparison.OrdinalIgnoreCase))
+        .Where(unit => string.IsNullOrWhiteSpace(playModeRoleFilter) || string.Equals(GetRoleDisplay(unit.Role), playModeRoleFilter, StringComparison.OrdinalIgnoreCase))
+        .OrderBy(unit => GetRoleSortOrder(GetRoleDisplay(unit.Role)))
+        .ThenBy(unit => unit.DatasheetName);
+
+    protected override async Task OnInitializedAsync()
+    {
+        RefreshArmyListState();
+        ApplyPanelDefaults(IsFreshList(armyList));
+        ArmyListService.OnListChanged += HandleArmyListChanged;
+
+        if (!DB.DatabaseExists)
+        {
+            loading = false;
+            initialized = true;
+            return;
+        }
+
+        factions = await Data.GetAllFactionsAsync();
+        selectedFactionId = armyList.FactionId;
+        selectedDetachmentId = armyList.DetachmentId?.ToString() ?? string.Empty;
+
+        if (!string.IsNullOrWhiteSpace(selectedFactionId))
+        {
+            await LoadFactionDataAsync(selectedFactionId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(FactionId) && !string.Equals(FactionId, selectedFactionId, StringComparison.OrdinalIgnoreCase))
+        {
+            await SelectFactionAsync(FactionId);
+        }
+
+        loading = false;
+        initialized = true;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!initialized || string.IsNullOrWhiteSpace(FactionId) || !DB.DatabaseExists)
+        {
+            return;
+        }
+
+        if (!string.Equals(FactionId, armyList.FactionId, StringComparison.OrdinalIgnoreCase))
+        {
+            await SelectFactionAsync(FactionId);
+        }
+    }
+
+    private void HandleArmyListChanged()
+    {
+        _ = InvokeAsync(() =>
+        {
+            RefreshArmyListState();
+            StateHasChanged();
+        });
+    }
+
+    private void RefreshArmyListState()
+    {
+        armyList = ArmyListService.GetArmyList();
+        armyLists = ArmyListService.GetArmyLists();
+        activeListId = armyList.Id;
+        selectedFactionId = armyList.FactionId;
+        selectedDetachmentId = armyList.DetachmentId?.ToString() ?? string.Empty;
+    }
+
+    private async Task HandleListNameChanged(ChangeEventArgs args)
+    {
+        await ArmyListService.SetListNameAsync(args.Value?.ToString());
+    }
+
+    private async Task HandlePointsLimitChanged(ChangeEventArgs args)
+    {
+        if (int.TryParse(args.Value?.ToString(), out var pointsLimit))
+        {
+            await ArmyListService.SetPointsLimitAsync(pointsLimit);
+        }
+    }
+
+    private async Task HandleActiveListChangedAsync()
+    {
+        if (string.IsNullOrWhiteSpace(activeListId))
+        {
+            return;
+        }
+
+        await ArmyListService.SetActiveListAsync(activeListId);
+        expandedUnits.Clear();
+        await SyncActiveListAsync();
+        ApplyPanelDefaults(IsFreshList(armyList));
+    }
+
+    private async Task CreateNewListAsync()
+    {
+        await ArmyListService.CreateListAsync();
+        expandedUnits.Clear();
+        await SyncActiveListAsync();
+        ApplyPanelDefaults(true);
+    }
+
+    private async Task DuplicateActiveListAsync()
+    {
+        await ArmyListService.DuplicateActiveListAsync();
+        expandedUnits.Clear();
+        await SyncActiveListAsync();
+        ApplyPanelDefaults(false);
+    }
+
+    private async Task DeleteActiveListAsync()
+    {
+        await ArmyListService.DeleteActiveListAsync();
+        expandedUnits.Clear();
+        await SyncActiveListAsync();
+        ApplyPanelDefaults(IsFreshList(armyList));
+    }
+
+    private async Task HandleFactionChangedAsync()
+    {
+        if (string.IsNullOrWhiteSpace(selectedFactionId))
+        {
+            await ResetListAsync();
+            return;
+        }
+
+        await SelectFactionAsync(selectedFactionId);
+    }
+
+    private async Task SyncActiveListAsync()
+    {
+        RefreshArmyListState();
+
+        if (string.IsNullOrWhiteSpace(armyList.FactionId))
+        {
+            detachments.Clear();
+            datasheets.Clear();
+            availableEnhancements.Clear();
+            detachmentStratagems.Clear();
+            datasheetDetailCache.Clear();
+            unitSearch = string.Empty;
+            selectedRole = string.Empty;
+            editingLoadoutUnitId = string.Empty;
+            loadoutEditorOpen = false;
+            collapsedRoleSections.Clear();
+            Navigation.NavigateTo("/list-builder", false);
+            StateHasChanged();
+            return;
+        }
+
+        await LoadFactionDataAsync(armyList.FactionId);
+        Navigation.NavigateTo($"/list-builder/{armyList.FactionId}", false);
+        StateHasChanged();
+    }
+
+    private async Task SelectFactionAsync(string factionId)
+    {
+        loading = true;
+        StateHasChanged();
+
+        var faction = factions.FirstOrDefault(existingFaction => existingFaction.Id == factionId);
+        if (faction == null)
+        {
+            loading = false;
+            return;
+        }
+
+        await ArmyListService.SetFactionAsync(faction.Id, faction.Name);
+        RefreshArmyListState();
+        selectedFactionId = faction.Id;
+        selectedDetachmentId = string.Empty;
+        unitSearch = string.Empty;
+        selectedRole = string.Empty;
+        detachmentStratagems.Clear();
+        datasheetDetailCache.Clear();
+        pendingWeapons.Clear();
+        expandedUnits.Clear();
+        collapsedRoleSections.Clear();
+        editingLoadoutUnitId = string.Empty;
+        loadoutEditorOpen = false;
+        await LoadFactionDataAsync(faction.Id);
+        Navigation.NavigateTo($"/list-builder/{faction.Id}", false);
+        loading = false;
+    }
+
+    private async Task LoadFactionDataAsync(string factionId)
+    {
+        var detachmentsTask = Data.GetDetachmentsByFactionAsync(factionId);
+        var datasheetsTask = Data.GetDatasheetsByFactionAsync(factionId);
+        await Task.WhenAll(detachmentsTask, datasheetsTask);
+
+        detachments = detachmentsTask.Result;
+        datasheets = datasheetsTask.Result;
+        selectedRole = ResolveSelectedRole(selectedRole);
+        collapsedRoleSections.RemoveWhere(role => !RolePickerGroups.Any(group => group.Role.Equals(role, StringComparison.OrdinalIgnoreCase)));
+
+        if (armyList.DetachmentId.HasValue && detachments.Any(detachment => detachment.Id == armyList.DetachmentId.Value))
+        {
+            selectedDetachmentId = armyList.DetachmentId.Value.ToString();
+            await LoadEnhancementsAsync(armyList.DetachmentId.Value);
+        }
+        else
+        {
+            selectedDetachmentId = string.Empty;
+            availableEnhancements.Clear();
+            await ArmyListService.SetDetachmentAsync(null, null);
+        }
+    }
+
+    private async Task HandleDetachmentChangedAsync()
+    {
+        if (string.IsNullOrWhiteSpace(selectedDetachmentId))
+        {
+            availableEnhancements.Clear();
+            detachmentStratagems.Clear();
+            datasheetDetailCache.Clear();
+            await ArmyListService.SetDetachmentAsync(null, null);
+            RefreshArmyListState();
+            return;
+        }
+
+        if (!int.TryParse(selectedDetachmentId, out var detachmentId))
+        {
+            return;
+        }
+
+        var detachment = detachments.FirstOrDefault(existingDetachment => existingDetachment.Id == detachmentId);
+        await LoadEnhancementsAsync(detachmentId);
+        await ArmyListService.SetDetachmentAsync(detachmentId, detachment?.Name, availableEnhancements);
+        datasheetDetailCache.Clear();
+        RefreshArmyListState();
+    }
+
+    private async Task LoadEnhancementsAsync(int detachmentId)
+    {
+        var detachment = await Data.GetDetachmentDetailsAsync(detachmentId);
+        availableEnhancements = detachment?.Enhancements
+            .OrderBy(enhancement => enhancement.Name)
+            .ToList() ?? new List<Enhancement>();
+        detachmentStratagems = detachment?.Stratagems
+            .DistinctBy(stratagem => stratagem.Id)
+            .ToList() ?? new List<Stratagem>();
+    }
+
+    private async Task AddUnitAsync(Datasheet datasheet)
+    {
+        var unit = await ArmyListService.AddUnitAsync(datasheet, armyList.DetachmentId);
+        await EnsureDatasheetDetailLoadedAsync(datasheet.Id);
+        RefreshArmyListState();
+        expandedUnits.Add(unit.Id);
+        selectedRole = string.Empty;
+        unitSearch = string.Empty;
+    }
+
+    private async Task DuplicateUnitAsync(string unitId)
+    {
+        await ArmyListService.DuplicateUnitAsync(unitId);
+        RefreshArmyListState();
+    }
+
+    private async Task RemoveUnitAsync(string unitId)
+    {
+        expandedUnits.Remove(unitId);
+        await ArmyListService.RemoveUnitAsync(unitId);
+        if (editingLoadoutUnitId == unitId)
+        {
+            CloseLoadoutEditor();
+        }
+        RefreshArmyListState();
+    }
+
+    private async Task ChangeModelQuantityAsync(string unitId, ArmyListUnitModel model, int delta)
+    {
+        await ArmyListService.SetModelQuantityAsync(unitId, model.Id, model.Quantity + delta);
+        RefreshArmyListState();
+    }
+
+    private async Task AddWeaponToModelAsync(ArmyListUnit unit, ArmyListUnitModel model)
+    {
+        var weaponName = GetPendingWeaponName(unit.Id, model.Id);
+        if (string.IsNullOrWhiteSpace(weaponName))
+        {
+            return;
+        }
+
+        await ArmyListService.AddWeaponAsync(unit.Id, model.Id, weaponName);
+        pendingWeapons[GetPendingWeaponKey(unit.Id, model.Id)] = string.Empty;
+        RefreshArmyListState();
+    }
+
+    private async Task RemoveWeaponAsync(string unitId, string modelId, string weaponId)
+    {
+        await ArmyListService.RemoveWeaponAsync(unitId, modelId, weaponId);
+        RefreshArmyListState();
+    }
+
+    private async Task ChangeWeaponQuantityAsync(string unitId, string modelId, ArmyListUnitWeapon weapon, int delta)
+    {
+        await ArmyListService.SetWeaponQuantityAsync(unitId, modelId, weapon.Id, weapon.Quantity + delta);
+        RefreshArmyListState();
+    }
+
+    private async Task UpdateWeaponSelectedAsync(string unitId, string modelId, string weaponId, ChangeEventArgs args)
+    {
+        var isSelected = args.Value is bool boolValue
+            ? boolValue
+            : bool.TryParse(args.Value?.ToString(), out var parsed) && parsed;
+
+        await ArmyListService.SetWeaponSelectedAsync(unitId, modelId, weaponId, isSelected);
+        RefreshArmyListState();
+    }
+
+    private async Task UpdateUnitCostAsync(string unitId, string? selectedCostLine)
+    {
+        if (int.TryParse(selectedCostLine, out var costLine))
+        {
+            await ArmyListService.SetUnitCostAsync(unitId, costLine);
+            RefreshArmyListState();
+        }
+    }
+
+    private async Task UpdateUnitEnhancementAsync(ArmyListUnit unit, string? enhancementValue)
+    {
+        Enhancement? enhancement = null;
+        if (int.TryParse(enhancementValue, out var enhancementId))
+        {
+            enhancement = availableEnhancements.FirstOrDefault(existingEnhancement => existingEnhancement.Id == enhancementId);
+        }
+
+        await ArmyListService.SetUnitEnhancementAsync(unit.Id, enhancement);
+        RefreshArmyListState();
+    }
+
+    private async Task UpdateUnitNotesAsync(string unitId, string? notes)
+    {
+        await ArmyListService.SetUnitNotesAsync(unitId, notes);
+        RefreshArmyListState();
+    }
+
+    private bool IsEnhancementAssignedElsewhere(ArmyListUnit unit, int enhancementId)
+        => armyList.Units.Any(existingUnit => existingUnit.Id != unit.Id && existingUnit.EnhancementId == enhancementId);
+
+    private async Task ToggleUnitAsync(string unitId, int datasheetId)
+    {
+        if (!expandedUnits.Add(unitId))
+        {
+            expandedUnits.Remove(unitId);
+            return;
+        }
+
+        await EnsureDatasheetDetailLoadedAsync(datasheetId);
+    }
+
+    private Task ToggleUnit(string unitId)
+    {
+        var datasheetId = armyList.Units.FirstOrDefault(unit => unit.Id == unitId)?.DatasheetId ?? 0;
+        return datasheetId > 0 ? ToggleUnitAsync(unitId, datasheetId) : Task.CompletedTask;
+    }
+
+    private string GetDatasheetRoute(ArmyListUnit unit)
+        => string.IsNullOrWhiteSpace(armyList.FactionId)
+            ? $"/unit/{unit.DatasheetId}"
+            : $"/faction/{armyList.FactionId}/unit/{unit.DatasheetId}";
+
+    private void NavigateToFactionRules()
+    {
+        if (string.IsNullOrWhiteSpace(armyList.FactionId))
+        {
+            return;
+        }
+
+        ViewerState.SetFactionContext(armyList.FactionId, armyList.DetachmentId);
+        Navigation.NavigateTo($"/faction/{armyList.FactionId}");
+    }
+
+    private string FormatListOption(ArmyList list)
+    {
+        var factionPart = string.IsNullOrWhiteSpace(list.FactionName) ? "Unassigned" : list.FactionName;
+        return $"{list.Name} — {factionPart} — {list.TotalPoints}/{list.PointsLimit} pts";
+    }
+
+    private static string GetRoleDisplay(string? role)
+    {
+        if (string.IsNullOrWhiteSpace(role))
+        {
+            return "Other Datasheets";
+        }
+
+        var normalizedRole = role.Trim().ToLowerInvariant();
+
+        if (normalizedRole is "character" or "characters" or "epic hero")
+        {
+            return "Characters";
+        }
+
+        if (normalizedRole == "battleline")
+        {
+            return "Battleline";
+        }
+
+        if (normalizedRole is "dedicated transport" or "dedicated transports")
+        {
+            return "Dedicated Transports";
+        }
+
+        return "Other Datasheets";
+    }
+
+    private static int GetRoleSortOrder(string role)
+    {
+        var index = Array.FindIndex(PreferredRoleOrder, existingRole => existingRole.Equals(role, StringComparison.OrdinalIgnoreCase));
+        return index >= 0 ? index : PreferredRoleOrder.Length;
+    }
+
+    private string ResolveSelectedRole(string? requestedRole)
+    {
+        var availableRoles = datasheets
+            .Select(datasheet => GetRoleDisplay(datasheet.Role))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(role => GetRoleSortOrder(role))
+            .ThenBy(role => role)
+            .ToList();
+
+        if (!availableRoles.Any())
+        {
+            return string.Empty;
+        }
+
+        if (!string.IsNullOrWhiteSpace(requestedRole) && availableRoles.Contains(requestedRole, StringComparer.OrdinalIgnoreCase))
+        {
+            return requestedRole;
+        }
+
+        return string.Empty;
+    }
+
+    private void SelectRole(string role)
+    {
+        if (!string.Equals(selectedRole, role, StringComparison.OrdinalIgnoreCase))
+        {
+            unitSearch = string.Empty;
+        }
+
+        collapsedRoleSections.Remove(role);
+
+        selectedRole = string.Equals(selectedRole, role, StringComparison.OrdinalIgnoreCase)
+            ? string.Empty
+            : role;
+    }
+
+    private void CloseRolePicker()
+    {
+        selectedRole = string.Empty;
+        unitSearch = string.Empty;
+    }
+
+    private bool IsRoleSectionExpanded(string role)
+        => !collapsedRoleSections.Contains(role);
+
+    private void ToggleRoleSection(string role)
+    {
+        if (!collapsedRoleSections.Add(role))
+        {
+            collapsedRoleSections.Remove(role);
+            return;
+        }
+
+        if (string.Equals(selectedRole, role, StringComparison.OrdinalIgnoreCase))
+        {
+            CloseRolePicker();
+        }
+    }
+
+    private void ToggleSavedListsPanel()
+    {
+        showSavedListsPanel = !showSavedListsPanel;
+    }
+
+    private void ToggleArmySetupPanel()
+    {
+        showArmySetupPanel = !showArmySetupPanel;
+    }
+
+    private void ApplyPanelDefaults(bool expandPanels)
+    {
+        showSavedListsPanel = expandPanels;
+        showArmySetupPanel = expandPanels;
+    }
+
+    private static bool IsFreshList(ArmyList list)
+        => string.IsNullOrWhiteSpace(list.FactionId)
+            && !list.Units.Any()
+            && string.IsNullOrWhiteSpace(list.DetachmentName)
+            && list.TotalPoints == 0;
+
+    private IEnumerable<ArmyListUnit> GetUnitsForRole(string role)
+        => armyList.Units.Where(unit => string.Equals(GetRoleDisplay(unit.Role), role, StringComparison.OrdinalIgnoreCase));
+
+    private string GetUnitSizeSummary(ArmyListUnit unit)
+        => unit.TotalModels > 0
+            ? $"{unit.TotalModels} model{(unit.TotalModels == 1 ? string.Empty : "s")} · {unit.SelectedCostDescription}"
+            : unit.SelectedCostDescription;
+
+    private string GetUnitSizeHint(ArmyListUnit unit)
+    {
+        if (!unit.Models.Any() || string.IsNullOrWhiteSpace(unit.SelectedCostDescription))
+        {
+            return string.Empty;
+        }
+
+        return unit.SelectedCostDescription.Contains(unit.TotalModels.ToString(), StringComparison.OrdinalIgnoreCase)
+            ? "Points match current model count"
+            : "Check the selected points bracket";
+    }
+
+    private static string GetModelStatline(ArmyListUnitModel model)
+        => $"M {model.M} · T {model.T} · Sv {FormatSave(model)} · W {model.W} · Ld {model.Ld} · OC {model.OC}";
+
+    private static string GetWeaponProfile(ArmyListUnitWeapon weapon)
+        => $"{weapon.Type} · Range {weapon.Range} · A {weapon.A} · BS/WS {weapon.BsWs} · S {weapon.S} · AP {weapon.AP} · D {weapon.D}";
+
+    private static string GetCompactWeaponProfile(ArmyListUnitWeapon weapon)
+        => $"{weapon.Range} · A {weapon.A} · BS/WS {weapon.BsWs} · S {weapon.S} · AP {weapon.AP} · D {weapon.D}";
+
+    private static string FormatSave(ArmyListUnitModel model)
+        => string.IsNullOrWhiteSpace(model.InvSv) || model.InvSv == "-"
+            ? model.Sv
+            : $"{model.Sv}/{model.InvSv}++";
+
+    private async Task EnsureDatasheetDetailLoadedAsync(int datasheetId)
+    {
+        if (datasheetDetailCache.ContainsKey(datasheetId))
+        {
+            return;
+        }
+
+        var detail = await Data.GetDatasheetDetailAsync(datasheetId, armyList.DetachmentId);
+        if (detail != null)
+        {
+            datasheetDetailCache[datasheetId] = detail;
+        }
+    }
+
+    private DatasheetDetail? GetDatasheetDetail(int datasheetId)
+        => datasheetDetailCache.TryGetValue(datasheetId, out var detail) ? detail : null;
+
+    private IEnumerable<string> GetAvailableWeaponChoices(ArmyListUnit unit)
+        => GetDatasheetDetail(unit.DatasheetId)?.Wargear
+               .Select(wargear => wargear.Name)
+               .Distinct(StringComparer.OrdinalIgnoreCase)
+               .OrderBy(name => name)
+           ?? Enumerable.Empty<string>();
+
+    private string GetPendingWeaponKey(string unitId, string modelId)
+        => $"{unitId}:{modelId}";
+
+    private string GetPendingWeaponName(string unitId, string modelId)
+        => pendingWeapons.TryGetValue(GetPendingWeaponKey(unitId, modelId), out var value) ? value : string.Empty;
+
+    private void SetPendingWeapon(string unitId, string modelId, string? weaponName)
+    {
+        pendingWeapons[GetPendingWeaponKey(unitId, modelId)] = weaponName ?? string.Empty;
+    }
+
+    private IEnumerable<EquippedWeaponView> GetEquippedWeapons(ArmyListUnit unit)
+        => unit.Models
+            .SelectMany(model => model.Weapons
+                .Where(weapon => weapon.IsSelected)
+                .Select(weapon => new EquippedWeaponView(
+                    model.Name,
+                    weapon.Name,
+                    weapon.Quantity,
+                    weapon.Range,
+                    weapon.A,
+                    weapon.BsWs,
+                    weapon.S,
+                    weapon.AP,
+                    weapon.D,
+                    weapon.Description)));
+
+    private IEnumerable<string> GetLoadoutSummary(ArmyListUnit unit)
+    {
+        return unit.Models
+            .SelectMany(model => model.Weapons)
+            .Where(weapon => weapon.IsSelected)
+            .GroupBy(weapon => weapon.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(group => $"{group.Sum(weapon => weapon.Quantity)}x {group.First().Name}");
+    }
+
+    private Enhancement? GetSelectedEnhancement(ArmyListUnit unit)
+        => unit.EnhancementId.HasValue
+            ? availableEnhancements.FirstOrDefault(enhancement => enhancement.Id == unit.EnhancementId.Value)
+              ?? new Enhancement
+              {
+                  Id = unit.EnhancementId.Value,
+                  Name = unit.EnhancementName,
+                  Cost = unit.EnhancementCost
+              }
+            : null;
+
+    private ArmyListUnit? EditingLoadoutUnit
+        => armyList.Units.FirstOrDefault(unit => unit.Id == editingLoadoutUnitId);
+
+    private ArmyListUnit? LoadoutEditorUnit => EditingLoadoutUnit;
+
+    private DatasheetDetail? LoadoutEditorDetail
+        => LoadoutEditorUnit == null ? null : GetDatasheetDetail(LoadoutEditorUnit.DatasheetId);
+
+    private List<DatasheetWargear> LoadoutEditorRangedWeapons
+        => LoadoutEditorDetail?.Wargear.Where(wargear => wargear.Type == "Ranged").ToList() ?? new List<DatasheetWargear>();
+
+    private List<DatasheetWargear> LoadoutEditorMeleeWeapons
+        => LoadoutEditorDetail?.Wargear.Where(wargear => wargear.Type == "Melee").ToList() ?? new List<DatasheetWargear>();
+
+    private async Task OpenLoadoutEditorAsync(string unitId)
+    {
+        var unit = armyList.Units.FirstOrDefault(existingUnit => existingUnit.Id == unitId);
+        if (unit == null)
+        {
+            return;
+        }
+
+        editingLoadoutUnitId = unitId;
+        loadoutEditorLoading = true;
+        loadoutEditorOpen = true;
+        StateHasChanged();
+
+        await EnsureDatasheetDetailLoadedAsync(unit.DatasheetId);
+
+        loadoutEditorLoading = false;
+    }
+
+    private void CloseLoadoutEditor()
+    {
+        loadoutEditorOpen = false;
+        loadoutEditorLoading = false;
+        editingLoadoutUnitId = string.Empty;
+    }
+
+    private async Task OpenPlayModeAsync()
+    {
+        playModeLoading = true;
+        playModeOpen = true;
+        StateHasChanged();
+
+        foreach (var datasheetId in armyList.Units.Select(unit => unit.DatasheetId).Distinct())
+        {
+            await EnsureDatasheetDetailLoadedAsync(datasheetId);
+        }
+
+        if (armyList.DetachmentId.HasValue && !detachmentStratagems.Any())
+        {
+            await LoadEnhancementsAsync(armyList.DetachmentId.Value);
+        }
+
+        playModeLoading = false;
+    }
+
+    private void ClosePlayMode()
+    {
+        playModeOpen = false;
+    }
+
+    private IEnumerable<IGrouping<string, Stratagem>> GetSortedStratagemPhaseGroups()
+        => detachmentStratagems
+            .GroupBy(stratagem => string.IsNullOrWhiteSpace(stratagem.Phase) ? "Any phase" : stratagem.Phase)
+            .OrderBy(group => GetPhaseSortOrder(group.Key))
+            .ThenBy(group => group.Key);
+
+    private static int GetPhaseSortOrder(string phase)
+    {
+        var normalized = phase.Trim();
+        var orderedPhases = new[]
+        {
+            "Command phase",
+            "Movement phase",
+            "Shooting phase",
+            "Charge phase",
+            "Fight phase",
+            "Any phase"
+        };
+
+        var index = Array.FindIndex(orderedPhases, existingPhase => existingPhase.Equals(normalized, StringComparison.OrdinalIgnoreCase));
+        return index >= 0 ? index : orderedPhases.Length;
+    }
+
+    private static int GetTurnSortOrder(string? turn)
+    {
+        if (string.IsNullOrWhiteSpace(turn))
+        {
+            return 2;
+        }
+
+        return turn.Trim().ToLowerInvariant() switch
+        {
+            "your turn" => 0,
+            "opponent's turn" => 1,
+            _ => 2
+        };
+    }
+
+    private static string FormatTurn(string? turn)
+        => string.IsNullOrWhiteSpace(turn) ? "Any turn" : turn;
+
+    private async Task ResetListAsync()
+    {
+        expandedUnits.Clear();
+        unitSearch = string.Empty;
+        selectedRole = string.Empty;
+        playModeSearch = string.Empty;
+        playModeRoleFilter = string.Empty;
+        detachmentStratagems.Clear();
+        datasheetDetailCache.Clear();
+        pendingWeapons.Clear();
+        collapsedRoleSections.Clear();
+        CloseLoadoutEditor();
+        await ArmyListService.ResetAsync();
+        await SyncActiveListAsync();
+        ApplyPanelDefaults(true);
+    }
+
+    public void Dispose()
+    {
+        ArmyListService.OnListChanged -= HandleArmyListChanged;
+    }
+
+    private sealed record EquippedWeaponView(
+        string ModelName,
+        string Name,
+        int Quantity,
+        string Range,
+        string A,
+        string BsWs,
+        string S,
+        string AP,
+        string D,
+        string Description);
+}

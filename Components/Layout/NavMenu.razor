@@ -25,12 +25,16 @@
 
         <div class="drawerContent">
 
-            <NavLink class="btn btn-outline-primary" href="/" @onclick="CloseMenu">
+            <NavLink class="btn btn-outline-primary" href="/factions" @onclick="CloseMenu">
                 <i class="fa fa-magnifying-glass me-2"></i>Browse
             </NavLink>
 
             <NavLink class="btn btn-outline-primary" href="/versus" @onclick="CloseMenu">
                 <i class="fa fa-fist-raised me-2"></i>Versus
+            </NavLink>
+
+            <NavLink class="btn btn-outline-primary" href="/list-builder" @onclick="CloseMenu">
+                <i class="fa fa-list-check me-2"></i>List Builder
             </NavLink>
 
             <NavLink class="btn btn-outline-primary" href="/settings" @onclick="CloseMenu">
@@ -45,17 +49,21 @@
     <div class="desktopNav card bg-secondary-subtle m-2">
 
         <div class="card-header">
-            <h1 class="text-primary">Omni Tactica</h1>
+            <h1 class="text-primary h1">Omni Tactica</h1>
         </div>
 
         <div class="card-body">
 
-            <NavLink class="btn btn-outline-primary w-100 mb-2" href="/">
+            <NavLink class="btn btn-outline-primary w-100 mb-2" href="/factions">
                 <i class="fa fa-magnifying-glass me-2"></i>Browse
             </NavLink>
 
             <NavLink class="btn btn-outline-primary w-100 mb-2" href="/versus">
                 <i class="fa fa-fist-raised me-2"></i>Versus
+            </NavLink>
+
+            <NavLink class="btn btn-outline-primary w-100 mb-2" href="/list-builder">
+                <i class="fa fa-list-check me-2"></i>List Builder
             </NavLink>
 
         </div>
