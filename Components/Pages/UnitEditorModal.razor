@@ -8,6 +8,7 @@
 @inject VersusService VersusService
 @inject AbilityRulesService AbilityRulesService
 @inject IJSRuntime JS
+@implements IDisposable
 
 <style>
     /* Hide native number input spinners for stepper-hybrid controls */
@@ -283,13 +284,13 @@
                                                                             @foreach (var mod in weapon.Modifiers.Where(m => m.IsActive))
                                                                             {
                                                                                 var modDisplayName = string.IsNullOrWhiteSpace(mod.Name) || mod.Name == "Custom" ? "Custom" : mod.Name.Replace(" (Built-in)", "");
-                                                                                var tooltip = AbilityTooltipHelper.GetTooltipFromName(modDisplayName, AbilityRulesService);
-                                                                                <span class="badge bg-warning bg-opacity-25 text-warning-emphasis flex-shrink-0"
-                                                                                      style="cursor: help; font-size: 0.55rem; font-weight: 500;"
-                                                                                      data-bs-toggle="tooltip"
-                                                                                      data-bs-placement="top"
-                                                                                      data-bs-html="true"
-                                                                                      title="@tooltip">@modDisplayName</span>
+                                                                                var capturedMod = mod;
+                                                                                var capturedModel = model;
+                                                                                var capturedWeapon = weapon;
+                                                                                <span class="badge bg-warning bg-opacity-25 text-warning-emphasis d-inline-flex align-items-center gap-1 flex-shrink-0" style="font-size: 0.55rem; font-weight: 500;">
+                                                                                    @modDisplayName
+                                                                                    <button class="btn p-0 border-0 text-warning-emphasis opacity-75" style="font-size: 0.45rem; line-height:1;" @onclick:stopPropagation="true" @onclick="() => EditModifier(capturedModel, capturedWeapon, capturedMod, ModifierTarget.Weapon)" title="Edit"><i class="fa fa-pencil"></i></button>
+                                                                                </span>
                                                                             }
                                                                         }
                                                                         <span class="flex-shrink-0 ms-auto d-flex gap-1">
@@ -317,8 +318,11 @@
                                                                                 <div class="d-flex flex-wrap gap-1 mt-1">
                                                                                     @foreach (var modifier in model.Modifiers.Where(m => m.IsActive))
                                                                                     {
-                                                                                        <span class="badge bg-warning bg-opacity-25 text-warning-emphasis" @onclick="() => RemoveModifier(model, modifier, ModifierTarget.Model)" style="cursor: pointer; font-size: 0.7rem; font-weight: 500;" title="Click to remove">
-                                                                                            @modifier.Name <i class="fa fa-times ms-1" style="font-size: 0.6rem;"></i>
+                                                                                        var capturedMod = modifier;
+                                                                                        var capturedModel = model;
+                                                                                        <span class="badge bg-warning bg-opacity-25 text-warning-emphasis d-inline-flex align-items-center gap-1" style="font-size: 0.7rem; font-weight: 500;">
+                                                                                            @modifier.Name
+                                                                                            <button class="btn p-0 border-0 text-warning-emphasis opacity-75" style="font-size: 0.55rem; line-height:1;" @onclick="() => EditModifier(capturedModel, null, capturedMod, ModifierTarget.Model)" title="Edit"><i class="fa fa-pencil"></i></button>
                                                                                         </span>
                                                                                     }
                                                                                 </div>
@@ -347,10 +351,13 @@
                                             <div class="d-flex flex-wrap gap-2">
                                                 @foreach (var modifier in editingUnit.Modifiers.Where(m => m.IsActive))
                                                 {
-                                                    <span class="badge bg-warning bg-opacity-25 text-warning-emphasis p-2" @onclick="() => RemoveModifier(null, modifier, ModifierTarget.Unit)" style="cursor: pointer; font-weight: 500;" title="Click to remove">
-                                                        @modifier.Name
-                                                        <div class="small" style="font-weight: 400; opacity: 0.8;">@GetModifierDescription(modifier)</div>
-                                                        <i class="fa fa-times ms-1" style="font-size: 0.7rem;"></i>
+                                                    var capturedMod = modifier;
+                                                    <span class="badge bg-warning bg-opacity-25 text-warning-emphasis p-2 d-inline-flex flex-column" style="font-weight: 500;">
+                                                        <span class="d-flex align-items-center gap-1">
+                                                            @modifier.Name
+                                                            <button class="btn p-0 border-0 text-warning-emphasis opacity-75 ms-1" style="font-size: 0.6rem; line-height:1;" @onclick="() => EditModifier(null, null, capturedMod, ModifierTarget.Unit)" title="Edit"><i class="fa fa-pencil"></i></button>
+                                                        </span>
+                                                        <span class="small" style="font-weight: 400; opacity: 0.8;">@GetModifierDescription(modifier)</span>
                                                     </span>
                                                 }
                                             </div>
@@ -393,6 +400,9 @@
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
             </div>
+
+            @* Render inside the Bootstrap modal element so the parent's focus trap doesn't block text input focus. *@
+            <ModifierEditorModal @ref="modifierModal" OnModifierAdded="HandleModifierAdded" OnModifierDeleted="HandleModifierDeleted" />
         </div>
     </div>
 </div>
@@ -479,28 +489,38 @@
     </div>
 }
 
-<!-- Modifier Modal -->
-<ModifierEditorModal @ref="modifierModal" OnModifierAdded="HandleModifierAdded" />
-
 @code {
+    [Parameter] public EventCallback OnClosed { get; set; }
+
+    private ModifierEditorModal modifierModal = null!;
+
     private CombatUnit? editingUnit;
     private bool isAttacker;
     private bool showAddModelModal = false;
     private bool showAddWeaponModal = false;
     private bool showQuantityModal = false;
     private CombatModel? selectedModel;
-    private ModifierEditorModal modifierModal = null!;
     private ModifierTarget currentModifierTarget;
     private CombatModel? modifierTargetModel;
     private CombatWeapon? modifierTargetWeapon;
+    private string? _editingModifierId;
+    private DotNetObjectReference<UnitEditorModal>? _dotNetRef;
 
     public async Task Show(CombatUnit unit, bool isAttacker)
     {
         this.editingUnit = unit;
         this.isAttacker = isAttacker;
         StateHasChanged();
+        _dotNetRef ??= DotNetObjectReference.Create(this);
         await JS.InvokeVoidAsync("bootstrapInterop.showModal", "unitEditorModal");
+        await JS.InvokeVoidAsync("bootstrapInterop.onModalHidden", "unitEditorModal", _dotNetRef);
         await JS.InvokeVoidAsync("initTooltips");
+    }
+
+    [JSInvokable]
+    public async Task OnModalHidden()
+    {
+        await OnClosed.InvokeAsync();
     }
 
     private void AddModelFromProfile(DatasheetModel profile)
@@ -704,13 +724,49 @@
         currentModifierTarget = target;
         modifierTargetModel = model;
         modifierTargetWeapon = weapon;
+        _editingModifierId = existingModifier?.Id;
         await modifierModal.Show(existingModifier);
+    }
+
+    private async Task EditModifier(CombatModel? model, CombatWeapon? weapon, ConditionalModifier modifier, ModifierTarget target)
+    {
+        await ShowModifierModal(model, weapon, modifier, target);
     }
 
     private void HandleModifierAdded(ConditionalModifier modifier)
     {
         if (editingUnit == null) return;
 
+        // Editing existing modifier — update in-place
+        if (_editingModifierId != null)
+        {
+            switch (currentModifierTarget)
+            {
+                case ModifierTarget.Unit:
+                {
+                    var existing = editingUnit.Modifiers.FirstOrDefault(m => m.Id == _editingModifierId);
+                    if (existing != null) { existing.Name = modifier.Name; existing.Condition = modifier.Condition; existing.Effect = modifier.Effect; }
+                    break;
+                }
+                case ModifierTarget.Model when modifierTargetModel != null:
+                {
+                    var existing = modifierTargetModel.Modifiers.FirstOrDefault(m => m.Id == _editingModifierId);
+                    if (existing != null) { existing.Name = modifier.Name; existing.Condition = modifier.Condition; existing.Effect = modifier.Effect; }
+                    break;
+                }
+                case ModifierTarget.Weapon when modifierTargetWeapon != null:
+                {
+                    var existing = modifierTargetWeapon.Modifiers.FirstOrDefault(m => m.Id == _editingModifierId);
+                    if (existing != null) { existing.Name = modifier.Name; existing.Condition = modifier.Condition; existing.Effect = modifier.Effect; }
+                    break;
+                }
+            }
+            _editingModifierId = null;
+            StateHasChanged();
+            return;
+        }
+
+        // Adding new modifier
         switch (currentModifierTarget)
         {
             case ModifierTarget.Unit:
@@ -727,7 +783,12 @@
         StateHasChanged();
     }
 
-    private void RemoveModifier(CombatModel? model, ConditionalModifier modifier, ModifierTarget target)
+    private void HandleModifierDeleted(ConditionalModifier modifier)
+    {
+        RemoveModifier(modifierTargetModel, modifierTargetWeapon, modifier, currentModifierTarget);
+    }
+
+    private void RemoveModifier(CombatModel? model, CombatWeapon? weapon, ConditionalModifier modifier, ModifierTarget target)
     {
         if (editingUnit == null) return;
 
@@ -738,6 +799,9 @@
                 break;
             case ModifierTarget.Model when model != null:
                 VersusService.RemoveModelModifier(editingUnit.Id, model.Id, modifier.Id);
+                break;
+            case ModifierTarget.Weapon when model != null && weapon != null:
+                VersusService.RemoveWeaponModifier(editingUnit.Id, model.Id, weapon.Id, modifier.Id);
                 break;
         }
 
@@ -910,6 +974,8 @@
         var effect = modifier.Effect.Type switch
         {
             EffectType.AddHitModifier => $"+{modifier.Effect.IntValue} to Hit",
+            EffectType.ImproveBallisticSkill => $"Improve Ballistic Skill by {modifier.Effect.IntValue}",
+            EffectType.ImproveWeaponSkill => $"Improve Weapon Skill by {modifier.Effect.IntValue}",
             EffectType.AddWoundModifier => $"+{modifier.Effect.IntValue} to Wound",
             EffectType.AddSaveModifier => $"+{modifier.Effect.IntValue} to Save",
             EffectType.AddAPModifier => $"+{modifier.Effect.IntValue} AP",
@@ -948,6 +1014,10 @@
         };
 
         var effect = modifier.Effect.Type.ToString();
+        if (modifier.Effect.Type == EffectType.ImproveBallisticSkill)
+            effect = "Improve Ballistic Skill";
+        else if (modifier.Effect.Type == EffectType.ImproveWeaponSkill)
+            effect = "Improve Weapon Skill";
         if (modifier.Effect.IntValue.HasValue)
             effect += $" {(modifier.Effect.IntValue.Value > 0 ? "+" : "")}{modifier.Effect.IntValue.Value}";
 
@@ -959,5 +1029,10 @@
         Unit,
         Model,
         Weapon
+    }
+
+    public void Dispose()
+    {
+        _dotNetRef?.Dispose();
     }
 }

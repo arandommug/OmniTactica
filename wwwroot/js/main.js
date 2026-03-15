@@ -64,6 +64,15 @@ window.restoreScrollPosition = (key) => {
     }
 };
 
+// Body scroll lock — prevent background page scroll when an overlay is open
+window.lockBodyScroll = () => {
+    document.body.style.overflow = 'hidden';
+};
+
+window.unlockBodyScroll = () => {
+    document.body.style.overflow = '';
+};
+
 window.bootstrapInterop = {
     showModal: (id) => {
         const element = document.getElementById(id);
@@ -83,6 +92,19 @@ window.bootstrapInterop = {
 
         const modal = bootstrap.Modal.getInstance(element);
         modal?.hide();
+    },
+
+    onModalHidden: (id, dotNetRef) => {
+        const element = document.getElementById(id);
+        if (!element) {
+            return;
+        }
+
+        const handler = () => {
+            element.removeEventListener('hidden.bs.modal', handler);
+            dotNetRef.invokeMethodAsync('OnModalHidden');
+        };
+        element.addEventListener('hidden.bs.modal', handler);
     }
 };
 

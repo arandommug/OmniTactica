@@ -5,8 +5,8 @@
 
 @if (showModal)
 {
-<div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5); z-index: 1060;">
-    <div class="modal-dialog modal-dialog-centered" style="z-index: 1061;">
+<div class="modal fade show d-block" tabindex="-1" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); z-index: 1075; pointer-events: auto;">
+    <div class="modal-dialog modal-dialog-centered" style="position: relative; z-index: 1076; pointer-events: auto;">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">
@@ -39,7 +39,7 @@
                 <!-- Custom Modifier Builder -->
                 <div class="mb-3">
                     <label class="form-label">Modifier Name</label>
-                    <input type="text" class="form-control" @bind="modifierName" placeholder="e.g., Doctrine Bonus" />
+                    <input type="text" class="form-control" @bind="modifierName" @bind:event="oninput" placeholder="e.g., Doctrine Bonus" />
                 </div>
 
                 <div class="row g-3">
@@ -66,6 +66,8 @@
                         <label class="form-label">Then (Effect)</label>
                         <select class="form-select" @bind="effectType">
                             <option value="@EffectType.AddHitModifier">Hit Modifier</option>
+                            <option value="@EffectType.ImproveBallisticSkill">Improve Ballistic Skill</option>
+                            <option value="@EffectType.ImproveWeaponSkill">Improve Weapon Skill</option>
                             <option value="@EffectType.AddWoundModifier">Wound Modifier</option>
                             <option value="@EffectType.AddSaveModifier">Save Modifier</option>
                             <option value="@EffectType.AddAPModifier">AP Modifier</option>
@@ -92,7 +94,7 @@
                 {
                     <div class="mt-3">
                         <label class="form-label">Value</label>
-                        <input type="number" class="form-control" @bind="effectValue" placeholder="Enter numeric value" />
+                        <input type="text" class="form-control" @bind="effectValue" @bind:event="oninput" placeholder="e.g., 1 or D3" />
                         <div class="form-text">
                             @GetValueHint(effectType)
                         </div>
@@ -108,6 +110,12 @@
                 </div>
             </div>
             <div class="modal-footer">
+                @if (editingModifier != null)
+                {
+                    <button type="button" class="btn btn-outline-danger me-auto" @onclick="DeleteModifier">
+                        <i class="fa fa-trash"></i> Delete
+                    </button>
+                }
                 <button type="button" class="btn btn-secondary" @onclick="Hide">Cancel</button>
                 <button type="button" class="btn btn-primary" @onclick="SaveModifier" disabled="@(!IsValid())">
                     <i class="fa fa-check"></i> @(editingModifier == null ? "Add" : "Save")
@@ -122,12 +130,15 @@
     [Parameter]
     public EventCallback<ConditionalModifier> OnModifierAdded { get; set; }
 
+    [Parameter]
+    public EventCallback<ConditionalModifier> OnModifierDeleted { get; set; }
+
     private bool showModal = false;
     private ConditionalModifier? editingModifier;
     private string modifierName = "";
     private ConditionType conditionType = ConditionType.Always;
     private EffectType effectType = EffectType.AddHitModifier;
-    private int effectValue = 1;
+    private string effectValue = "1";
 
     public Task Show(ConditionalModifier? existingModifier = null)
     {
@@ -138,14 +149,14 @@
             modifierName = existingModifier.Name;
             conditionType = existingModifier.Condition.Type;
             effectType = existingModifier.Effect.Type;
-            effectValue = existingModifier.Effect.IntValue ?? 1;
+            effectValue = existingModifier.Effect.StringValue ?? existingModifier.Effect.IntValue?.ToString() ?? "1";
         }
         else
         {
             modifierName = "";
             conditionType = ConditionType.Always;
             effectType = EffectType.AddHitModifier;
-            effectValue = 1;
+            effectValue = "1";
         }
 
         showModal = true;
@@ -168,7 +179,8 @@
             Effect = new ModifierEffect
             {
                 Type = effectType,
-                IntValue = RequiresValue(effectType) ? effectValue : null
+                IntValue = RequiresValue(effectType) ? ParseIntValue(effectValue) : null,
+                StringValue = RequiresValue(effectType) ? effectValue : null
             },
             IsActive = true,
             IsCustom = true
@@ -226,6 +238,18 @@
                 Name = "+1 to Hit",
                 Condition = new ModifierCondition { Type = ConditionType.Always },
                 Effect = new ModifierEffect { Type = EffectType.AddHitModifier, IntValue = 1 }
+            },
+            new ConditionalModifier
+            {
+                Name = "Improve Ballistic Skill by 1",
+                Condition = new ModifierCondition { Type = ConditionType.Always },
+                Effect = new ModifierEffect { Type = EffectType.ImproveBallisticSkill, IntValue = 1 }
+            },
+            new ConditionalModifier
+            {
+                Name = "Improve Weapon Skill by 1",
+                Condition = new ModifierCondition { Type = ConditionType.Always },
+                Effect = new ModifierEffect { Type = EffectType.ImproveWeaponSkill, IntValue = 1 }
             },
             new ConditionalModifier
             {
@@ -307,6 +331,8 @@
         return type switch
         {
             EffectType.AddHitModifier or
+            EffectType.ImproveBallisticSkill or
+            EffectType.ImproveWeaponSkill or
             EffectType.AddWoundModifier or
             EffectType.AddSaveModifier or
             EffectType.AddAPModifier or
@@ -326,6 +352,8 @@
         return type switch
         {
             EffectType.AddHitModifier => "+1 for easier hits, -1 for harder hits",
+            EffectType.ImproveBallisticSkill => "Amount to improve BS by (usually 1)",
+            EffectType.ImproveWeaponSkill => "Amount to improve WS by (usually 1)",
             EffectType.AddWoundModifier => "+1 for easier wounds, -1 for harder wounds",
             EffectType.AddSaveModifier => "+1 for better saves, -1 for worse saves",
             EffectType.AddAPModifier => "Extra AP to add (e.g., 1 for +1 AP)",
@@ -361,13 +389,16 @@
         };
     }
 
-    private string GetEffectText(EffectType type, int value)
+    private string GetEffectText(EffectType type, string value)
     {
+        var sign = int.TryParse(value, out var n) && n > 0 ? "+" : "";
         return type switch
         {
-            EffectType.AddHitModifier => $"{(value > 0 ? "+" : "")}{value} to hit rolls",
-            EffectType.AddWoundModifier => $"{(value > 0 ? "+" : "")}{value} to wound rolls",
-            EffectType.AddSaveModifier => $"{(value > 0 ? "+" : "")}{value} to save rolls",
+            EffectType.AddHitModifier => $"{sign}{value} to hit rolls",
+            EffectType.ImproveBallisticSkill => $"improve Ballistic Skill by {value}",
+            EffectType.ImproveWeaponSkill => $"improve Weapon Skill by {value}",
+            EffectType.AddWoundModifier => $"{sign}{value} to wound rolls",
+            EffectType.AddSaveModifier => $"{sign}{value} to save rolls",
             EffectType.AddAPModifier => $"+{value} AP",
             EffectType.AddDamageModifier => $"+{value} damage",
             EffectType.AddAttacks => $"+{value} attacks",
@@ -391,12 +422,26 @@
     private string GetModifierDescription(ConditionalModifier modifier)
     {
         var when = GetConditionText(modifier.Condition.Type);
-        var then = GetEffectText(modifier.Effect.Type, modifier.Effect.IntValue ?? 0);
+        var valStr = modifier.Effect.StringValue ?? modifier.Effect.IntValue?.ToString() ?? "0";
+        var then = GetEffectText(modifier.Effect.Type, valStr);
         return $"When {when}, then {then}";
+    }
+
+    private int? ParseIntValue(string value)
+    {
+        return int.TryParse(value, out var n) ? n : null;
+    }
+
+    private async Task DeleteModifier()
+    {
+        if (editingModifier == null) return;
+        await OnModifierDeleted.InvokeAsync(editingModifier);
+        showModal = false;
+        StateHasChanged();
     }
 
     private bool IsValid()
     {
-        return true; // Basic validation - could be expanded
+        return true;
     }
 }

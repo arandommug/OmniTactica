@@ -1,4 +1,6 @@
+using Microsoft.Extensions.ObjectPool;
 using OmniTactica.AppCode.Models.Core;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace OmniTactica.AppCode.Services
@@ -11,24 +13,31 @@ namespace OmniTactica.AppCode.Services
         public static VersusResult Calculate(VersusContext context)
         {
             var settings = context.SimulationSettings;
-            var simulations = new List<SimulationRun>();
+            int iterations = settings.Iterations;
 
-            for (int i = 0; i < settings.Iterations; i++)
+            var results = new SimulationRun[iterations]; 
+            var attackInstances = BuildAttackInstances(context);
+
+            Parallel.For(0, iterations, i =>
             {
-                var run = RunSimulation(context, i == 0 && settings.EnableDetailedLogging);
-                simulations.Add(run);
-            }
+                results[i] = RunSimulation(context, attackInstances, i == 0 && settings.EnableDetailedLogging);
+            });
 
-            return AggregateResults(simulations, context);
+            return AggregateResults(results.ToList(), context);
         }
 
-        private static SimulationRun RunSimulation(VersusContext context, bool enableLogging)
+        private static SimulationRun RunSimulation(VersusContext context, List<AttackInstance> attackInstances, bool enableLogging)
         {
-            var run = new SimulationRun { Log = enableLogging ? new List<CombatLogEntry>() : null };
+            var run = new SimulationRun { Log = enableLogging ? GetLog() : null };
             var step = 0;
 
             // Clone defenders for this simulation
             var defenders = CloneUnits(context.DefendingUnits);
+
+            int defenderModelCount = 0;
+
+            foreach (var unit in defenders)
+                defenderModelCount += unit.Models.Count;
 
             var phaseMode = context.SimulationSettings.CombatPhase;
             var runShooting = phaseMode == CombatPhaseMode.ShootingOnly || phaseMode == CombatPhaseMode.Both;
@@ -42,7 +51,7 @@ namespace OmniTactica.AppCode.Services
                     LogPhaseHeader(run, ref step, "SHOOTING PHASE");
                 }
 
-                ProcessWeaponsForPhase(context, defenders, run, ref step, enableLogging, isRanged: true);
+                ProcessWeaponsForPhase(context, defenders, run, ref step, enableLogging, true, attackInstances, defenderModelCount);
             }
 
             // Fight Phase
@@ -53,7 +62,7 @@ namespace OmniTactica.AppCode.Services
                     LogPhaseHeader(run, ref step, "FIGHT PHASE");
                 }
 
-                ProcessWeaponsForPhase(context, defenders, run, ref step, enableLogging, isRanged: false);
+                ProcessWeaponsForPhase(context, defenders, run, ref step, enableLogging, false, attackInstances, defenderModelCount);
             }
 
             // Count casualties
@@ -85,43 +94,43 @@ namespace OmniTactica.AppCode.Services
             SimulationRun run,
             ref int step,
             bool enableLogging,
-            bool isRanged)
+            bool isRanged,
+            List<AttackInstance> attackInstances,
+            int defenderModelCount)
         {
-            foreach (var attacker in context.AttackingUnits)
+            foreach (var attack in attackInstances)
             {
-                foreach (var model in attacker.Models)
-                {
-                    var phaseWeapons = model.Weapons
-                        .Where(w => w.IsSelected && IsMeleeWeapon(w) != isRanged)
-                        .ToList();
+                var weapon = attack.Weapon;
 
-                    if (!phaseWeapons.Any()) continue;
+                if (IsMeleeWeapon(weapon) == isRanged)
+                    continue;
 
-                    foreach (var weapon in phaseWeapons)
-                    {
-                        for (int weaponInstance = 0; weaponInstance < weapon.Quantity; weaponInstance++)
-                        {
-                            if (!defenders.Any(u => u.Models.Any(m => !m.IsDestroyed)))
-                                break;
+                if (!HasLivingModels(defenders))
+                    return;
 
-                            if (enableLogging && weapon.Quantity > 1)
-                            {
-                                Log(run, step++, "Attacks", attacker.DatasheetName, model.Name, "", "", "",
-                                    $"═══ {weapon.Name} #{weaponInstance + 1} of {weapon.Quantity} ═══",
-                                    new Dictionary<string, object>());
-                            }
+                var result = ResolveWeaponAttack(
+                    attack.Unit,
+                    attack.Model,
+                    weapon,
+                    defenders,
+                    context,
+                    run,
+                    ref step,
+                    defenderModelCount,
+                    attack.Instance);
 
-                            var weaponResult = ResolveWeaponAttack(
-                                attacker, model, weapon,
-                                defenders,
-                                context,
-                                run, ref step, weaponInstance + 1);
-
-                            run.TotalDamage += weaponResult.Damage;
-                        }
-                    }
-                }
+                run.TotalDamage += result.Damage;
             }
+        }
+
+        private static bool HasLivingModels(List<CombatUnit> defenders)
+        {
+            foreach (var u in defenders)
+                foreach (var m in u.Models)
+                    if (!m.IsDestroyed)
+                        return true;
+
+            return false;
         }
 
         private static WeaponAttackResult ResolveWeaponAttack(
@@ -132,6 +141,7 @@ namespace OmniTactica.AppCode.Services
             VersusContext context,
             SimulationRun run,
             ref int step,
+            int defenderModelCount,
             int modelInstance = 1)
         {
             var result = new WeaponAttackResult
@@ -146,54 +156,61 @@ namespace OmniTactica.AppCode.Services
                 : attackerModel.Name;
 
             // Create attack sequence log for battle report format
-            var attackLog = new AttackSequenceLog
+            AttackSequenceLog? attackLog = null;
+
+            if (run.Log != null)
             {
-                AttackerName = modelDisplayName,
-                WeaponName = weapon.Name,
-                IsMelee = IsMeleeWeapon(weapon)
-            };
+                attackLog = new AttackSequenceLog
+                {
+                    AttackerName = modelDisplayName,
+                    WeaponName = weapon.Name,
+                    IsMelee = IsMeleeWeapon(weapon)
+                };
+            }
+
+            var modifierCache = BuildModifierCache(context, attackerUnit, attackerModel, weapon, defenders);
 
             // Collect weapon abilities
             CollectWeaponAbilities(weapon, attackLog);
 
             // Collect active modifiers
-            CollectActiveModifiers(weapon, context, attackerUnit, defenders, attackLog);
+            CollectActiveModifiers(modifierCache.ActiveAttackerModifiers, attackLog);
 
             // Step 1: Determine number of attacks
-            result.Attacks = DetermineAttacks(weapon, attackerUnit, attackerModel, defenders, context, attackLog);
-            attackLog.Attacks = result.Attacks;
+            result.Attacks = DetermineAttacks(weapon, context, attackLog, defenderModelCount, modifierCache.ActiveAttackerModifiers);
+            attackLog?.Attacks = result.Attacks;
             run.Stages.TotalAttacks += result.Attacks;
 
             // Step 2: Resolve hit rolls
-            var hitResult = ResolveHitRolls(weapon, attackerUnit, attackerModel, result.Attacks, context, run, ref step, modelDisplayName, attackLog);
+            var hitResult = ResolveHitRolls(weapon, context, result.Attacks, attackLog, modifierCache);
             result.Hits = hitResult.Hits;
             result.CriticalHits = hitResult.CriticalHits;
             result.AutoWounds = hitResult.AutoWounds;
-            attackLog.Hits = hitResult.Hits;
-            attackLog.CriticalHits = hitResult.CriticalHits;
-            attackLog.AutoWounds = hitResult.AutoWounds;
-            attackLog.Misses = result.Attacks - hitResult.Hits - hitResult.CriticalHits;
+            attackLog?.Hits = hitResult.Hits;
+            attackLog?.CriticalHits = hitResult.CriticalHits;
+            attackLog?.AutoWounds = hitResult.AutoWounds;
+            attackLog?.Misses = hitResult.Misses;
             run.Stages.TotalHits += result.Hits;
             run.Stages.CriticalHits += result.CriticalHits;
 
             // Step 3: Resolve wound rolls
-            var woundResult = ResolveWoundRolls(weapon, attackerUnit, attackerModel, hitResult, defenders, context, run, ref step, modelDisplayName, attackLog);
+            var woundResult = ResolveWoundRolls(weapon, defenders, context, hitResult, attackLog, modifierCache);
             result.Wounds = woundResult.Wounds;
             result.CriticalWounds = woundResult.CriticalWounds;
-            result.MortalWounds = woundResult.MortalWounds;
-            attackLog.Wounds = woundResult.Wounds;
-            attackLog.CriticalWounds = woundResult.CriticalWounds;
-            attackLog.MortalWounds = woundResult.MortalWounds;
-            attackLog.FailedToWound = hitResult.Hits - woundResult.Wounds - woundResult.CriticalWounds;
+            result.MortalWounds = woundResult.MortalWounds + woundResult.DevastatingMortalWounds;
+            attackLog?.Wounds = woundResult.Wounds;
+            attackLog?.CriticalWounds = woundResult.CriticalWounds;
+            attackLog?.MortalWounds = result.MortalWounds;
+            attackLog?.FailedToWound = woundResult.FailedWounds;
             run.Stages.TotalWounds += result.Wounds;
             run.Stages.CriticalWounds += result.CriticalWounds;
             run.Stages.MortalWounds += result.MortalWounds;
 
             // Step 4: Allocate and resolve saves
-            var damageResult = AllocateWounds(weapon, attackerUnit, woundResult, defenders, context, run, ref step, modelDisplayName, attackLog);
+            var damageResult = AllocateWounds(weapon, attackerUnit, attackerModel, woundResult, defenders, context, run, ref step, modelDisplayName, attackLog, modifierCache.ActiveAttackerModifiers);
             result.Damage = damageResult.TotalDamage;
             result.UnsavedWounds = damageResult.UnsavedWounds;
-            attackLog.TotalDamage = (int)damageResult.TotalDamage;
+            attackLog?.TotalDamage = (int)damageResult.TotalDamage;
             run.Stages.FailedSaves += damageResult.FailedSaves;
             run.Stages.SuccessfulSaves += damageResult.SuccessfulSaves;
             run.Stages.InvulnerableSaves += damageResult.InvulnerableSaves;
@@ -213,7 +230,7 @@ namespace OmniTactica.AppCode.Services
         /// <summary>
         /// Outputs a formatted attack block in battle report style.
         /// </summary>
-        private static void LogFormattedAttackBlock(AttackSequenceLog attackLog, SimulationRun run, ref int step)
+        private static void LogFormattedAttackBlock(AttackSequenceLog? attackLog, SimulationRun run, ref int step)
         {
             var log = run.Log;
             if (log == null) return;
@@ -237,7 +254,7 @@ namespace OmniTactica.AppCode.Services
             {
                 Step = step++,
                 Phase = "AttackHeader",
-                Message = $"{attackLog.AttackerName} — {attackLog.WeaponName}",
+                Message = $"{attackLog?.AttackerName} — {attackLog?.WeaponName}",
                 Details = new Dictionary<string, object>()
             });
             log.Add(new CombatLogEntry
@@ -256,7 +273,7 @@ namespace OmniTactica.AppCode.Services
             });
 
             // Weapon Abilities and Modifiers
-            if (attackLog.WeaponAbilities.Any() || attackLog.ActiveModifiers.Any())
+            if (attackLog?.WeaponAbilities.Count != 0 || attackLog.ActiveModifiers.Count != 0)
             {
                 log.Add(new CombatLogEntry
                 {
@@ -266,7 +283,7 @@ namespace OmniTactica.AppCode.Services
                     Details = new Dictionary<string, object>()
                 });
 
-                foreach (var ability in attackLog.WeaponAbilities)
+                foreach (var ability in attackLog!.WeaponAbilities)
                 {
                     log.Add(new CombatLogEntry
                     {
@@ -328,7 +345,7 @@ namespace OmniTactica.AppCode.Services
             {
                 log.Add(new CombatLogEntry { Step = step++, Phase = "Hit", Message = $"  Effect: {effect}", Details = new Dictionary<string, object>() });
             }
-            if (attackLog.HitDice.Any())
+            if (attackLog.HitDice.Count != 0)
             {
                 log.Add(new CombatLogEntry { Step = step++, Phase = "Hit", Message = $"  [DICE] {string.Join(",", attackLog.HitDice)}", Details = new Dictionary<string, object>() });
             }
@@ -351,7 +368,7 @@ namespace OmniTactica.AppCode.Services
                 {
                     log.Add(new CombatLogEntry { Step = step++, Phase = "Wound", Message = $"  Effect: {effect}", Details = new Dictionary<string, object>() });
                 }
-                if (attackLog.WoundDice.Any())
+                if (attackLog.WoundDice.Count != 0)
                 {
                     log.Add(new CombatLogEntry { Step = step++, Phase = "Wound", Message = $"  [DICE] {string.Join(",", attackLog.WoundDice)}", Details = new Dictionary<string, object>() });
                 }
@@ -361,6 +378,16 @@ namespace OmniTactica.AppCode.Services
             // Save Rolls (if there were wounds)
             if ((attackLog.Wounds + attackLog.CriticalWounds + attackLog.MortalWounds) > 0 && attackLog.SaveAttempts.Count > 0)
             {
+                foreach (var effect in attackLog.SaveEffects)
+                {
+                    log.Add(new CombatLogEntry { Step = step++, Phase = "Save", Message = $"  Effect: {effect}", Details = new Dictionary<string, object>() });
+                }
+
+                if (attackLog.SaveEffects.Count > 0)
+                {
+                    log.Add(new CombatLogEntry { Step = step++, Phase = "Save", Message = "", Details = new Dictionary<string, object>() });
+                }
+
                 var groupedSaves = attackLog.SaveAttempts.GroupBy(s => s.DefenderName);
                 foreach (var defenderSaves in groupedSaves)
                 {
@@ -377,11 +404,15 @@ namespace OmniTactica.AppCode.Services
                             var result = save.Passed ? "🛡 Save Passed" : "✗ Save Failed";
                             log.Add(new CombatLogEntry { Step = step++, Phase = "Save", Message = $"  Roll: {save.Roll} vs {save.Target}+", Details = new Dictionary<string, object>() });
                             log.Add(new CombatLogEntry { Step = step++, Phase = "Save", Message = $"  {result} ({save.SaveType})", Details = new Dictionary<string, object>() });
+                            if (!string.IsNullOrWhiteSpace(save.Summary))
+                            {
+                                log.Add(new CombatLogEntry { Step = step++, Phase = "Save", Message = $"  ↳ {save.Summary}", Details = new Dictionary<string, object>() });
+                            }
                         }
                     }
                     log.Add(new CombatLogEntry { Step = step++, Phase = "Save", Message = "", Details = new Dictionary<string, object>() });
                 }
-                if (attackLog.SaveDice.Any())
+                if (attackLog.SaveDice.Count != 0)
                 {
                     log.Add(new CombatLogEntry { Step = step++, Phase = "Save", Message = $"  [DICE] {string.Join(",", attackLog.SaveDice)}", Details = new Dictionary<string, object>() });
                 }
@@ -394,6 +425,10 @@ namespace OmniTactica.AppCode.Services
                 foreach (var damageEvent in attackLog.DamageEvents)
                 {
                     log.Add(new CombatLogEntry { Step = step++, Phase = "Damage", Message = $"  {damageEvent}", Details = new Dictionary<string, object>() });
+                }
+                if (attackLog.DamageDice.Count > 0)
+                {
+                    log.Add(new CombatLogEntry { Step = step++, Phase = "Damage", Message = $"  [DICE] {string.Join(",", attackLog.DamageDice)}", Details = new Dictionary<string, object>() });
                 }
                 log.Add(new CombatLogEntry { Step = step++, Phase = "Damage", Message = "", Details = new Dictionary<string, object>() });
             }
@@ -415,7 +450,8 @@ namespace OmniTactica.AppCode.Services
             else
             {
                 var destroyedText = attackLog.TargetDestroyed ? " ☠️ Target destroyed" : "";
-                log.Add(new CombatLogEntry { Step = step++, Phase = "Result", Message = $"  💥 {attackLog.TotalDamage} damage inflicted{destroyedText}", Details = new Dictionary<string, object>() });
+                var overkillNote = attackLog.RawDamage > attackLog.TotalDamage ? $" ({attackLog.RawDamage} rolled, {attackLog.RawDamage - attackLog.TotalDamage} overkill)" : "";
+                log.Add(new CombatLogEntry { Step = step++, Phase = "Result", Message = $"  💥 {attackLog.TotalDamage} damage inflicted{overkillNote}{destroyedText}", Details = new Dictionary<string, object>() });
             }
 
             log.Add(new CombatLogEntry { Step = step++, Phase = "Result", Message = "", Details = new Dictionary<string, object>() });
@@ -423,11 +459,10 @@ namespace OmniTactica.AppCode.Services
 
         private static int DetermineAttacks(
             CombatWeapon weapon,
-            CombatUnit attackerUnit,
-            CombatModel attackerModel,
-            List<CombatUnit> defenders,
             VersusContext context,
-            AttackSequenceLog attackLog)
+            AttackSequenceLog? attackLog,
+            int defenderModelCount,
+            IReadOnlyList<ConditionalModifier> activeAttackerModifiers)
         {
             var attacks = ParseDiceValue(weapon.A);
 
@@ -450,34 +485,34 @@ namespace OmniTactica.AppCode.Services
                 if (isWithinHalfRange)
                 {
                     attacks += weapon.Abilities.RapidFire.Value;
-                    attackLog.AttackEffects.Add($"Rapid Fire: Added {weapon.Abilities.RapidFire.Value} attacks (within half range)");
+                    attackLog?.AttackEffects.Add($"Rapid Fire: Added {weapon.Abilities.RapidFire.Value} attacks (within half range)");
                 }
             }
 
             // Apply Blast
             if (weapon.Abilities.Blast)
             {
-                var totalDefenders = defenders.Sum(u => u.Models.Sum(m => m.Quantity));
-                if (totalDefenders >= 10)
+                var totalDefenders = defenderModelCount;
+                var blastBonus = totalDefenders / 5;
+                if (blastBonus > 0)
                 {
-                    attacks += 2;
-                    attackLog.AttackEffects.Add("Blast: Added 2 attacks (10+ models)");
-                }
-                else if (totalDefenders >= 5)
-                {
-                    attacks++;
-                    attackLog.AttackEffects.Add("Blast: Added 1 attack (5+ models)");
+                    attacks += blastBonus;
+                    attackLog?.AttackEffects.Add($"Blast: Added {blastBonus} attacks ({totalDefenders} models in target unit)");
                 }
             }
 
             // Apply modifiers from conditional modifiers
-            foreach (var modifier in weapon.Modifiers.Where(m => m.IsActive))
+            foreach (var modifier in activeAttackerModifiers)
             {
-                if (EvaluateCondition(modifier.Condition, context, attackerUnit, weapon, defenders) &&
-                    modifier.Effect.Type == EffectType.AddAttacks && modifier.Effect.IntValue.HasValue)
+                if (IsBuiltInRapidFireModifierHandledByWeaponAbility(weapon, modifier))
+                    continue;
+
+                if (modifier.Effect.Type == EffectType.AddAttacks &&
+                    (modifier.Effect.IntValue.HasValue || !string.IsNullOrWhiteSpace(modifier.Effect.StringValue)))
                 {
-                    attacks += modifier.Effect.IntValue.Value;
-                    attackLog.AttackEffects.Add($"{modifier.Name}: Added {modifier.Effect.IntValue.Value} attacks");
+                    var extraAttacks = RollEffectValue(modifier.Effect, 1);
+                    attacks += extraAttacks;
+                    attackLog?.AttackEffects.Add($"{modifier.Name}: Added {extraAttacks} attacks");
                 }
             }
 
@@ -486,46 +521,79 @@ namespace OmniTactica.AppCode.Services
 
         private static HitRollResult ResolveHitRolls(
             CombatWeapon weapon,
-            CombatUnit attackerUnit,
-            CombatModel attackerModel,
-            int attacks,
             VersusContext context,
-            SimulationRun run,
-            ref int step,
-            string modelDisplayName,
-            AttackSequenceLog attackLog)
+            int attacks,
+            AttackSequenceLog? attackLog,
+            AttackModifierCache modifierCache)
         {
             var result = new HitRollResult();
-            var actionVerb = IsMeleeWeapon(weapon) ? "attacks with" : "fires";
 
             // Torrent auto-hits
             if (weapon.Abilities.Torrent)
             {
                 result.Hits = attacks;
-                attackLog.HitEffects.Add("Torrent: All attacks auto-hit");
+                attackLog?.HitEffects.Add("Torrent: All attacks auto-hit");
                 return result;
             }
 
             var bsWs = weapon.BsWs;
             var hitModifier = context.AttackerGlobalModifiers.HitModifier;
 
-            // Apply modifiers
-            foreach (var modifier in weapon.Modifiers.Where(m => m.IsActive))
+            var skillImprovement = 0;
+            foreach (var modifier in modifierCache.ActiveAttackerModifiers)
             {
-                if (EvaluateCondition(modifier.Condition, context, attackerUnit, weapon, null) &&
-                    modifier.Effect.Type == EffectType.AddHitModifier && modifier.Effect.IntValue.HasValue)
+                var affectsSkill = IsMeleeWeapon(weapon)
+                    ? modifier.Effect.Type == EffectType.ImproveWeaponSkill
+                    : modifier.Effect.Type == EffectType.ImproveBallisticSkill;
+
+                if (affectsSkill && (modifier.Effect.IntValue.HasValue || !string.IsNullOrWhiteSpace(modifier.Effect.StringValue)))
                 {
-                    hitModifier += modifier.Effect.IntValue.Value;
+                    skillImprovement += RollEffectValue(modifier.Effect, 0);
                 }
             }
 
+            if (skillImprovement != 0)
+            {
+                var originalSkill = bsWs;
+                bsWs = Math.Clamp(bsWs - skillImprovement, 2, 6);
+                attackLog?.HitEffects.Add($"{(IsMeleeWeapon(weapon) ? "Weapon" : "Ballistic")} Skill improved: {originalSkill}+ → {bsWs}+");
+            }
+
+            foreach (var modifier in modifierCache.ActiveAttackerModifiers)
+            {
+                if (modifier.Effect.Type == EffectType.AddHitModifier &&
+                    (modifier.Effect.IntValue.HasValue || !string.IsNullOrWhiteSpace(modifier.Effect.StringValue)))
+                {
+                    hitModifier += RollEffectValue(modifier.Effect, 0);
+                }
+            }
+
+            foreach (var modifier in modifierCache.ActiveDefenderBattlefieldModifiers)
+            {
+                if (modifier.Effect.Type == EffectType.AddHitModifier &&
+                    (modifier.Effect.IntValue.HasValue || !string.IsNullOrWhiteSpace(modifier.Effect.StringValue)))
+                {
+                    hitModifier += RollEffectValue(modifier.Effect, 0);
+                }
+            }
+
+            var criticalHitThreshold = 6;
+            foreach (var modifier in modifierCache.ActiveAttackerModifiers)
+            {
+                if (modifier.Effect.Type == EffectType.CriticalHitOn &&
+                    (modifier.Effect.IntValue.HasValue || !string.IsNullOrWhiteSpace(modifier.Effect.StringValue)))
+                {
+                    criticalHitThreshold = Math.Min(criticalHitThreshold, RollEffectValue(modifier.Effect, 6));
+                }
+            }
+
+            hitModifier = Math.Clamp(hitModifier, -1, 1);
             var targetRoll = Math.Clamp(bsWs - hitModifier, 2, 6);
 
             // Check for reroll abilities
-            var rerollAll = weapon.Modifiers.Any(m => m.IsActive && EvaluateCondition(m.Condition, context, attackerUnit, weapon, null) && m.Effect.Type == EffectType.RerollHits);
-            var rerollOnes = weapon.Modifiers.Any(m => m.IsActive && EvaluateCondition(m.Condition, context, attackerUnit, weapon, null) && m.Effect.Type == EffectType.RerollOnes);
+            var rerollAll = modifierCache.ActiveAttackerModifiers.Any(m => m.Effect.Type == EffectType.RerollHits);
+            var rerollOnes = modifierCache.ActiveAttackerModifiers.Any(m => m.Effect.Type == EffectType.RerollOnes);
 
-            int misses = 0;
             for (int i = 0; i < attacks; i++)
             {
                 var roll = RollD6();
@@ -537,36 +605,55 @@ namespace OmniTactica.AppCode.Services
                     unmodifiedRoll = roll; // After reroll, the reroll result is the "unmodified" value
                 }
 
-                attackLog.HitDice.Add(roll);
+                attackLog?.HitDice.Add(roll);
 
                 if (roll >= targetRoll)
                 {
                     result.Hits++;
 
                     // Check for critical hit (unmodified 6, rerolls count as unmodified)
-                    if (unmodifiedRoll == 6)
+                    if (unmodifiedRoll >= criticalHitThreshold)
                     {
                         result.CriticalHits++;
 
-                        // Sustained Hits
+                        // Sustained Hits from weapon ability
                         if (weapon.Abilities.SustainedHits.HasValue)
                         {
                             result.Hits += weapon.Abilities.SustainedHits.Value;
-                            attackLog.HitEffects.Add($"Sustained Hits generated +{weapon.Abilities.SustainedHits.Value} additional hits");
+                            attackLog?.HitEffects.Add($"Sustained Hits generated +{weapon.Abilities.SustainedHits.Value} additional hits");
+                        }
+
+                        // Sustained Hits / AddExtraHitsOnCrit from conditional modifiers
+                        foreach (var modifier in modifierCache.CriticalHitTriggeredModifiers)
+                        {
+                            if (IsBuiltInCriticalHitModifierHandledByWeaponAbility(weapon, modifier))
+                                continue;
+
+                            if (modifier.Effect.Type == EffectType.AddExtraHitsOnCrit &&
+                                (modifier.Effect.IntValue.HasValue || !string.IsNullOrWhiteSpace(modifier.Effect.StringValue)))
+                            {
+                                var extraHits = RollEffectValue(modifier.Effect, 1);
+                                result.Hits += extraHits;
+                                attackLog?.HitEffects.Add($"{modifier.Name}: +{extraHits} extra hits on critical hit");
+                            }
                         }
 
                         // Lethal Hits
-                        if (weapon.Abilities.LethalHits)
+                        var autoWoundsOnCrit = weapon.Abilities.LethalHits ||
+                            modifierCache.CriticalHitTriggeredModifiers
+                                .Any(m => !IsBuiltInCriticalHitModifierHandledByWeaponAbility(weapon, m) && m.Effect.Type == EffectType.AutoWoundOnCrit);
+
+                        if (autoWoundsOnCrit)
                         {
                             result.AutoWounds++;
                             result.Hits--;
-                            attackLog.HitEffects.Add("Lethal Hits: Critical hit converted to auto-wound");
+                            attackLog?.HitEffects.Add("Critical hit converted to auto-wound");
                         }
                     }
                 }
                 else
                 {
-                    misses++;
+                    result.Misses++;
                 }
             }
 
@@ -575,56 +662,61 @@ namespace OmniTactica.AppCode.Services
 
         private static WoundRollResult ResolveWoundRolls(
             CombatWeapon weapon,
-            CombatUnit attackerUnit,
-            CombatModel attackerModel,
-            HitRollResult hitResult,
             List<CombatUnit> defenders,
             VersusContext context,
-            SimulationRun run,
-            ref int step,
-            string modelDisplayName,
-            AttackSequenceLog attackLog)
+            HitRollResult hitResult,
+            AttackSequenceLog? attackLog,
+            AttackModifierCache modifierCache)
         {
-            var result = new WoundRollResult { MortalWounds = hitResult.AutoWounds };
+            var result = new WoundRollResult { Wounds = hitResult.AutoWounds };
 
             var totalHits = hitResult.Hits;
             if (totalHits <= 0) return result;
 
             var strength = weapon.S;
-            var averageToughness = CalculateAverageToughness(defenders);
-            var woundTarget = CalculateWoundTarget(strength, averageToughness);
+            var majorityToughness = CalculateMajorityToughness(defenders); 
+            var woundTarget = CalculateWoundTarget(weapon.S, majorityToughness);
 
             var woundModifier = context.AttackerGlobalModifiers.WoundModifier;
 
-            // Apply modifiers
-            foreach (var modifier in weapon.Modifiers.Where(m => m.IsActive))
+            foreach (var modifier in modifierCache.ActiveAttackerModifiers)
             {
-                if (EvaluateCondition(modifier.Condition, context, attackerUnit, weapon, defenders) &&
-                    modifier.Effect.Type == EffectType.AddWoundModifier && modifier.Effect.IntValue.HasValue)
+                if (modifier.Effect.Type == EffectType.AddWoundModifier &&
+                    (modifier.Effect.IntValue.HasValue || !string.IsNullOrWhiteSpace(modifier.Effect.StringValue)))
                 {
-                    woundModifier += modifier.Effect.IntValue.Value;
+                    woundModifier += RollEffectValue(modifier.Effect, 0);
                 }
             }
 
+            foreach (var modifier in modifierCache.ActiveDefenderBattlefieldModifiers)
+            {
+                if (modifier.Effect.Type == EffectType.AddWoundModifier &&
+                    (modifier.Effect.IntValue.HasValue || !string.IsNullOrWhiteSpace(modifier.Effect.StringValue)))
+                {
+                    woundModifier += RollEffectValue(modifier.Effect, 0);
+                }
+            }
+
+            woundModifier = Math.Clamp(woundModifier, -1, 1);
             woundTarget = Math.Clamp(woundTarget - woundModifier, 2, 6);
 
             // Check for CriticalWoundOn modifiers (e.g., Anti-Infantry 3+)
             var criticalWoundThreshold = 6;
-            foreach (var modifier in weapon.Modifiers.Where(m => m.IsActive))
+            foreach (var modifier in modifierCache.ActiveAttackerModifiers)
             {
-                if (EvaluateCondition(modifier.Condition, context, attackerUnit, weapon, defenders) &&
-                    modifier.Effect.Type == EffectType.CriticalWoundOn && modifier.Effect.IntValue.HasValue)
+                if (modifier.Effect.Type == EffectType.CriticalWoundOn &&
+                    (modifier.Effect.IntValue.HasValue || !string.IsNullOrWhiteSpace(modifier.Effect.StringValue)))
                 {
-                    criticalWoundThreshold = Math.Min(criticalWoundThreshold, modifier.Effect.IntValue.Value);
-                    attackLog.WoundEffects.Add($"{modifier.Name}: Critical wounds on {modifier.Effect.IntValue.Value}+");
+                    var threshold = RollEffectValue(modifier.Effect, 6);
+                    criticalWoundThreshold = Math.Min(criticalWoundThreshold, threshold);
+                    attackLog?.WoundEffects.Add($"{modifier.Name}: Critical wounds on {threshold}+");
                 }
             }
 
             // Check for rerolls
-            var rerollAll = weapon.Abilities.TwinLinked || weapon.Modifiers.Any(m => m.IsActive && EvaluateCondition(m.Condition, context, attackerUnit, weapon, defenders) && m.Effect.Type == EffectType.RerollWounds);
-            var rerollOnes = weapon.Modifiers.Any(m => m.IsActive && EvaluateCondition(m.Condition, context, attackerUnit, weapon, defenders) && m.Effect.Type == EffectType.RerollOnes);
+            var rerollAll = weapon.Abilities.TwinLinked || modifierCache.ActiveAttackerModifiers.Any(m => m.Effect.Type == EffectType.RerollWounds);
+            var rerollOnes = modifierCache.ActiveAttackerModifiers.Any(m => m.Effect.Type == EffectType.RerollOnes);
 
-            int failedToWound = 0;
             for (int i = 0; i < totalHits; i++)
             {
                 var roll = RollD6();
@@ -640,7 +732,7 @@ namespace OmniTactica.AppCode.Services
                     }
                 }
 
-                attackLog.WoundDice.Add(roll);
+                attackLog?.WoundDice.Add(roll);
 
                 // Check for critical wound first (using unmodified roll)
                 // Critical wounds always succeed, even if they wouldn't normally wound
@@ -655,17 +747,21 @@ namespace OmniTactica.AppCode.Services
                         result.CriticalWounds++;
 
                         // Devastating Wounds
-                        if (weapon.Abilities.DevastatingWounds)
+                        var convertsToMortalWounds = weapon.Abilities.DevastatingWounds ||
+                            modifierCache.CriticalWoundTriggeredModifiers
+                                .Any(m => !IsBuiltInCriticalWoundModifierHandledByWeaponAbility(weapon, m) && m.Effect.Type == EffectType.ConvertToMortalWounds);
+
+                        if (convertsToMortalWounds)
                         {
-                            result.MortalWounds++;
+                            result.DevastatingMortalWounds++;
                             result.Wounds--;
-                            attackLog.WoundEffects.Add("Devastating Wounds: Critical wound converted to mortal wound");
+                            attackLog?.WoundEffects.Add("Critical wound converted to mortal wound");
                         }
                     }
                 }
                 else
                 {
-                    failedToWound++;
+                    result.FailedWounds++;
                 }
             }
 
@@ -675,36 +771,45 @@ namespace OmniTactica.AppCode.Services
         private static DamageResult AllocateWounds(
             CombatWeapon weapon,
             CombatUnit attackerUnit,
+            CombatModel attackerModel,
             WoundRollResult woundResult,
             List<CombatUnit> defenders,
             VersusContext context,
             SimulationRun run,
             ref int step,
             string modelDisplayName,
-            AttackSequenceLog attackLog)
+            AttackSequenceLog? attackLog,
+            IReadOnlyList<ConditionalModifier> activeAttackerModifiers)
         {
             var result = new DamageResult();
-            var totalWounds = woundResult.Wounds + woundResult.MortalWounds;
-            var initialNormalWounds = woundResult.Wounds;
-            var initialMortalWounds = woundResult.MortalWounds;
+            var totalWounds = woundResult.Wounds + woundResult.MortalWounds + woundResult.DevastatingMortalWounds;
 
             if (totalWounds <= 0) return result;
 
             // Get target models based on allocation method
             var targetModels = GetWoundAllocationTargets(defenders, context.SimulationSettings.WoundAllocation);
+            var defenderModifierCache = new Dictionary<string, IReadOnlyList<ConditionalModifier>>(targetModels.Count);
 
-            foreach (var targetModel in targetModels)
+            for (var targetIndex = 0; targetIndex < targetModels.Count; targetIndex++)
             {
+                var targetModel = targetModels[targetIndex];
                 if (totalWounds <= 0) break;
                 if (targetModel.IsDestroyed) continue;
 
-                var defenderUnit = defenders.First(u => u.Models.Contains(targetModel));
+                var defenderUnit = targetModel.ParentUnit!;
+                if (!defenderModifierCache.TryGetValue(targetModel.Id, out var activeDefenderModifiers))
+                {
+                    activeDefenderModifiers = GetActiveDefenderModifiers(context, attackerUnit, weapon, defenderUnit, targetModel, defenders).ToList();
+                    defenderModifierCache[targetModel.Id] = activeDefenderModifiers;
+                }
 
                 // Allocate one wound at a time
                 while (totalWounds > 0 && !targetModel.IsDestroyed)
                 {
-                    var isMortal = woundResult.MortalWounds > 0;
-                    if (isMortal) woundResult.MortalWounds--;
+                    var isDevastatingMortal = woundResult.DevastatingMortalWounds > 0;
+                    var isMortal = isDevastatingMortal || woundResult.MortalWounds > 0;
+                    if (isDevastatingMortal) woundResult.DevastatingMortalWounds--;
+                    else if (woundResult.MortalWounds > 0) woundResult.MortalWounds--;
                     else woundResult.Wounds--;
 
                     var damage = 0;
@@ -713,8 +818,20 @@ namespace OmniTactica.AppCode.Services
                     {
                         // Mortal wounds bypass saves
                         damage = RollDamage(weapon.D);
+                        attackLog?.DamageDice.Add(damage);
                         result.UnsavedWounds++;
-                        attackLog.SaveAttempts.Add(new SaveAttempt
+
+                        // Apply weapon damage bonus modifiers (e.g. Melta)
+                        foreach (var modifier in activeAttackerModifiers)
+                        {
+                            if (modifier.Effect.Type == EffectType.AddDamageModifier &&
+                                (modifier.Effect.IntValue.HasValue || !string.IsNullOrWhiteSpace(modifier.Effect.StringValue)))
+                            {
+                                damage += RollEffectValue(modifier.Effect, 0);
+                            }
+                        }
+
+                        attackLog?.SaveAttempts.Add(new SaveAttempt
                         {
                             DefenderName = $"{targetModel.Name} ({defenderUnit.DatasheetName})",
                             IsMortalWound = true
@@ -723,20 +840,21 @@ namespace OmniTactica.AppCode.Services
                     else
                     {
                         // Regular wound - resolve save
-                        var saveResult = ResolveSave(weapon, targetModel, defenderUnit, context, run, ref step, attackerUnit.DatasheetName);
+                        var saveResult = ResolveSave(weapon, attackerUnit, attackerModel, targetModel, defenderUnit, defenders, context, run, ref step, attackerUnit.DatasheetName, attackLog, activeAttackerModifiers, activeDefenderModifiers);
 
-                        attackLog.SaveAttempts.Add(new SaveAttempt
+                        attackLog?.SaveAttempts.Add(new SaveAttempt
                         {
                             DefenderName = $"{targetModel.Name} ({defenderUnit.DatasheetName})",
                             Roll = saveResult.Roll,
                             Target = saveResult.Target,
                             Passed = saveResult.Saved,
                             SaveType = saveResult.UsedInvulnerable ? "Invuln" : "Armor",
+                            Summary = saveResult.Summary,
                             IsMortalWound = false
                         });
 
                         if (saveResult.Roll > 0)
-                            attackLog.SaveDice.Add(saveResult.Roll);
+                            attackLog?.SaveDice.Add(saveResult.Roll);
 
                         if (saveResult.Saved)
                         {
@@ -747,53 +865,118 @@ namespace OmniTactica.AppCode.Services
                         {
                             result.FailedSaves++;
                             damage = RollDamage(weapon.D);
+                            attackLog?.DamageDice.Add(damage);
                             result.UnsavedWounds++;
 
-                            // Apply damage modifiers
-                            foreach (var modifier in targetModel.Modifiers.Where(m => m.IsActive))
+                            // Apply weapon damage bonus modifiers (e.g. Melta)
+                            foreach (var modifier in activeAttackerModifiers)
                             {
-                                if (modifier.Effect.Type == EffectType.ReduceDamage && modifier.Effect.IntValue.HasValue)
+                                if (modifier.Effect.Type == EffectType.AddDamageModifier &&
+                                    (modifier.Effect.IntValue.HasValue || !string.IsNullOrWhiteSpace(modifier.Effect.StringValue)))
                                 {
-                                    var reduction = modifier.Effect.IntValue.Value;
-                                    damage = Math.Max(1, damage - reduction);
-                                    result.DamagePrevented += reduction;
-                                }
-                                else if (modifier.Effect.Type == EffectType.HalveDamage)
-                                {
-                                    var halved = damage / 2;
-                                    result.DamagePrevented += damage - Math.Max(1, halved);
-                                    damage = Math.Max(1, halved);
+                                    damage += RollEffectValue(modifier.Effect, 0);
                                 }
                             }
 
-                            // Apply Feel No Pain
-                            if (targetModel.Modifiers.Any(m => m.IsActive && m.Effect.Type == EffectType.FeelNoPain))
+                            // Apply damage modifiers
+                            foreach (var modifier in activeDefenderModifiers)
                             {
-                                var fnpRoll = RollD6();
-                                var fnpValue = targetModel.Modifiers.First(m => m.IsActive && m.Effect.Type == EffectType.FeelNoPain).Effect.IntValue ?? 5;
-                                if (fnpRoll >= fnpValue)
+                                if (modifier.Effect.Type == EffectType.ReduceDamage &&
+                                    (modifier.Effect.IntValue.HasValue || !string.IsNullOrWhiteSpace(modifier.Effect.StringValue)))
                                 {
-                                    result.FeelNoPainSaves++;
-                                    result.DamagePrevented += damage;
-                                    damage = 0;
+                                    var originalDamage = damage;
+                                    var reduction = RollEffectValue(modifier.Effect, 0);
+                                    damage = Math.Max(1, damage - reduction);
+                                    var prevented = originalDamage - damage;
+                                    result.DamagePrevented += prevented;
+                                    if (prevented > 0)
+                                    {
+                                        attackLog?.DamageEvents.Add($"{modifier.Name}: reduced damage {originalDamage} → {damage} on {targetModel.Name} ({defenderUnit.DatasheetName})");
+                                    }
+                                }
+                                else if (modifier.Effect.Type == EffectType.HalveDamage)
+                                {
+                                    var originalDamage = damage;
+                                    var halved = damage / 2;
+                                    var reducedDamage = Math.Max(1, halved);
+                                    result.DamagePrevented += originalDamage - reducedDamage;
+                                    if (originalDamage != reducedDamage)
+                                    {
+                                        attackLog?.DamageEvents.Add($"{modifier.Name}: reduced damage {originalDamage} → {reducedDamage} on {targetModel.Name} ({defenderUnit.DatasheetName})");
+                                    }
+                                    damage = reducedDamage;
                                 }
                             }
                         }
                     }
 
+                    damage = ApplyFeelNoPain(context, attackerUnit, weapon, defenderUnit, targetModel, defenders, damage, result, attackLog, activeDefenderModifiers);
+
                     // Apply damage
                     if (damage > 0)
                     {
-                        // Cap effective damage to remaining wounds (excess damage is overkill and lost)
-                        var effectiveDamage = Math.Min(damage, targetModel.CurrentWounds);
-                        targetModel.CurrentWounds = Math.Max(0, targetModel.CurrentWounds - damage);
-                        result.TotalDamage += effectiveDamage;
-
-                        attackLog.DamageEvents.Add($"{damage} damage to {targetModel.Name} ({defenderUnit.DatasheetName}) - {targetModel.CurrentWounds}/{targetModel.MaxWounds} remaining");
-
-                        if (targetModel.IsDestroyed)
+                        if (isMortal && !isDevastatingMortal)
                         {
-                            attackLog.TargetDestroyed = true;
+                            var originalDamage = damage;
+                            var remainingDamage = damage;
+                            var currentIndex = targetIndex;
+
+                            while (remainingDamage > 0 && currentIndex < targetModels.Count)
+                            {
+                                var spillTarget = targetModels[currentIndex];
+                                if (spillTarget.IsDestroyed)
+                                {
+                                    currentIndex++;
+                                    continue;
+                                }
+
+                                var spillUnit = spillTarget.ParentUnit!;
+                                var appliedDamage = Math.Min(remainingDamage, spillTarget.CurrentWounds);
+                                spillTarget.CurrentWounds = Math.Max(0, spillTarget.CurrentWounds - appliedDamage);
+                                result.TotalDamage += appliedDamage;
+                                remainingDamage -= appliedDamage;
+
+                                if (attackLog != null)
+                                {
+                                    attackLog.DamageEvents.Add($"{appliedDamage} mortal damage to {spillTarget.Name} ({spillUnit.DatasheetName}) - {spillTarget.CurrentWounds}/{spillTarget.MaxWounds} remaining");
+                                }
+
+                                if (spillTarget.IsDestroyed)
+                                {
+                                    attackLog?.DamageEvents.Add($"Mortal wounds spill over from {spillTarget.Name} to the next model");
+                                    attackLog?.TargetDestroyed = true;
+                                    currentIndex++;
+                                }
+                            }
+
+                            if (attackLog != null)
+                            {
+                                attackLog.RawDamage += originalDamage;
+                                if (remainingDamage > 0)
+                                {
+                                    attackLog.DamageEvents.Add($"{remainingDamage} mortal damage lost (no remaining models)");
+                                }
+                            }
+                        }
+                        else
+                        {
+                            // Cap effective damage to remaining wounds (excess damage is overkill and lost)
+                            var effectiveDamage = Math.Min(damage, targetModel.CurrentWounds);
+                            targetModel.CurrentWounds = Math.Max(0, targetModel.CurrentWounds - damage);
+                            result.TotalDamage += effectiveDamage;
+
+                            if (attackLog != null)
+                            {
+                                attackLog.RawDamage += damage;
+                                var cappedNote = damage > effectiveDamage ? $" ({effectiveDamage} effective, {damage - effectiveDamage} overkill)" : "";
+                                var damageLabel = isDevastatingMortal ? "mortal damage" : "damage";
+                                attackLog.DamageEvents.Add($"{damage} {damageLabel} to {targetModel.Name} ({defenderUnit.DatasheetName}){cappedNote} - {targetModel.CurrentWounds}/{targetModel.MaxWounds} remaining");
+                            }
+
+                            if (targetModel.IsDestroyed)
+                            {
+                                attackLog?.TargetDestroyed = true;
+                            }
                         }
                     }
 
@@ -806,34 +989,116 @@ namespace OmniTactica.AppCode.Services
 
         private static SaveResult ResolveSave(
             CombatWeapon weapon,
+            CombatUnit attackerUnit,
+            CombatModel attackerModel,
             CombatModel defender,
             CombatUnit defenderUnit,
+            List<CombatUnit> defenders,
             VersusContext context,
             SimulationRun run,
             ref int step,
-            string attackerName)
+            string attackerName,
+            AttackSequenceLog? attackLog,
+            IReadOnlyList<ConditionalModifier> activeAttackerModifiers,
+            IReadOnlyList<ConditionalModifier> activeDefenderModifiers)
         {
             var result = new SaveResult();
 
+            var originalAp = weapon.AP;
             var ap = weapon.AP;
+            var originalArmorSave = defender.Sv;
             var armorSave = defender.Sv;
             var invulnSave = defender.InvSv;
 
+            foreach (var modifier in activeAttackerModifiers)
+            {
+                if (modifier.Effect.Type == EffectType.AddAPModifier &&
+                    (modifier.Effect.IntValue.HasValue || !string.IsNullOrWhiteSpace(modifier.Effect.StringValue)))
+                {
+                    ap -= RollEffectValue(modifier.Effect, 0);
+                }
+            }
+
             // Apply cover
-            if (context.DefenderGlobalModifiers.Cover && !weapon.Abilities.IgnoresCover && !context.AttackerGlobalModifiers.IgnoreCover)
+            var ignoresCover = weapon.Abilities.IgnoresCover || context.AttackerGlobalModifiers.IgnoreCover ||
+                activeAttackerModifiers.Any(m => m.Effect.Type == EffectType.IgnoreCover);
+
+            var isRangedAttack = !IsMeleeWeapon(weapon);
+            var coverEligible = isRangedAttack && !(originalArmorSave <= 3 && ap >= 0);
+
+            if (context.DefenderGlobalModifiers.Cover && !ignoresCover && coverEligible)
             {
                 armorSave -= 1;
             }
 
+            if (context.DefenderGlobalModifiers.Cover)
+            {
+                if (ignoresCover)
+                {
+                    AddUniqueLogMessage(attackLog?.SaveEffects, "Cover ignored");
+                }
+                else if (!isRangedAttack)
+                {
+                    AddUniqueLogMessage(attackLog?.SaveEffects, "Cover does not apply in melee");
+                }
+                else if (!coverEligible)
+                {
+                    AddUniqueLogMessage(attackLog?.SaveEffects, "Cover does not apply to 3+/2+ armor against AP 0");
+                }
+                else
+                {
+                    AddUniqueLogMessage(attackLog?.SaveEffects, $"Cover applied: armor {originalArmorSave}+ → {armorSave}+");
+                }
+            }
+
             var modifiedArmorSave = Math.Clamp(armorSave - ap, 2, 7);
+
+            if (ap != originalAp)
+            {
+                AddUniqueLogMessage(attackLog?.SaveEffects, $"AP modified: {FormatAp(originalAp)} → {FormatAp(ap)}");
+            }
+
+            var ignoreInvulnerable = activeAttackerModifiers.Any(m => m.Effect.Type == EffectType.IgnoreInvulnerable);
+
+            if (ignoreInvulnerable && invulnSave > 0)
+            {
+                AddUniqueLogMessage(attackLog?.SaveEffects, $"Invulnerable save ignored ({invulnSave}+)");
+            }
 
             // Choose best save
             var effectiveSave = modifiedArmorSave;
-            if (invulnSave > 0 && invulnSave < modifiedArmorSave)
+            if (!ignoreInvulnerable && invulnSave > 0 && invulnSave < modifiedArmorSave)
             {
                 effectiveSave = invulnSave;
                 result.UsedInvulnerable = true;
+                AddUniqueLogMessage(attackLog?.SaveEffects, $"Using invulnerable save: {invulnSave}+");
             }
+            else
+            {
+                AddUniqueLogMessage(attackLog?.SaveEffects, $"Using armor save: {modifiedArmorSave}+");
+            }
+
+            var saveModifier = context.DefenderGlobalModifiers.SaveModifier;
+            foreach (var modifier in activeDefenderModifiers)
+            {
+                if (modifier.Effect.Type == EffectType.AddSaveModifier &&
+                    (modifier.Effect.IntValue.HasValue || !string.IsNullOrWhiteSpace(modifier.Effect.StringValue)))
+                {
+                    saveModifier += RollEffectValue(modifier.Effect, 0);
+                }
+            }
+
+            var saveBeforeModifier = effectiveSave;
+            effectiveSave = Math.Clamp(effectiveSave - saveModifier, 2, 7);
+
+            if (saveModifier != 0)
+            {
+                AddUniqueLogMessage(attackLog?.SaveEffects, $"Save modifier {FormatSigned(saveModifier)}: {saveBeforeModifier}+ → {effectiveSave}+");
+            }
+
+            result.Summary = result.UsedInvulnerable
+                ? $"Invuln {effectiveSave}+ ({FormatAp(ap)} AP)"
+                : $"Armor {effectiveSave}+ ({FormatAp(ap)} AP)";
 
             if (effectiveSave >= 7)
             {
@@ -855,37 +1120,58 @@ namespace OmniTactica.AppCode.Services
 
         private static List<CombatModel> GetWoundAllocationTargets(List<CombatUnit> defenders, WoundAllocationMethod method)
         {
-            var allModels = defenders
-                .SelectMany(u => u.Models)
-                .Where(m => !m.IsDestroyed)
-                .ToList();
+            //var allModels = defenders
+            //    .SelectMany(u => u.Models)
+            //    .Where(m => !m.IsDestroyed)
+            //    .ToList();
 
-            return method switch
+            var allModels = new List<CombatModel>();
+
+            foreach (var u in defenders)
+                foreach (var m in u.Models)
+                    if (!m.IsDestroyed)
+                        allModels.Add(m);
+
+            switch (method)   
             {
-                WoundAllocationMethod.TargetWeakest => allModels.OrderBy(m => m.CurrentWounds).ToList(),
-                WoundAllocationMethod.TargetStrongest => allModels.OrderByDescending(m => m.CurrentWounds).ToList(),
-                WoundAllocationMethod.RandomAllocation => allModels.OrderBy(_ => Random.Shared.Next()).ToList(),
-                _ => allModels
-            };
+                case WoundAllocationMethod.TargetWeakest:
+                    return allModels.OrderBy(m => m.CurrentWounds).ToList();
+
+                case WoundAllocationMethod.TargetStrongest:
+                    return allModels.OrderByDescending(m => m.CurrentWounds).ToList();
+
+                case WoundAllocationMethod.RandomAllocation:
+                    for (int i = allModels.Count - 1; i > 0; i--)
+                    {
+                        int j = _rng.Value!.Next(i + 1);
+                        (allModels[i], allModels[j]) = (allModels[j], allModels[i]);
+                    }
+                    return allModels;
+                default:
+                    return allModels;
+            }
         }
 
-        private static int CalculateAverageToughness(List<CombatUnit> defenders)
+        private static int CalculateMajorityToughness(List<CombatUnit> defenders)
         {
-            var livingModels = new List<CombatModel>();
+            var counts = new Dictionary<int, int>();
+
             foreach (var unit in defenders)
             {
                 foreach (var model in unit.Models)
                 {
-                    if (!model.IsDestroyed)
-                    {
-                        for (int i = 0; i < model.Quantity; i++)
-                            livingModels.Add(model);
-                    }
+                    if (model.IsDestroyed)
+                        continue;
+
+                    counts.TryAdd(model.T, 0);
+                    counts[model.T]++;
                 }
             }
 
-            if (!livingModels.Any()) return 1;
-            return (int)Math.Round(livingModels.Average(m => m.T));
+            if (counts.Count == 0)
+                return 1;
+
+            return counts.OrderByDescending(x => x.Value).First().Key;
         }
 
         private static int CalculateWoundTarget(int strength, int toughness)
@@ -904,12 +1190,15 @@ namespace OmniTactica.AppCode.Services
                 ConditionType.Always => true,
                 ConditionType.UnitCharged => context.SimulationSettings.AttackerCharged,
                 ConditionType.TargetWithinHalfRange => IsWithinHalfRange(context, weapon),
+                ConditionType.TargetWithinEngagementRange => IsWithinEngagementRange(context, weapon),
+                ConditionType.UnitRemainedStationary => context.SimulationSettings.AttackerRemainedStationary,
                 ConditionType.TargetUnitSize5Plus => defenders != null && defenders.Sum(u => u.Models.Sum(m => m.Quantity)) >= 5,
                 ConditionType.TargetUnitSize10Plus => defenders != null && defenders.Sum(u => u.Models.Sum(m => m.Quantity)) >= 10,
                 ConditionType.TargetHasKeyword => defenders != null && !string.IsNullOrEmpty(condition.Value) && defenders.Any(u => u.DatasheetDetail?.Keywords.Any(k => k.Equals(condition.Value, StringComparison.OrdinalIgnoreCase)) == true),
                 ConditionType.TargetIsInfantry => defenders != null && defenders.Any(u => u.DatasheetDetail?.Keywords.Any(k => k.Equals("Infantry", StringComparison.OrdinalIgnoreCase)) == true),
                 ConditionType.TargetIsVehicle => defenders != null && defenders.Any(u => u.DatasheetDetail?.Keywords.Any(k => k.Equals("Vehicle", StringComparison.OrdinalIgnoreCase)) == true),
                 ConditionType.TargetIsMonster => defenders != null && defenders.Any(u => u.DatasheetDetail?.Keywords.Any(k => k.Equals("Monster", StringComparison.OrdinalIgnoreCase)) == true),
+                ConditionType.TargetIsCharacter => defenders != null && defenders.Any(u => u.DatasheetDetail?.Keywords.Any(k => k.Equals("Character", StringComparison.OrdinalIgnoreCase)) == true),
                 _ => false
             };
         }
@@ -927,6 +1216,14 @@ namespace OmniTactica.AppCode.Services
             return context.SimulationSettings.RangeToTarget.Value <= weaponRange / 2;
         }
 
+        private static bool IsWithinEngagementRange(VersusContext context, CombatWeapon weapon)
+        {
+            if (IsMeleeWeapon(weapon))
+                return true;
+
+            return context.SimulationSettings.RangeToTarget.HasValue && context.SimulationSettings.RangeToTarget.Value <= 1;
+        }
+
         private static List<CombatUnit> CloneUnits(List<CombatUnit> units)
         {
             var cloned = new List<CombatUnit>();
@@ -939,6 +1236,7 @@ namespace OmniTactica.AppCode.Services
                     DatasheetId = unit.DatasheetId,
                     DatasheetName = unit.DatasheetName,
                     FactionId = unit.FactionId,
+                    Modifiers = unit.Modifiers.ToList(),
                     DatasheetDetail = unit.DatasheetDetail // Preserve DatasheetDetail for keyword checks
                 };
 
@@ -962,7 +1260,8 @@ namespace OmniTactica.AppCode.Services
                             OC = model.OC,
                             CurrentWounds = model.W,
                             MaxWounds = model.W,
-                            Modifiers = model.Modifiers.ToList()
+                            Modifiers = model.Modifiers.ToList(),
+                            ParentUnit = clonedUnit
                         });
                     }
                 }
@@ -1014,12 +1313,18 @@ namespace OmniTactica.AppCode.Services
             };
 
             // Sample log from first simulation
-            if (simulations.Any())
+            if (simulations.Count != 0)
             {
                 var sampleLog = simulations[0].Log;
                 if (sampleLog != null)
                 {
                     result.SampleCombatLog = new List<CombatLogEntry>(sampleLog);
+                }
+
+                foreach (var sim in simulations)
+                {
+                    if (sim.Log != null)
+                        ReturnLog(sim.Log);
                 }
             }
 
@@ -1033,6 +1338,83 @@ namespace OmniTactica.AppCode.Services
             return Math.Sqrt(sumOfSquares / values.Count);
         }
 
+        private static void AddUniqueLogMessage(List<string>? messages, string message)
+        {
+            if (messages == null || string.IsNullOrWhiteSpace(message) || messages.Contains(message))
+                return;
+
+            messages.Add(message);
+        }
+
+        private static string FormatAp(int ap)
+        {
+            return ap > 0 ? $"+{ap}" : ap.ToString();
+        }
+
+        private static string FormatSigned(int value)
+        {
+            return value > 0 ? $"+{value}" : value.ToString();
+        }
+
+        private static int ApplyFeelNoPain(
+            VersusContext context,
+            CombatUnit attackerUnit,
+            CombatWeapon weapon,
+            CombatUnit defenderUnit,
+            CombatModel targetModel,
+            List<CombatUnit> defenders,
+            int damage,
+            DamageResult result,
+            AttackSequenceLog? attackLog,
+            IReadOnlyList<ConditionalModifier> activeDefenderModifiers)
+        {
+            if (damage <= 0)
+                return 0;
+
+            var feelNoPainModifiers = activeDefenderModifiers
+                .Where(m => m.Effect.Type == EffectType.FeelNoPain)
+                .Select(m => new
+                {
+                    Modifier = m,
+                    Target = RollEffectValue(m.Effect, 5)
+                })
+                .Where(x => x.Target > 0)
+                .OrderBy(x => x.Target)
+                .ToList();
+
+            if (feelNoPainModifiers.Count == 0)
+                return damage;
+
+            var bestFeelNoPain = feelNoPainModifiers[0];
+            var ignoredDamage = 0;
+            var rolls = new List<int>(damage);
+
+            for (var i = 0; i < damage; i++)
+            {
+                var roll = RollD6();
+                rolls.Add(roll);
+
+                if (roll >= bestFeelNoPain.Target)
+                {
+                    ignoredDamage++;
+                }
+            }
+
+            if (ignoredDamage > 0)
+            {
+                result.FeelNoPainSaves += ignoredDamage;
+                result.DamagePrevented += ignoredDamage;
+            }
+
+            attackLog?.DamageEvents.Add(
+                $"{bestFeelNoPain.Modifier.Name}: ignored {ignoredDamage} of {damage} damage on {targetModel.Name} ({defenderUnit.DatasheetName})");
+
+            attackLog?.DamageEvents.Add(
+                $"[VERBOSE] {bestFeelNoPain.Modifier.Name}: rolls [{string.Join(", ", rolls)}] vs {bestFeelNoPain.Target}+");
+
+            return damage - ignoredDamage;
+        }
+
         private static bool IsMeleeWeapon(CombatWeapon weapon)
         {
             return string.IsNullOrEmpty(weapon.Range) || 
@@ -1040,55 +1422,83 @@ namespace OmniTactica.AppCode.Services
                    weapon.Range.Equals("-", StringComparison.OrdinalIgnoreCase);
         }
 
-        private static int RollD6() => Random.Shared.Next(1, 7);
+        private static readonly ThreadLocal<Random> _rng =
+            new(() => new Random());
 
-        private static int RollDamage(string damageString)
+        private static int RollD6() => _rng.Value!.Next(1, 7);
+
+        /// <summary>
+        /// Resolves a modifier effect value, rolling dice if the value is an expression like D3, D6+1, 2D6.
+        /// Falls back to IntValue for plain integers saved before StringValue support was added.
+        /// </summary>
+        private static int RollEffectValue(ModifierEffect effect, int fallback = 0)
         {
-            if (string.IsNullOrEmpty(damageString)) return 0;
+            if (!string.IsNullOrWhiteSpace(effect.StringValue))
+                return RollDamage(effect.StringValue);
+            return effect.IntValue ?? fallback;
+        }
 
-            damageString = damageString.Trim();
+        private static int RollDamage(string damage)
+        {
+            if (string.IsNullOrWhiteSpace(damage))
+                return 0;
 
-            if (int.TryParse(damageString, out var flatDamage))
-                return flatDamage;
+            if (int.TryParse(damage, out int flat))
+                return flat;
 
-            var match = Regex.Match(damageString, @"(\d*)D(\d+)(?:\+(\d+))?", RegexOptions.IgnoreCase);
-            if (match.Success)
+            int dIndex = damage.IndexOf('D');
+
+            int dice =
+                dIndex == 0
+                    ? 1
+                    : int.Parse(damage.Substring(0, dIndex));
+
+            int plusIndex = damage.IndexOf('+');
+
+            int size;
+            int mod = 0;
+
+            if (plusIndex > 0)
             {
-                var numDice = string.IsNullOrEmpty(match.Groups[1].Value) ? 1 : int.Parse(match.Groups[1].Value);
-                var diceSize = int.Parse(match.Groups[2].Value);
-                var modifier = match.Groups[3].Success ? int.Parse(match.Groups[3].Value) : 0;
-
-                var total = 0;
-                for (int i = 0; i < numDice; i++)
-                {
-                    total += Random.Shared.Next(1, diceSize + 1);
-                }
-                return total + modifier;
+                size = int.Parse(damage.Substring(dIndex + 1, plusIndex - dIndex - 1));
+                mod = int.Parse(damage[(plusIndex + 1)..]);
+            }
+            else
+            {
+                size = int.Parse(damage[(dIndex + 1)..]);
             }
 
-            return 1;
+            int total = 0;
+
+            for (int i = 0; i < dice; i++)
+                total += _rng.Value!.Next(1, size + 1);
+
+            return total + mod;
         }
 
         private static int ParseDiceValue(string value)
         {
-            if (string.IsNullOrEmpty(value)) return 0;
+            if (string.IsNullOrWhiteSpace(value))
+                return 0;
 
             value = value.Trim();
 
-            if (int.TryParse(value, out var result))
-                return result;
+            if (int.TryParse(value, out int flat))
+                return flat;
 
-            var match = Regex.Match(value, @"(\d*)D(\d+)", RegexOptions.IgnoreCase);
-            if (match.Success)
-            {
-                var numDice = string.IsNullOrEmpty(match.Groups[1].Value) ? 1 : int.Parse(match.Groups[1].Value);
-                var diceSize = int.Parse(match.Groups[2].Value);
+            int dIndex = value.IndexOf('D');
 
-                var avg = numDice * (diceSize + 1) / 2;
-                return avg;
-            }
+            if (dIndex == -1)
+                return 0;
 
-            return 0;
+            int dice =
+                dIndex == 0
+                    ? 1
+                    : int.Parse(value.Substring(0, dIndex));
+
+            int size = int.Parse(value.Substring(dIndex + 1));
+
+            return dice * (size + 1) / 2;
         }
 
         private static int ParseRangeValue(string range)
@@ -1102,6 +1512,33 @@ namespace OmniTactica.AppCode.Services
                 return result;
 
             return 0;
+        }
+
+        private static readonly ObjectPool<List<CombatLogEntry>> _logPool =
+            new DefaultObjectPool<List<CombatLogEntry>>(new ListPolicy<CombatLogEntry>());
+
+        private static List<CombatLogEntry> GetLog()
+        {
+            var log = _logPool.Get();
+            log.Clear();
+            return log;
+        }
+
+        private static void ReturnLog(List<CombatLogEntry> log)
+        {
+            log.Clear();
+            _logPool.Return(log);
+        }
+
+        class ListPolicy<T> : PooledObjectPolicy<List<T>>
+        {
+            public override List<T> Create() => new List<T>(256);
+
+            public override bool Return(List<T> obj)
+            {
+                obj.Clear();
+                return true;
+            }
         }
 
         private static void Log(SimulationRun run, int step, string phase, string attackerUnit, string attackerModel,
@@ -1126,32 +1563,213 @@ namespace OmniTactica.AppCode.Services
         /// <summary>
         /// Collects and formats weapon abilities for display.
         /// </summary>
-        private static void CollectWeaponAbilities(CombatWeapon weapon, AttackSequenceLog attackLog)
+        private static void CollectWeaponAbilities(CombatWeapon weapon, AttackSequenceLog? attackLog)
         {
+            if (attackLog == null) return;
+
             // Add all abilities from the list
             foreach (var ability in weapon.Abilities.Abilities)
             {
-                attackLog.WeaponAbilities.Add(ability.DisplayName);
+                attackLog?.WeaponAbilities.Add(ability.DisplayName);
             }
         }
 
         /// <summary>
         /// Collects active conditional modifiers for display.
         /// </summary>
-        private static void CollectActiveModifiers(CombatWeapon weapon, VersusContext context, 
-            CombatUnit attackerUnit, List<CombatUnit> defenders, AttackSequenceLog attackLog)
+        private static void CollectActiveModifiers(IReadOnlyList<ConditionalModifier> activeAttackerModifiers, AttackSequenceLog? attackLog)
         {
-            foreach (var modifier in weapon.Modifiers.Where(m => m.IsActive))
+            if (attackLog == null) return;
+            foreach (var modifier in activeAttackerModifiers)
             {
-                if (EvaluateCondition(modifier.Condition, context, attackerUnit, weapon, defenders))
+                if (modifier.Condition.Type == ConditionType.CriticalHit || modifier.Condition.Type == ConditionType.CriticalWound)
+                    continue;
+
+                var effectDescription = GetEffectDescription(modifier.Effect);
+                if (!string.IsNullOrEmpty(effectDescription))
                 {
-                    var effectDescription = GetEffectDescription(modifier.Effect);
-                    if (!string.IsNullOrEmpty(effectDescription))
+                    attackLog?.ActiveModifiers.Add($"{modifier.Name}: {effectDescription}");
+                }
+            }
+        }
+
+        private static AttackModifierCache BuildModifierCache(
+            VersusContext context,
+            CombatUnit attackerUnit,
+            CombatModel attackerModel,
+            CombatWeapon weapon,
+            List<CombatUnit> defenders)
+        {
+            var activeAttackerModifiers = new List<ConditionalModifier>();
+            var criticalHitTriggeredModifiers = new List<ConditionalModifier>();
+            var criticalWoundTriggeredModifiers = new List<ConditionalModifier>();
+
+            foreach (var modifier in GetAttackerModifiers(context, attackerUnit, attackerModel, weapon))
+            {
+                if (!modifier.IsActive)
+                    continue;
+
+                if (modifier.Condition.Type == ConditionType.CriticalHit)
+                {
+                    criticalHitTriggeredModifiers.Add(modifier);
+                    continue;
+                }
+
+                if (modifier.Condition.Type == ConditionType.CriticalWound)
+                {
+                    criticalWoundTriggeredModifiers.Add(modifier);
+                    continue;
+                }
+
+                if (!EvaluateCondition(modifier.Condition, context, attackerUnit, weapon, defenders))
+                    continue;
+
+                activeAttackerModifiers.Add(modifier);
+                criticalHitTriggeredModifiers.Add(modifier);
+                criticalWoundTriggeredModifiers.Add(modifier);
+            }
+
+            var activeDefenderBattlefieldModifiers = new List<ConditionalModifier>();
+            var seenDefenderModifierIds = new HashSet<string>(StringComparer.Ordinal);
+
+            foreach (var modifier in context.DefenderGlobalModifiers.Modifiers)
+            {
+                AddActiveDefenderBattlefieldModifier(context, attackerUnit, weapon, defenders, modifier, activeDefenderBattlefieldModifiers, seenDefenderModifierIds);
+            }
+
+            foreach (var defender in defenders)
+            {
+                foreach (var modifier in defender.Modifiers)
+                {
+                    AddActiveDefenderBattlefieldModifier(context, attackerUnit, weapon, defenders, modifier, activeDefenderBattlefieldModifiers, seenDefenderModifierIds);
+                }
+
+                foreach (var model in defender.Models)
+                {
+                    foreach (var modifier in model.Modifiers)
                     {
-                        attackLog.ActiveModifiers.Add($"{modifier.Name}: {effectDescription}");
+                        AddActiveDefenderBattlefieldModifier(context, attackerUnit, weapon, defenders, modifier, activeDefenderBattlefieldModifiers, seenDefenderModifierIds);
                     }
                 }
             }
+
+            return new AttackModifierCache(activeAttackerModifiers, criticalHitTriggeredModifiers, criticalWoundTriggeredModifiers, activeDefenderBattlefieldModifiers);
+        }
+
+        private static void AddActiveDefenderBattlefieldModifier(
+            VersusContext context,
+            CombatUnit attackerUnit,
+            CombatWeapon weapon,
+            List<CombatUnit> defenders,
+            ConditionalModifier modifier,
+            List<ConditionalModifier> activeDefenderBattlefieldModifiers,
+            HashSet<string> seenDefenderModifierIds)
+        {
+            if (!modifier.IsActive ||
+                !seenDefenderModifierIds.Add(modifier.Id) ||
+                !EvaluateCondition(modifier.Condition, context, attackerUnit, weapon, defenders))
+            {
+                return;
+            }
+
+            activeDefenderBattlefieldModifiers.Add(modifier);
+        }
+
+        private static IEnumerable<ConditionalModifier> GetActiveAttackerModifiers(
+            VersusContext context,
+            CombatUnit attackerUnit,
+            CombatModel attackerModel,
+            CombatWeapon weapon,
+            List<CombatUnit>? defenders)
+        {
+            return GetAttackerModifiers(context, attackerUnit, attackerModel, weapon)
+                .Where(m => m.IsActive && EvaluateCondition(m.Condition, context, attackerUnit, weapon, defenders));
+        }
+
+        private static IEnumerable<ConditionalModifier> GetCriticalHitTriggeredModifiers(
+            VersusContext context,
+            CombatUnit attackerUnit,
+            CombatModel attackerModel,
+            CombatWeapon weapon,
+            List<CombatUnit>? defenders)
+        {
+            return GetAttackerModifiers(context, attackerUnit, attackerModel, weapon)
+                .Where(m => m.IsActive && (m.Condition.Type == ConditionType.CriticalHit || EvaluateCondition(m.Condition, context, attackerUnit, weapon, defenders)));
+        }
+
+        private static IEnumerable<ConditionalModifier> GetCriticalWoundTriggeredModifiers(
+            VersusContext context,
+            CombatUnit attackerUnit,
+            CombatModel attackerModel,
+            CombatWeapon weapon,
+            List<CombatUnit>? defenders)
+        {
+            return GetAttackerModifiers(context, attackerUnit, attackerModel, weapon)
+                .Where(m => m.IsActive && (m.Condition.Type == ConditionType.CriticalWound || EvaluateCondition(m.Condition, context, attackerUnit, weapon, defenders)));
+        }
+
+        private static IEnumerable<ConditionalModifier> GetAttackerModifiers(
+            VersusContext context,
+            CombatUnit attackerUnit,
+            CombatModel attackerModel,
+            CombatWeapon weapon)
+        {
+            return context.AttackerGlobalModifiers.Modifiers
+                .Concat(attackerUnit.Modifiers)
+                .Concat(attackerModel.Modifiers)
+                .Concat(weapon.Modifiers);
+        }
+
+        private static IEnumerable<ConditionalModifier> GetActiveDefenderModifiers(
+            VersusContext context,
+            CombatUnit attackerUnit,
+            CombatWeapon weapon,
+            CombatUnit defenderUnit,
+            CombatModel defenderModel,
+            List<CombatUnit> defenders)
+        {
+            return context.DefenderGlobalModifiers.Modifiers
+                .Concat(defenderUnit.Modifiers)
+                .Concat(defenderModel.Modifiers)
+                .Where(m => m.IsActive && EvaluateCondition(m.Condition, context, attackerUnit, weapon, defenders));
+        }
+
+        private static IEnumerable<ConditionalModifier> GetActiveDefenderBattlefieldModifiers(
+            VersusContext context,
+            CombatUnit attackerUnit,
+            CombatWeapon weapon,
+            List<CombatUnit> defenders)
+        {
+            return context.DefenderGlobalModifiers.Modifiers
+                .Concat(defenders.SelectMany(u => u.Modifiers))
+                .Concat(defenders.SelectMany(u => u.Models.SelectMany(m => m.Modifiers)))
+                .Where(m => m.IsActive && EvaluateCondition(m.Condition, context, attackerUnit, weapon, defenders))
+                .GroupBy(m => m.Id)
+                .Select(g => g.First());
+        }
+
+        private static bool IsBuiltInRapidFireModifierHandledByWeaponAbility(CombatWeapon weapon, ConditionalModifier modifier)
+        {
+            return weapon.Abilities.RapidFire.HasValue &&
+                modifier.Effect.Type == EffectType.AddAttacks &&
+                modifier.Name.Contains("Rapid Fire", StringComparison.OrdinalIgnoreCase) &&
+                modifier.Name.Contains("(Built-in)", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsBuiltInCriticalHitModifierHandledByWeaponAbility(CombatWeapon weapon, ConditionalModifier modifier)
+        {
+            if (!modifier.Name.Contains("(Built-in)", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            return (modifier.Effect.Type == EffectType.AddExtraHitsOnCrit && weapon.Abilities.SustainedHits.HasValue) ||
+                   (modifier.Effect.Type == EffectType.AutoWoundOnCrit && weapon.Abilities.LethalHits);
+        }
+
+        private static bool IsBuiltInCriticalWoundModifierHandledByWeaponAbility(CombatWeapon weapon, ConditionalModifier modifier)
+        {
+            return modifier.Name.Contains("(Built-in)", StringComparison.OrdinalIgnoreCase) &&
+                   modifier.Effect.Type == EffectType.ConvertToMortalWounds &&
+                   weapon.Abilities.DevastatingWounds;
         }
 
         /// <summary>
@@ -1162,6 +1780,8 @@ namespace OmniTactica.AppCode.Services
             return effect.Type switch
             {
                 EffectType.AddHitModifier => $"+{effect.IntValue} to Hit",
+                EffectType.ImproveBallisticSkill => $"Improve Ballistic Skill by {effect.IntValue}",
+                EffectType.ImproveWeaponSkill => $"Improve Weapon Skill by {effect.IntValue}",
                 EffectType.AddWoundModifier => $"+{effect.IntValue} to Wound",
                 EffectType.AddSaveModifier => $"+{effect.IntValue} to Save",
                 EffectType.AddAPModifier => $"+{effect.IntValue} AP",
@@ -1181,6 +1801,44 @@ namespace OmniTactica.AppCode.Services
                 EffectType.ConvertToMortalWounds => "Convert to Mortal Wounds",
                 _ => ""
             };
+        }
+
+        private static List<AttackInstance> BuildAttackInstances(VersusContext context)
+        {
+            var list = new List<AttackInstance>();
+
+            foreach (var unit in context.AttackingUnits)
+            {
+                foreach (var model in unit.Models)
+                {
+                    foreach (var weapon in model.Weapons)
+                    {
+                        if (!weapon.IsSelected)
+                            continue;
+
+                        for (int i = 0; i < weapon.Quantity; i++)
+                        {
+                            list.Add(new AttackInstance
+                            {
+                                Unit = unit,
+                                Model = model,
+                                Weapon = weapon,
+                                Instance = i + 1
+                            });
+                        }
+                    }
+                }
+            }
+
+            return list;
+        }
+
+        private readonly struct AttackInstance
+        {
+            public CombatUnit Unit { get; init; }
+            public CombatModel Model { get; init; }
+            public CombatWeapon Weapon { get; init; }
+            public int Instance { get; init; }
         }
 
         // Internal classes for simulation
@@ -1205,10 +1863,13 @@ namespace OmniTactica.AppCode.Services
             public int MortalWounds { get; set; }
             public List<string> WoundEffects { get; set; } = new();
             public List<int> WoundDice { get; set; } = new();
+            public List<string> SaveEffects { get; set; } = new();
             public List<SaveAttempt> SaveAttempts { get; set; } = new();
             public List<int> SaveDice { get; set; } = new();
             public int TotalDamage { get; set; }
+            public int RawDamage { get; set; }
             public List<string> AttackEffects { get; set; } = new();
+            public List<int> DamageDice { get; set; } = new();
             public List<string> DamageEvents { get; set; } = new();
             public bool TargetDestroyed { get; set; }
         }
@@ -1220,6 +1881,7 @@ namespace OmniTactica.AppCode.Services
             public int Target { get; set; }
             public bool Passed { get; set; }
             public string SaveType { get; set; } = string.Empty;
+            public string Summary { get; set; } = string.Empty;
             public bool IsMortalWound { get; set; }
         }
 
@@ -1247,29 +1909,32 @@ namespace OmniTactica.AppCode.Services
             public double Damage { get; set; }
         }
 
-        private class HitRollResult
+        private struct HitRollResult
         {
-            public int Hits { get; set; }
-            public int CriticalHits { get; set; }
-            public int AutoWounds { get; set; }
+            public int Hits;
+            public int CriticalHits;
+            public int AutoWounds;
+            public int Misses;
         }
 
-        private class WoundRollResult
+        private struct WoundRollResult
         {
-            public int Wounds { get; set; }
-            public int CriticalWounds { get; set; }
-            public int MortalWounds { get; set; }
+            public int Wounds;
+            public int CriticalWounds;
+            public int MortalWounds;
+            public int DevastatingMortalWounds;
+            public int FailedWounds;
         }
 
-        private class DamageResult
+        private struct DamageResult
         {
-            public double TotalDamage { get; set; }
-            public int UnsavedWounds { get; set; }
-            public int FailedSaves { get; set; }
-            public int SuccessfulSaves { get; set; }
-            public int InvulnerableSaves { get; set; }
-            public int FeelNoPainSaves { get; set; }
-            public double DamagePrevented { get; set; }
+            public double TotalDamage;
+            public int UnsavedWounds;
+            public int FailedSaves;
+            public int SuccessfulSaves;
+            public int InvulnerableSaves;
+            public int FeelNoPainSaves;
+            public double DamagePrevented;
         }
 
         private class SaveResult
@@ -1278,6 +1943,30 @@ namespace OmniTactica.AppCode.Services
             public bool UsedInvulnerable { get; set; }
             public int Roll { get; set; }
             public int Target { get; set; }
+            public string Summary { get; set; } = string.Empty;
+        }
+
+        private sealed class AttackModifierCache
+        {
+            public AttackModifierCache(
+                List<ConditionalModifier> activeAttackerModifiers,
+                List<ConditionalModifier> criticalHitTriggeredModifiers,
+                List<ConditionalModifier> criticalWoundTriggeredModifiers,
+                List<ConditionalModifier> activeDefenderBattlefieldModifiers)
+            {
+                ActiveAttackerModifiers = activeAttackerModifiers;
+                CriticalHitTriggeredModifiers = criticalHitTriggeredModifiers;
+                CriticalWoundTriggeredModifiers = criticalWoundTriggeredModifiers;
+                ActiveDefenderBattlefieldModifiers = activeDefenderBattlefieldModifiers;
+            }
+
+            public IReadOnlyList<ConditionalModifier> ActiveAttackerModifiers { get; }
+
+            public IReadOnlyList<ConditionalModifier> CriticalHitTriggeredModifiers { get; }
+
+            public IReadOnlyList<ConditionalModifier> CriticalWoundTriggeredModifiers { get; }
+
+            public IReadOnlyList<ConditionalModifier> ActiveDefenderBattlefieldModifiers { get; }
         }
     }
 }

@@ -57,6 +57,8 @@ namespace OmniTactica.AppCode.Models.Core
 
         // Reference to original datasheet model
         public DatasheetModel? DatasheetModel { get; set; }
+
+        public CombatUnit? ParentUnit { get; set; }
     }
 
     /// <summary>
@@ -184,6 +186,8 @@ namespace OmniTactica.AppCode.Models.Core
     public enum EffectType
     {
         AddHitModifier,
+        ImproveBallisticSkill,
+        ImproveWeaponSkill,
         AddWoundModifier,
         AddSaveModifier,
         AddAPModifier,
@@ -227,6 +231,7 @@ namespace OmniTactica.AppCode.Models.Core
         public WoundAllocationMethod WoundAllocation { get; set; } = WoundAllocationMethod.EvenDistribution;
         public bool EnableDetailedLogging { get; set; } = true;
         public bool AttackerCharged { get; set; } = false;
+        public bool AttackerRemainedStationary { get; set; } = false;
         public int? RangeToTarget { get; set; }
         public CombatPhaseMode CombatPhase { get; set; } = CombatPhaseMode.Both;
     }

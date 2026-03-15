@@ -1,6 +1,7 @@
 using OmniTactica.AppCode.Models.Core;
 using OmniTactica.AppCode.Repositories;
 using OmniTactica.AppCode.Utilities;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace OmniTactica.AppCode.Services
@@ -11,13 +12,18 @@ namespace OmniTactica.AppCode.Services
     public class VersusService
     {
         private readonly DatasheetRepository _datasheetRepo;
+        private readonly IPreferences _preferences;
         private VersusContext _context = new();
+
+        private const string SettingsKey = "VersusSimulationSettings";
 
         public event Action? OnContextChanged;
 
-        public VersusService(DatasheetRepository datasheetRepo)
+        public VersusService(DatasheetRepository datasheetRepo, IPreferences preferences)
         {
             _datasheetRepo = datasheetRepo;
+            _preferences = preferences;
+            _context.SimulationSettings = LoadSettings();
         }
 
         public VersusContext GetContext() => _context;
@@ -454,12 +460,13 @@ namespace OmniTactica.AppCode.Services
                 {
                     var targetModel = everyModelMatch.Groups[1].Value.Trim();
                     weaponsPart = everyModelMatch.Groups[2].Value.Trim();
-                    // Match both singular and plural forms
-                    // "Every Deathwing Knight" should match "Deathwing Knights" from composition
-                    appliesToThisModel = 
+                    // Match both singular and plural forms.
+                    // "Every Fire Dragon" should match "Fire Dragons" from composition (via TrimEnd 's').
+                    // Do NOT use modelName.Contains(targetModel) — that would wrongly match
+                    // "Fire Dragon Exarch" against "Every Fire Dragon is equipped with:".
+                    appliesToThisModel =
                         targetModel.Equals(modelName, StringComparison.OrdinalIgnoreCase) ||
                         targetModel.TrimEnd('s').Equals(modelName.TrimEnd('s'), StringComparison.OrdinalIgnoreCase) ||
-                        modelName.Contains(targetModel, StringComparison.OrdinalIgnoreCase) ||
                         targetModel.Contains(modelName, StringComparison.OrdinalIgnoreCase);
                 }
 
@@ -523,16 +530,23 @@ namespace OmniTactica.AppCode.Services
 
         private static DatasheetWargear? FindWargear(IEnumerable<DatasheetWargear> allWargear, string weaponName)
         {
-            var singularWeaponName = weaponName.EndsWith('s') ? weaponName[..^1] : null;
+            var list = allWargear.ToList();
 
-            return allWargear.FirstOrDefault(wargear =>
-                       wargear.Name.Equals(weaponName, StringComparison.OrdinalIgnoreCase) ||
-                       weaponName.Contains(wargear.Name, StringComparison.OrdinalIgnoreCase))
-                   ?? (singularWeaponName != null
-                       ? allWargear.FirstOrDefault(wargear =>
-                           wargear.Name.Equals(singularWeaponName, StringComparison.OrdinalIgnoreCase) ||
-                           singularWeaponName.Contains(wargear.Name, StringComparison.OrdinalIgnoreCase))
-                       : null);
+            // 1. Exact match — highest priority, prevents e.g. "Dragon fusion gun" being
+            //    returned when looking up "Exarch's Dragon fusion gun".
+            var exact = list.FirstOrDefault(w => w.Name.Equals(weaponName, StringComparison.OrdinalIgnoreCase));
+            if (exact != null) return exact;
+
+            // 2. Singular / plural variant (e.g. "bolt rifles" → "bolt rifle").
+            if (weaponName.EndsWith('s'))
+            {
+                var singular = weaponName[..^1];
+                var singularMatch = list.FirstOrDefault(w => w.Name.Equals(singular, StringComparison.OrdinalIgnoreCase));
+                if (singularMatch != null) return singularMatch;
+            }
+
+            // 3. Substring fallback — only used when no exact name exists in the wargear list.
+            return list.FirstOrDefault(w => weaponName.Contains(w.Name, StringComparison.OrdinalIgnoreCase));
         }
 
         /// <summary>
@@ -751,7 +765,30 @@ namespace OmniTactica.AppCode.Services
         public void UpdateSimulationSettings(SimulationSettings settings)
         {
             _context.SimulationSettings = settings;
+            SaveSettings(settings);
             OnContextChanged?.Invoke();
+        }
+
+        private void SaveSettings(SimulationSettings settings)
+        {
+            try
+            {
+                var json = JsonSerializer.Serialize(settings);
+                _preferences.Set(SettingsKey, json);
+            }
+            catch { /* non-critical */ }
+        }
+
+        private SimulationSettings LoadSettings()
+        {
+            try
+            {
+                var json = _preferences.Get(SettingsKey, string.Empty);
+                if (!string.IsNullOrEmpty(json))
+                    return JsonSerializer.Deserialize<SimulationSettings>(json) ?? new SimulationSettings();
+            }
+            catch { /* non-critical */ }
+            return new SimulationSettings();
         }
 
         public void SwapAttackerDefender()
@@ -763,7 +800,9 @@ namespace OmniTactica.AppCode.Services
 
         public void ClearAll()
         {
+            var savedSettings = _context.SimulationSettings;
             _context = new VersusContext();
+            _context.SimulationSettings = savedSettings;
             OnContextChanged?.Invoke();
         }
     }

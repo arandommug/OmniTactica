@@ -78,6 +78,14 @@
                 </div>
 
                 <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" @bind="localSettings.AttackerRemainedStationary" id="attackerStationaryCheck" />
+                    <label class="form-check-label" for="attackerStationaryCheck">
+                        Attacker Remained Stationary
+                    </label>
+                    <div class="form-text">Affects stationary-dependent abilities like Heavy</div>
+                </div>
+
+                <div class="form-check mb-3">
                     <input class="form-check-input" type="checkbox" @bind="localSettings.EnableDetailedLogging" id="detailedLoggingCheck" />
                     <label class="form-check-label" for="detailedLoggingCheck">
                         Enable Detailed Combat Log
@@ -115,6 +123,7 @@
             WoundAllocation = Settings.WoundAllocation,
             EnableDetailedLogging = Settings.EnableDetailedLogging,
             AttackerCharged = Settings.AttackerCharged,
+            AttackerRemainedStationary = Settings.AttackerRemainedStationary,
             RangeToTarget = Settings.RangeToTarget,
             CombatPhase = Settings.CombatPhase
         };

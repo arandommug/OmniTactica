@@ -5,6 +5,8 @@
 
 @inject WahaSQLiteService DB
 @inject WahaDataService Data
+@inject NavigationManager Navigation
+@inject FactionViewerState ViewerState
 
 <style>
     .factionList {
@@ -30,12 +32,29 @@
                     @if (DB.DatabaseExists && !loading)
                     {
                         <div class="mt-3">
-                            <input type="text" 
-                                   class="form-control" 
-                                   placeholder="Search factions..." 
+                            <input type="text"
+                                   class="form-control"
+                                   placeholder="Search everything (faction, detachment, unit, stratagem, enhancement...)"
                                    @bind="searchText"
                                    @bind:event="oninput"
-                                   @bind:after="FilterFactions" />
+                                   @bind:after="PerformGlobalSearchAsync" />
+                            @if (searchResults.Any())
+                            {
+                                <div class="list-group mt-1">
+                                    @foreach (var r in searchResults.Take(8))
+                                    {
+                                        <button class="list-group-item list-group-item-action" @onclick="() => NavigateToSearchResult(r)">
+                                            <div class="d-flex w-100 justify-content-between">
+                                                <div>
+                                                    <strong>@r.Name</strong>
+                                                    <div class="text-muted" style="font-size:0.85rem">@r.TypeDisplay @if(!string.IsNullOrEmpty(r.Context)) { <span>· @r.Context</span> }</div>
+                                                </div>
+                                                <small class="text-muted">@r.Type</small>
+                                            </div>
+                                        </button>
+                                    }
+                                </div>
+                            }
                         </div>
                     }
                 </div>
@@ -92,6 +111,20 @@
     private List<Faction> filteredFactions = new();
     private string searchText = string.Empty;
     private bool loading = true;
+    private List<SearchResult> searchResults = new();
+
+    private sealed record SearchResult(string Type, string Name, string Id, string? FactionId, int? DetachmentId, string? Context)
+    {
+        public string TypeDisplay => Type switch
+        {
+            "Faction" => "Faction",
+            "Detachment" => "Detachment",
+            "Datasheet" => "Unit",
+            "Stratagem" => "Stratagem",
+            "Enhancement" => "Enhancement",
+            _ => Type
+        };
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -106,17 +139,145 @@
         loading = false;
     }
 
-    private void FilterFactions()
+    private async Task PerformGlobalSearchAsync()
     {
+        // If search text empty, reset
         if (string.IsNullOrWhiteSpace(searchText))
         {
+            searchResults = new List<SearchResult>();
             filteredFactions = factions;
+            StateHasChanged();
+            return;
         }
-        else
+
+        var q = $"%{searchText}%";
+        var results = new List<SearchResult>();
+
+        try
         {
-            filteredFactions = factions
-                .Where(f => f.Name.Contains(searchText, StringComparison.OrdinalIgnoreCase))
-                .ToList();
+            await using var conn = DB.CreateConnection();
+            await conn.OpenAsync();
+
+            // Factions
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "SELECT id, name FROM Factions WHERE name LIKE @q ORDER BY name LIMIT 20";
+                cmd.Parameters.AddWithValue("@q", q);
+                await using var reader = await cmd.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    results.Add(new SearchResult("Faction", reader.GetString(1), reader.GetString(0), null, null, null));
+                }
+            }
+
+            // Detachments
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "SELECT id, faction_id, name FROM Detachments WHERE name LIKE @q ORDER BY name LIMIT 20";
+                cmd.Parameters.AddWithValue("@q", q);
+                await using var reader = await cmd.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    results.Add(new SearchResult("Detachment", reader.GetString(2), reader.GetInt32(0).ToString(), reader.GetString(1), reader.GetInt32(0), null));
+                }
+            }
+
+            // Datasheets (units)
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "SELECT id, faction_id, name FROM Datasheets WHERE name LIKE @q ORDER BY name LIMIT 40";
+                cmd.Parameters.AddWithValue("@q", q);
+                await using var reader = await cmd.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    var id = reader.GetInt32(0).ToString();
+                    var factionId = reader.IsDBNull(1) ? null : reader.GetString(1);
+                    results.Add(new SearchResult("Datasheet", reader.GetString(2), id, factionId, null, factionId));
+                }
+            }
+
+            // Stratagems
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "SELECT id, faction_id, detachment_id, name FROM Stratagems WHERE name LIKE @q ORDER BY name LIMIT 40";
+                cmd.Parameters.AddWithValue("@q", q);
+                await using var reader = await cmd.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    var detId = reader.IsDBNull(2) ? (int?)null : reader.GetInt32(2);
+                    results.Add(new SearchResult("Stratagem", reader.GetString(3), reader.GetInt32(0).ToString(), reader.IsDBNull(1) ? null : reader.GetString(1), detId, reader.IsDBNull(1) ? null : reader.GetString(1)));
+                }
+            }
+
+            // Enhancements
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "SELECT id, faction_id, detachment_id, name FROM Enhancements WHERE name LIKE @q ORDER BY name LIMIT 40";
+                cmd.Parameters.AddWithValue("@q", q);
+                await using var reader = await cmd.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    var detId = reader.IsDBNull(2) ? (int?)null : reader.GetInt32(2);
+                    results.Add(new SearchResult("Enhancement", reader.GetString(3), reader.GetInt32(0).ToString(), reader.IsDBNull(1) ? null : reader.GetString(1), detId, reader.IsDBNull(1) ? null : reader.GetString(1)));
+                }
+            }
         }
+        catch (Exception)
+        {
+            // ignore errors and keep results empty
+        }
+
+        // Simple ordering: factions first, then units, detachments, stratagems, enhancements
+        searchResults = results
+            .OrderBy(r => r.Type == "Faction" ? 0 : r.Type == "Datasheet" ? 1 : r.Type == "Detachment" ? 2 : r.Type == "Stratagem" ? 3 : 4)
+            .ThenBy(r => r.Name)
+            .ToList();
+
+        // Also filter displayed faction list if search appears to be a faction name search
+        filteredFactions = string.IsNullOrWhiteSpace(searchText)
+            ? factions
+            : factions.Where(f => f.Name.Contains(searchText, StringComparison.OrdinalIgnoreCase)).ToList();
+
+        StateHasChanged();
+    }
+
+    private void NavigateToSearchResult(SearchResult r)
+    {
+        // Clear results and navigate appropriately
+        searchResults.Clear();
+
+        if (r.Type == "Faction")
+        {
+            Navigation.NavigateTo($"/faction/{r.Id}");
+            return;
+        }
+
+        if (r.Type == "Datasheet")
+        {
+            if (!string.IsNullOrEmpty(r.FactionId))
+                Navigation.NavigateTo($"/faction/{r.FactionId}/unit/{r.Id}");
+            else
+                Navigation.NavigateTo($"/unit/{r.Id}");
+            return;
+        }
+
+        // For detachment/stratagem/enhancement navigate to faction and preselect detachment when available
+        if (!string.IsNullOrEmpty(r.FactionId))
+        {
+            if (r.DetachmentId.HasValue)
+            {
+                ViewerState.SetFactionContext(r.FactionId!, r.DetachmentId.Value);
+            }
+            else
+            {
+                ViewerState.SetFactionContext(r.FactionId!, null);
+            }
+
+            Navigation.NavigateTo($"/faction/{r.FactionId}");
+            return;
+        }
+
+        // Fallback: navigate to root
+        Navigation.NavigateTo("/");
     }
 }

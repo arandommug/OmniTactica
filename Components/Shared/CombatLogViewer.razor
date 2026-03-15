@@ -280,6 +280,18 @@
                         <!-- SAVE PHASE -->
                         @if (attackGroup.SaveAttempts.Any())
                         {
+                            @if (attackGroup.SaveEffects.Any())
+                            {
+                                <div class="phase-section mb-2 bg-light p-2 rounded">
+                                    <div class="ms-3">
+                                        @foreach (var effect in attackGroup.SaveEffects)
+                                        {
+                                            <div class="text-muted small">Effect: @effect</div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+
                             var groupedSaves = attackGroup.SaveAttempts.GroupBy(s => s.DefenderName);
                             @foreach (var defenderSaves in groupedSaves)
                             {
@@ -311,6 +323,10 @@
                                                         <span>— <i class="fa fa-times"></i> Save Failed (@save.SaveType)</span>
                                                     }
                                                 </div>
+                                                @if (!string.IsNullOrWhiteSpace(save.Summary))
+                                                {
+                                                    <div class="text-muted small">@save.Summary</div>
+                                                }
                                             }
                                         }
                                         @if (VerboseMode && attackGroup.SaveDice.Any() && defenderSaves.Any(s => !s.IsMortalWound))
@@ -333,9 +349,15 @@
                                     Damage
                                 </div>
                                 <div class="ms-3">
-                                    @foreach (var damageEvent in attackGroup.DamageEvents)
+                                    @foreach (var damageEvent in attackGroup.DamageEvents.Where(e => VerboseMode || !IsVerboseMessage(e)))
                                     {
-                                        <div>@damageEvent</div>
+                                        <div>@StripVerbosePrefix(damageEvent)</div>
+                                    }
+                                    @if (VerboseMode && attackGroup.DamageDice.Any())
+                                    {
+                                        <div class="text-muted small mt-1">
+                                            <i class="fa fa-dice"></i> Damage Dice: [@string.Join(",", attackGroup.DamageDice)]
+                                        </div>
                                     }
                                 </div>
                             </div>
@@ -582,6 +604,14 @@ else
                             });
                         }
                     }
+                    else if (entry.Message.TrimStart().StartsWith("↳") && currentGroup.SaveAttempts.Any())
+                    {
+                        currentGroup.SaveAttempts.Last().Summary = entry.Message.TrimStart().TrimStart('↳').Trim();
+                    }
+                    else if (entry.Message.Contains("Effect:"))
+                    {
+                        currentGroup.SaveEffects.Add(entry.Message.Replace("Effect:", "").Trim());
+                    }
                     else if ((entry.Message.Contains("🛡 Save Passed") || entry.Message.Contains("✗ Save Failed")) && currentGroup.SaveAttempts.Any())
                     {
                         var lastSave = currentGroup.SaveAttempts.Last();
@@ -601,16 +631,14 @@ else
                     break;
 
                 case "Damage":
-                    if (!string.IsNullOrWhiteSpace(entry.Message) && !entry.Message.Contains("Damage") && !entry.Message.Contains("═"))
+                    if (entry.Message.Contains("[DICE]"))
+                    {
+                        var diceStr = entry.Message.Replace("[DICE]", "").Trim();
+                        currentGroup.DamageDice = ParseDiceList(diceStr);
+                    }
+                    else if (!string.IsNullOrWhiteSpace(entry.Message) && !entry.Message.Contains("Damage") && !entry.Message.Contains("═"))
                     {
                         currentGroup.DamageEvents.Add(entry.Message.Trim());
-
-                        // Try to extract total damage
-                        var dmgMatch = System.Text.RegularExpressions.Regex.Match(entry.Message, @"(\d+) damage");
-                        if (dmgMatch.Success)
-                        {
-                            currentGroup.TotalDamage += int.Parse(dmgMatch.Groups[1].Value);
-                        }
                     }
                     break;
 
@@ -625,6 +653,15 @@ else
                         if (dmgMatch.Success)
                         {
                             currentGroup.TotalDamage = int.Parse(dmgMatch.Groups[1].Value);
+                        }
+                        var rawMatch = System.Text.RegularExpressions.Regex.Match(entry.Message, @"(\d+) rolled");
+                        if (rawMatch.Success)
+                        {
+                            currentGroup.RawDamage = int.Parse(rawMatch.Groups[1].Value);
+                        }
+                        else
+                        {
+                            currentGroup.RawDamage = currentGroup.TotalDamage;
                         }
                     }
                     break;
@@ -675,7 +712,21 @@ else
             return "Saved";
         if (log.TargetDestroyed)
             return "Destroyed";
+        if (log.RawDamage > log.TotalDamage)
+            return $"{log.TotalDamage} Dmg ({log.RawDamage} rolled)";
         return $"{log.TotalDamage} Damage";
+    }
+
+    private static bool IsVerboseMessage(string message)
+    {
+        return message.StartsWith("[VERBOSE] ", StringComparison.Ordinal);
+    }
+
+    private static string StripVerbosePrefix(string message)
+    {
+        return IsVerboseMessage(message)
+            ? message[10..]
+            : message;
     }
 
     private class AttackGroupLog
@@ -701,10 +752,13 @@ else
         public int MortalWounds { get; set; }
         public List<string> WoundEffects { get; set; } = new();
         public List<int> WoundDice { get; set; } = new();
+        public List<string> SaveEffects { get; set; } = new();
         public List<SaveAttemptLog> SaveAttempts { get; set; } = new();
         public List<int> SaveDice { get; set; } = new();
         public List<string> DamageEvents { get; set; } = new();
+        public List<int> DamageDice { get; set; } = new();
         public int TotalDamage { get; set; }
+        public int RawDamage { get; set; }
         public bool TargetDestroyed { get; set; }
     }
 
@@ -715,6 +769,7 @@ else
         public int Target { get; set; }
         public bool Passed { get; set; }
         public string SaveType { get; set; } = "";
+        public string Summary { get; set; } = "";
         public bool IsMortalWound { get; set; }
     }
 }
