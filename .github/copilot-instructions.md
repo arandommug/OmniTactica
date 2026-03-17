@@ -5,6 +5,7 @@
 - Unit composition and points bracket selection in the list builder should be automatic based on unit composition/options rather than showing a manual mismatch hint.
 - Preserve potentially intentional navigation-related services/injections unless clearly unused across the app.
 - In this codebase's Warhammer 40k 10th edition rules handling, mortal wound spillover should only occur when the mortal wounds are not caused by Devastating Wounds.
+- Prefer minimizing custom CSS in the UI and replacing custom classes with Bootstrap utilities where practical.
 
 ## Database Inspection
 - Use the normal sqlite3 command for direct SQLite inspection in this workspace.

@@ -1,6 +1,7 @@
 @using OmniTactica.AppCode.Services
 @using OmniTactica.AppCode.Models.Core
 @using OmniTactica.AppCode.Data.Import
+@using OmniTactica.AppCode.Helpers
 @using OmniTactica.AppCode.Utilities
 @using Microsoft.JSInterop
 @using System.Text.RegularExpressions
@@ -36,179 +37,294 @@
                 {
                     <div class="row g-3">
                         <!-- LEFT COLUMN: Datasheet Reference -->
-                        <div class="col-lg-5">
-                            <div style="max-height: calc(100vh - 200px); overflow-y: auto; padding-right: 0.5rem;">
+                        <div class="col-12 col-lg-6 order-2 order-lg-1">
+                            <div class="pe-lg-2 overflow-visible overflow-lg-auto" style="max-height: none;">
                                 <div class="text-uppercase fw-bold mb-2" style="font-size: 0.7rem; letter-spacing: 0.08em; color: var(--bs-secondary);">Datasheet Reference</div>
 
                                 <!-- Compact Stat Lines -->
                                 @if (editingUnit.DatasheetDetail.Models.Any())
                                 {
-                                    var uniqueStatlines = editingUnit.DatasheetDetail.Models
-                                        .GroupBy(m => new { m.M, m.T, m.Sv, m.W, m.Ld, m.OC, m.InvSv })
-                                        .Select(g => new
-                                        {
-                                            Names = string.Join(", ", g.Select(m => m.Name)),
-                                            g.Key.M,
-                                            g.Key.T,
-                                            g.Key.Sv,
-                                            g.Key.W,
-                                            g.Key.Ld,
-                                            g.Key.OC,
-                                            g.Key.InvSv
-                                        })
-                                        .ToList();
+                                    var uniqueStatlines = StatlineDisplayFactory.CreateDatasheetStatlines(editingUnit.DatasheetDetail.Models);
 
-                                    @foreach (var statline in uniqueStatlines)
-                                    {
-                                        <div class="mb-2">
-                                            @if (uniqueStatlines.Count > 1)
+                                    <UnitStatlineTable Items="uniqueStatlines" />
+                                }
+
+                                @{
+                                    var availableWeapons = StatlineDisplayFactory.CreateDatasheetWeapons(editingUnit.DatasheetDetail.Wargear);
+                                    var rangedWeapons = availableWeapons.Where(w => string.Equals(w.Type, "Ranged", StringComparison.OrdinalIgnoreCase)).ToList();
+                                    var meleeWeapons = availableWeapons.Where(w => string.Equals(w.Type, "Melee", StringComparison.OrdinalIgnoreCase)).ToList();
+                                }
+
+                                <div class="row g-3 mt-1">
+                                    <div class="d-none d-lg-block col-12 col-lg-6">
+                                        @if (rangedWeapons.Any() || meleeWeapons.Any())
+                                        {
+                                            @if (rangedWeapons.Any())
                                             {
-                                                <div class="fw-semibold small">@statline.Names</div>
+                                                <div class="accordion" id="unitEditorRangedWeaponsDesktop">
+                                                    <div class="accordion-item">
+                                                        <h2 class="accordion-header">
+                                                            <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#unitEditorRangedWeaponsDesktopContent" aria-expanded="true">
+                                                                Ranged Weapons
+                                                                <span class="badge bg-info ms-2">@rangedWeapons.Count</span>
+                                                            </button>
+                                                        </h2>
+                                                        <div id="unitEditorRangedWeaponsDesktopContent" class="accordion-collapse collapse show" data-bs-parent="#unitEditorRangedWeaponsDesktop">
+                                                            <div class="accordion-body p-2">
+                                                                <WeaponStatlineCards Weapons="rangedWeapons" EnableAbilityTooltips="true" />
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
                                             }
-                                            <div class="d-flex gap-2 flex-wrap" style="font-size: 0.8rem;">
-                                                <span class="text-muted">M</span><strong>@statline.M</strong>
-                                                <span class="text-muted">T</span><strong>@statline.T</strong>
-                                                <span class="text-muted">Sv</span><strong>@statline.Sv@(string.IsNullOrEmpty(statline.InvSv) || statline.InvSv == "-" ? "" : "/" + statline.InvSv + "++")</strong>
-                                                <span class="text-muted">W</span><strong>@statline.W</strong>
-                                                <span class="text-muted">Ld</span><strong>@statline.Ld</strong>
-                                                <span class="text-muted">OC</span><strong>@statline.OC</strong>
+
+                                            @if (meleeWeapons.Any())
+                                            {
+                                                <div class="accordion @(rangedWeapons.Any() ? "mt-3" : string.Empty)" id="unitEditorMeleeWeaponsDesktop">
+                                                    <div class="accordion-item">
+                                                        <h2 class="accordion-header">
+                                                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#unitEditorMeleeWeaponsDesktopContent" aria-expanded="false">
+                                                                Melee Weapons
+                                                                <span class="badge bg-info ms-2">@meleeWeapons.Count</span>
+                                                            </button>
+                                                        </h2>
+                                                        <div id="unitEditorMeleeWeaponsDesktopContent" class="accordion-collapse collapse" data-bs-parent="#unitEditorMeleeWeaponsDesktop">
+                                                            <div class="accordion-body p-2">
+                                                                <WeaponStatlineCards Weapons="meleeWeapons" EnableAbilityTooltips="true" />
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            }
+                                        }
+                                    </div>
+
+                                    <div class="d-none d-lg-block col-12 col-lg-6">
+                                        @if (editingUnit.DatasheetDetail.Abilities.Any())
+                                        {
+                                            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-1">
+                                                <div class="fw-bold">Abilities</div>
+                                            </div>
+                                            <div class="accordion">
+                                                @foreach (var ability in editingUnit.DatasheetDetail.Abilities.OrderBy(ability => ability.Type).ThenBy(ability => ability.Name))
+                                                {
+                                                    <div class="accordion-item">
+                                                        <h2 class="accordion-header">
+                                                            <button class="accordion-button collapsed py-2" type="button" data-bs-toggle="collapse" data-bs-target="#unit-editor-ability-desktop-@(ability.Line)" aria-expanded="false">
+                                                                @ability.Name
+                                                            </button>
+                                                        </h2>
+                                                        <div id="unit-editor-ability-desktop-@(ability.Line)" class="accordion-collapse collapse">
+                                                            <div class="accordion-body small rule-content p-2">
+                                                                @((MarkupString)WahaDataImporter.CleanHtml(ability.Description))
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+
+                                <div class="d-lg-none">
+                                    @if (rangedWeapons.Any() || meleeWeapons.Any())
+                                    {
+                                        @if (rangedWeapons.Any())
+                                        {
+                                            <div class="accordion" id="unitEditorRangedWeaponsMobile">
+                                                <div class="accordion-item">
+                                                    <h2 class="accordion-header">
+                                                        <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#unitEditorRangedWeaponsMobileContent" aria-expanded="true">
+                                                            Ranged Weapons
+                                                            <span class="badge bg-info ms-2">@rangedWeapons.Count</span>
+                                                        </button>
+                                                    </h2>
+                                                    <div id="unitEditorRangedWeaponsMobileContent" class="accordion-collapse collapse show" data-bs-parent="#unitEditorRangedWeaponsMobile">
+                                                        <div class="accordion-body p-2">
+                                                            <WeaponStatlineCards Weapons="rangedWeapons" EnableAbilityTooltips="true" />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        }
+
+                                        @if (meleeWeapons.Any())
+                                        {
+                                            <div class="accordion @(rangedWeapons.Any() ? "mt-3" : string.Empty)" id="unitEditorMeleeWeaponsMobile">
+                                                <div class="accordion-item">
+                                                    <h2 class="accordion-header">
+                                                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#unitEditorMeleeWeaponsMobileContent" aria-expanded="false">
+                                                            Melee Weapons
+                                                            <span class="badge bg-info ms-2">@meleeWeapons.Count</span>
+                                                        </button>
+                                                    </h2>
+                                                    <div id="unitEditorMeleeWeaponsMobileContent" class="accordion-collapse collapse" data-bs-parent="#unitEditorMeleeWeaponsMobile">
+                                                        <div class="accordion-body p-2">
+                                                            <WeaponStatlineCards Weapons="meleeWeapons" EnableAbilityTooltips="true" />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        }
+                                    }
+
+                                    @if (editingUnit.DatasheetDetail.Abilities.Any())
+                                    {
+                                        <div class="mt-3">
+                                            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-1">
+                                                <div class="fw-bold">Abilities</div>
+                                            </div>
+                                            <div class="accordion">
+                                                @foreach (var ability in editingUnit.DatasheetDetail.Abilities.OrderBy(ability => ability.Type).ThenBy(ability => ability.Name))
+                                                {
+                                                    <div class="accordion-item">
+                                                        <h2 class="accordion-header">
+                                                            <button class="accordion-button collapsed py-2" type="button" data-bs-toggle="collapse" data-bs-target="#unit-editor-ability-mobile-@(ability.Line)" aria-expanded="false">
+                                                                @ability.Name
+                                                            </button>
+                                                        </h2>
+                                                        <div id="unit-editor-ability-mobile-@(ability.Line)" class="accordion-collapse collapse">
+                                                            <div class="accordion-body small rule-content p-2">
+                                                                @((MarkupString)WahaDataImporter.CleanHtml(ability.Description))
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                }
                                             </div>
                                         </div>
                                     }
+                                </div>
+
+                                @if (editingUnit.DatasheetDetail.Options.Any())
+                                {
+                                    <div class="accordion mt-3 mb-2">
+                                        <div class="accordion-item">
+                                            <h2 class="accordion-header">
+                                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#unitEditorWargearOptions" aria-expanded="false">
+                                                    Wargear Options
+                                                    <span class="badge bg-info ms-2">@editingUnit.DatasheetDetail.Options.Count</span>
+                                                </button>
+                                            </h2>
+                                            <div id="unitEditorWargearOptions" class="accordion-collapse collapse">
+                                                <div class="accordion-body p-2">
+                                                    <ul class="list-group list-group-flush">
+                                                        @foreach (var option in editingUnit.DatasheetDetail.Options.OrderBy(option => option.Line))
+                                                        {
+                                                            <li class="list-group-item px-0">
+                                                                @if (!string.IsNullOrWhiteSpace(option.Button) && option.Button != "*")
+                                                                {
+                                                                    <div class="rule-content">@((MarkupString)WahaDataImporter.CleanHtml(option.Button + " " + option.Description))</div>
+                                                                }
+                                                                else if (option.Button == "*")
+                                                                {
+                                                                    <div class="rule-content">@((MarkupString)WahaDataImporter.CleanHtml(option.Description + option.Button))</div>
+                                                                }
+                                                                else
+                                                                {
+                                                                    <div class="rule-content">@((MarkupString)WahaDataImporter.CleanHtml(option.Description))</div>
+                                                                }
+                                                            </li>
+                                                        }
+                                                    </ul>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
                                 }
 
-                                    <!-- Unit Composition -->
-                                    @if (editingUnit.DatasheetDetail.UnitComposition.Any())
-                                    {
-                                        <div class="mt-3 mb-2">
-                                            <div class="text-uppercase fw-semibold text-muted mb-1" style="font-size: 0.7rem; letter-spacing: 0.05em;">Composition</div>
-                                            <div class="small">
+                                @if (editingUnit.DatasheetDetail.UnitComposition.Any() || !string.IsNullOrEmpty(editingUnit.DatasheetDetail.Loadout))
+                                {
+                                    <div class="mt-3 mb-2">
+                                        <h5 class="text-primary mb-3">Unit Setup</h5>
+                                        @if (editingUnit.DatasheetDetail.UnitComposition.Any())
+                                        {
+                                            <div class="small mb-2">
                                                 @foreach (var comp in editingUnit.DatasheetDetail.UnitComposition)
                                                 {
                                                     <div>• @((MarkupString)WahaDataImporter.CleanHtml(comp.Description))</div>
                                                 }
                                             </div>
-                                        </div>
-                                    }
-
-                                    <!-- Loadout -->
-                                    @if (!string.IsNullOrEmpty(editingUnit.DatasheetDetail.Loadout))
-                                    {
-                                        <div class="mt-3 mb-2">
-                                            <div class="text-uppercase fw-semibold text-muted mb-1" style="font-size: 0.7rem; letter-spacing: 0.05em;">Loadout</div>
+                                        }
+                                        @if (!string.IsNullOrEmpty(editingUnit.DatasheetDetail.Loadout))
+                                        {
                                             <div class="small">
                                                 @((MarkupString)WahaDataImporter.CleanHtml(editingUnit.DatasheetDetail.Loadout))
                                             </div>
-                                        </div>
-                                    }
-
-                                    <!-- Available Weapons -->
-                                    <div class="mt-3 mb-2">
-                                        <div class="text-uppercase fw-semibold text-muted mb-1" style="font-size: 0.7rem; letter-spacing: 0.05em;">Available Weapons</div>
+                                        }
                                     </div>
-                                    @{
-                                        var rangedWeapons = editingUnit.DatasheetDetail.Wargear.Where(w => w.Type == "Ranged").ToList();
-                                        var meleeWeapons = editingUnit.DatasheetDetail.Wargear.Where(w => w.Type == "Melee").ToList();
-                                    }
+                                }
 
-                                    @if (rangedWeapons.Any() || meleeWeapons.Any())
-                                    {
-                                        <table class="table table-sm mb-3" style="font-size: 0.8rem;">
-                                            <thead>
-                                                <tr class="text-muted" style="font-size: 0.7rem;">
-                                                    <th>Weapon</th>
-                                                    <th class="text-center">A</th>
-                                                    <th class="text-center">BS/WS</th>
-                                                    <th class="text-center">S</th>
-                                                    <th class="text-center">AP</th>
-                                                    <th class="text-center">D</th>
-                                                    <th>Abilities</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                @if (rangedWeapons.Any())
-                                                {
-                                                    <tr><td colspan="7" class="text-uppercase text-primary fw-semibold" style="font-size: 0.65rem; letter-spacing: 0.05em; border: none; padding-top: 0.75rem;">Ranged</td></tr>
-                                                    @foreach (var weapon in rangedWeapons)
+                                @if (editingUnit.DatasheetDetail.CanLead.Any() || editingUnit.DatasheetDetail.LeadBy.Any())
+                                {
+                                    <div class="accordion mt-3 mb-2">
+                                        <div class="accordion-item">
+                                            <h2 class="accordion-header">
+                                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#unitEditorLeaderOptions" aria-expanded="false">
+                                                    Leader
+                                                    <span class="badge bg-info ms-2">@(editingUnit.DatasheetDetail.CanLead.Count + editingUnit.DatasheetDetail.LeadBy.Count)</span>
+                                                </button>
+                                            </h2>
+                                            <div id="unitEditorLeaderOptions" class="accordion-collapse collapse">
+                                                <div class="accordion-body p-2">
+                                                    @if (!string.IsNullOrEmpty(editingUnit.DatasheetDetail.LeaderHead))
                                                     {
-                                                        <tr>
-                                                            <td class="fw-semibold">@weapon.Name</td>
-                                                            <td class="text-center">@weapon.A</td>
-                                                            <td class="text-center">@weapon.BsWs</td>
-                                                            <td class="text-center">@weapon.S</td>
-                                                            <td class="text-center">@weapon.AP</td>
-                                                            <td class="text-center">@weapon.D</td>
-                                                            <td>
-                                                                @if (!string.IsNullOrEmpty(weapon.Description))
-                                                                {
-                                                                    @foreach (var ability in GetWeaponDescriptionAbilities(weapon.Description))
-                                                                    {
-                                                                        var tooltip = AbilityTooltipHelper.GetTooltipFromName(ability, AbilityRulesService);
-                                                                        <span class="badge bg-secondary bg-opacity-25 text-secondary-emphasis me-1"
-                                                                              style="cursor: help; font-size: 0.65rem; font-weight: 500;"
-                                                                              data-bs-toggle="tooltip"
-                                                                              data-bs-placement="top"
-                                                                              data-bs-html="true"
-                                                                              title="@tooltip">@ability</span>
-                                                                    }
-                                                                }
-                                                            </td>
-                                                        </tr>
+                                                        <div class="small rule-content mb-2">@((MarkupString)WahaDataImporter.CleanHtml(editingUnit.DatasheetDetail.LeaderHead))</div>
                                                     }
-                                                }
-                                                @if (meleeWeapons.Any())
-                                                {
-                                                    <tr><td colspan="7" class="text-uppercase text-danger fw-semibold" style="font-size: 0.65rem; letter-spacing: 0.05em; border: none; padding-top: 0.75rem;">Melee</td></tr>
-                                                    @foreach (var weapon in meleeWeapons)
+                                                    @if (editingUnit.DatasheetDetail.CanLead.Any())
                                                     {
-                                                        <tr>
-                                                            <td class="fw-semibold">@weapon.Name</td>
-                                                            <td class="text-center">@weapon.A</td>
-                                                            <td class="text-center">@weapon.BsWs</td>
-                                                            <td class="text-center">@weapon.S</td>
-                                                            <td class="text-center">@weapon.AP</td>
-                                                            <td class="text-center">@weapon.D</td>
-                                                            <td>
-                                                                @if (!string.IsNullOrEmpty(weapon.Description))
+                                                        <div class="small mb-2">
+                                                            <div class="fw-semibold mb-1">Can lead</div>
+                                                            <div class="d-flex flex-wrap gap-1">
+                                                                @foreach (var unit in editingUnit.DatasheetDetail.CanLead.OrderBy(unit => unit.Name))
                                                                 {
-                                                                    @foreach (var ability in GetWeaponDescriptionAbilities(weapon.Description))
-                                                                    {
-                                                                        var tooltip = AbilityTooltipHelper.GetTooltipFromName(ability, AbilityRulesService);
-                                                                        <span class="badge bg-secondary bg-opacity-25 text-secondary-emphasis me-1"
-                                                                              style="cursor: help; font-size: 0.65rem; font-weight: 500;"
-                                                                              data-bs-toggle="tooltip"
-                                                                              data-bs-placement="top"
-                                                                              data-bs-html="true"
-                                                                              title="@tooltip">@ability</span>
-                                                                    }
+                                                                    <span class="badge bg-primary bg-opacity-10 text-primary-emphasis">@unit.Name</span>
                                                                 }
-                                                            </td>
-                                                        </tr>
+                                                            </div>
+                                                        </div>
                                                     }
-                                                }
-                                            </tbody>
-                                        </table>
-                                    }
-
-                                    <!-- Keywords -->
-                                    @if (editingUnit.DatasheetDetail.Keywords.Any())
-                                    {
-                                        <div class="mt-3 mb-2">
-                                            <div class="text-uppercase fw-semibold text-muted mb-1" style="font-size: 0.7rem; letter-spacing: 0.05em;">Keywords</div>
-                                            <div>
-                                                @foreach (var keyword in editingUnit.DatasheetDetail.Keywords)
-                                                {
-                                                    <span class="badge bg-info bg-opacity-10 text-info-emphasis me-1 mb-1" style="font-size: 0.7rem; font-weight: 500;">@keyword</span>
-                                                }
+                                                    @if (editingUnit.DatasheetDetail.LeadBy.Any())
+                                                    {
+                                                        <div class="small mb-2">
+                                                            <div class="fw-semibold mb-1">Can be led by</div>
+                                                            <div class="d-flex flex-wrap gap-1">
+                                                                @foreach (var unit in editingUnit.DatasheetDetail.LeadBy.OrderBy(unit => unit.Name))
+                                                                {
+                                                                    <span class="badge bg-secondary bg-opacity-10 text-secondary-emphasis">@unit.Name</span>
+                                                                }
+                                                            </div>
+                                                        </div>
+                                                    }
+                                                    @if (!string.IsNullOrEmpty(editingUnit.DatasheetDetail.LeaderFooter))
+                                                    {
+                                                        <div class="small rule-content">@((MarkupString)WahaDataImporter.CleanHtml(editingUnit.DatasheetDetail.LeaderFooter))</div>
+                                                    }
+                                                </div>
                                             </div>
                                         </div>
-                                    }
+                                    </div>
+                                }
+
+                                @if (editingUnit.DatasheetDetail.FactionKeywords.Any() || editingUnit.DatasheetDetail.Keywords.Any())
+                                {
+                                    <div class="mt-3 mb-2">
+                                        <div class="d-flex flex-wrap align-items-start gap-3">
+                                            @foreach (var keyword in editingUnit.DatasheetDetail.FactionKeywords.OrderBy(keyword => keyword))
+                                            {
+                                                <span class="badge bg-primary bg-opacity-10 text-primary-emphasis" style="font-size: 0.7rem; font-weight: 500;">@keyword</span>
+                                            }
+                                            @foreach (var keyword in editingUnit.DatasheetDetail.Keywords)
+                                            {
+                                                <span class="badge bg-info bg-opacity-10 text-info-emphasis" style="font-size: 0.7rem; font-weight: 500;">@keyword</span>
+                                            }
+                                        </div>
+                                    </div>
+                                }
                             </div>
                         </div>
 
                         <!-- RIGHT COLUMN: Unit Configuration -->
-                        <div class="col-lg-7">
-                            <div style="max-height: calc(100vh - 200px); overflow-y: auto;">
+                        <div class="col-12 col-lg-6 order-1 order-lg-2">
+                            <div class="overflow-visible overflow-lg-auto" style="max-height: none;">
 
                                     <!-- Models Section -->
                                     <div class="mb-4">
@@ -287,9 +403,9 @@
                                                                                 var capturedMod = mod;
                                                                                 var capturedModel = model;
                                                                                 var capturedWeapon = weapon;
-                                                                                <span class="badge bg-warning bg-opacity-25 text-warning-emphasis d-inline-flex align-items-center gap-1 flex-shrink-0" style="font-size: 0.55rem; font-weight: 500;">
+                                                                                <span class="badge bg-warning bg-opacity-25 text-warning-emphasis d-inline-flex align-items-center gap-1 flex-shrink-0 text-nowrap lh-1 px-2 py-1" style="font-size: 0.55rem; font-weight: 500;">
                                                                                     @modDisplayName
-                                                                                    <button class="btn p-0 border-0 text-warning-emphasis opacity-75" style="font-size: 0.45rem; line-height:1;" @onclick:stopPropagation="true" @onclick="() => EditModifier(capturedModel, capturedWeapon, capturedMod, ModifierTarget.Weapon)" title="Edit"><i class="fa fa-pencil"></i></button>
+                                                                                    <button class="d-inline-flex align-items-center justify-content-center p-0 border-0 bg-transparent text-warning-emphasis opacity-75 lh-1" style="font-size: 0.45rem;" @onclick:stopPropagation="true" @onclick="() => EditModifier(capturedModel, capturedWeapon, capturedMod, ModifierTarget.Weapon)" title="Edit"><i class="fa fa-pencil"></i></button>
                                                                                 </span>
                                                                             }
                                                                         }
@@ -932,14 +1048,6 @@
     private WeaponAbilities ParseWeaponAbilities(string description)
     {
         return WeaponAbilityParser.Parse(description);
-    }
-
-    private static List<string> GetWeaponDescriptionAbilities(string description)
-    {
-        return description.Split(',')
-            .Select(ability => ability.Trim())
-            .Where(ability => !string.IsNullOrWhiteSpace(ability))
-            .ToList();
     }
 
     private int ParseStatValue(string value)

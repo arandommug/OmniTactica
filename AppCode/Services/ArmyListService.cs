@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Maui.Storage;
+using OmniTactica.AppCode.Helpers;
 using OmniTactica.AppCode.Models.Core;
 using OmniTactica.AppCode.Models.Rules;
 using OmniTactica.AppCode.Utilities;
@@ -106,6 +107,11 @@ namespace OmniTactica.AppCode.Services
             armyList.DetachmentId = detachmentId;
             armyList.DetachmentName = detachmentName ?? string.Empty;
 
+            foreach (var unit in armyList.Units)
+            {
+                NormalizeEnhancementEligibility(unit);
+            }
+
             if (availableEnhancements != null)
             {
                 var validIds = availableEnhancements.Select(e => e.Id).ToHashSet();
@@ -164,9 +170,10 @@ namespace OmniTactica.AppCode.Services
                 SelectedCostLine = defaultCost?.Line,
                 SelectedCostDescription = defaultCost?.Description ?? "Base unit",
                 SelectedPoints = defaultCost?.Cost ?? datasheet.PointsCost ?? 0,
-                CanTakeEnhancement = keywords.Any(keyword => keyword.Equals("Character", StringComparison.OrdinalIgnoreCase))
+                CanTakeEnhancement = CanUnitTakeEnhancement(keywords)
             };
 
+            NormalizeEnhancementEligibility(unit);
             ApplyAutomaticCostSelection(unit);
 
             armyList.Units.Add(unit);
@@ -326,6 +333,12 @@ namespace OmniTactica.AppCode.Services
                 return;
             }
 
+            NormalizeEnhancementEligibility(unit);
+            if (!unit.CanTakeEnhancement)
+            {
+                enhancement = null;
+            }
+
             unit.EnhancementId = enhancement?.Id;
             unit.EnhancementName = enhancement?.Name ?? string.Empty;
             unit.EnhancementCost = enhancement?.Cost ?? 0;
@@ -393,6 +406,28 @@ namespace OmniTactica.AppCode.Services
             }
 
             EnsureActiveList();
+        }
+
+        private static bool CanUnitTakeEnhancement(IEnumerable<string> keywords)
+        {
+            var keywordSet = keywords
+                .Where(keyword => !string.IsNullOrWhiteSpace(keyword))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            return keywordSet.Contains("Character") && !keywordSet.Contains("Epic Hero");
+        }
+
+        private static void NormalizeEnhancementEligibility(ArmyListUnit unit)
+        {
+            unit.CanTakeEnhancement = CanUnitTakeEnhancement(unit.Keywords);
+            if (unit.CanTakeEnhancement)
+            {
+                return;
+            }
+
+            unit.EnhancementId = null;
+            unit.EnhancementName = string.Empty;
+            unit.EnhancementCost = 0;
         }
 
         private Task PersistAsync()
@@ -500,13 +535,13 @@ namespace OmniTactica.AppCode.Services
 
         private List<ArmyListUnitModel> CreateUnitModels(DatasheetDetail detail, string? selectedCostDescription = null)
         {
-            var compositions = ParseUnitCompositionOptions(detail.UnitComposition);
-            var selectedComposition = SelectCompositionOption(compositions, selectedCostDescription);
+            var compositions = DatasheetParsingHelper.ParseUnitCompositionOptions(detail.UnitComposition);
+            var selectedComposition = DatasheetParsingHelper.SelectCompositionOption(compositions, selectedCostDescription);
 
             if (selectedComposition.Count == 0 && detail.Models.Any())
             {
                 var profile = detail.Models.First();
-                selectedComposition.Add(new UnitCompositionEntry(profile.Name, 1, 1));
+                selectedComposition.Add(new DatasheetCompositionEntry(profile.Name, 1, 1));
             }
 
             var models = new List<ArmyListUnitModel>();
@@ -515,7 +550,7 @@ namespace OmniTactica.AppCode.Services
                 var modelName = entry.Name;
                 var minQuantity = entry.MinQuantity;
                 var maxQuantity = entry.MaxQuantity;
-                var modelProfile = FindModelProfile(detail, modelName);
+                var modelProfile = DatasheetParsingHelper.FindModelProfile(detail, modelName);
                 if (modelProfile == null)
                 {
                     continue;
@@ -535,7 +570,14 @@ namespace OmniTactica.AppCode.Services
                     Ld = modelProfile.Ld,
                     OC = modelProfile.OC,
                     BaseSize = modelProfile.BaseSize,
-                    Weapons = ParseLoadoutForModel(detail.Loadout, modelName, detail.Wargear, minQuantity)
+                    Weapons = DatasheetParsingHelper.ParseLoadoutForModel(detail.Loadout, modelName, detail.Wargear, minQuantity)
+                        .Select(parsedWeapon =>
+                        {
+                            var weapon = CreateArmyListWeaponFromWargear(parsedWeapon.Wargear);
+                            weapon.Quantity = parsedWeapon.Quantity;
+                            return weapon;
+                        })
+                        .ToList()
                 };
 
                 models.Add(model);
@@ -546,23 +588,20 @@ namespace OmniTactica.AppCode.Services
 
         private List<string> CreateSelectedCompositionDescriptions(DatasheetDetail detail, string? selectedCostDescription = null)
         {
-            var compositions = ParseUnitCompositionOptions(detail.UnitComposition);
-            var selectedComposition = SelectCompositionOption(compositions, selectedCostDescription);
+            var compositions = DatasheetParsingHelper.ParseUnitCompositionOptions(detail.UnitComposition);
+            var selectedComposition = DatasheetParsingHelper.SelectCompositionOption(compositions, selectedCostDescription);
             if (selectedComposition.Count == 0)
             {
-                return detail.UnitComposition
-                    .Select(entry => HtmlUtility.ConvertHtmlToPlainText(entry.Description).Trim())
-                    .Where(entry => !string.IsNullOrWhiteSpace(entry) && !entry.Equals("OR", StringComparison.OrdinalIgnoreCase))
-                    .ToList();
+                return DatasheetParsingHelper.GetRawCompositionDescriptions(detail.UnitComposition);
             }
 
-            return new List<string> { FormatComposition(selectedComposition) };
+            return new List<string> { DatasheetParsingHelper.FormatComposition(selectedComposition) };
         }
 
         private List<string> CreateCompositionDescriptionsFromModels(IEnumerable<ArmyListUnitModel> models)
         {
-            var entries = models.Select(model => new UnitCompositionEntry(model.Name, model.Quantity, model.Quantity)).ToList();
-            return entries.Count == 0 ? new List<string>() : new List<string> { FormatComposition(entries) };
+            var entries = models.Select(model => new DatasheetCompositionEntry(model.Name, model.Quantity, model.Quantity)).ToList();
+            return entries.Count == 0 ? new List<string>() : new List<string> { DatasheetParsingHelper.FormatComposition(entries) };
         }
 
         private DatasheetModel? FindModelProfile(DatasheetDetail detail, string modelName)

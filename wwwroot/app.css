@@ -403,6 +403,27 @@ a {
     .mt-3 {
         margin-top: 0.75rem !important;
     }
+
+    .card-header,
+    .card-body,
+    .card-footer {
+        padding: 0.75rem;
+    }
+
+    .list-group-item,
+    .accordion-button {
+        padding: 0.7rem 0.75rem;
+    }
+
+    .btn {
+        --bs-btn-padding-y: 0.35rem;
+        --bs-btn-padding-x: 0.65rem;
+    }
+
+    .btn-sm {
+        --bs-btn-padding-y: 0.2rem;
+        --bs-btn-padding-x: 0.45rem;
+    }
 }
 
 }
@@ -489,6 +510,11 @@ a {
 ========================= */
 
 @media (max-width: 640px) {
+    .modal-fullscreen .modal-content {
+        padding-top: env(safe-area-inset-top);
+        min-height: 100dvh;
+    }
+
     .modal-fullscreen .modal-footer {
         padding-bottom: calc(var(--app-bottom-height) + 0.5rem);
     }

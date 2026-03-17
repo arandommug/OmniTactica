@@ -1,5 +1,6 @@
 using OmniTactica.AppCode.Models.Core;
 using OmniTactica.AppCode.Repositories;
+using OmniTactica.AppCode.Helpers;
 using OmniTactica.AppCode.Utilities;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -79,13 +80,21 @@ namespace OmniTactica.AppCode.Services
                 DatasheetDetail = datasheet
             };
 
-            // Parse unit composition to determine model types and quantities
-            var modelComposition = ParseUnitComposition(datasheet.UnitComposition);
+            var compositionOptions = DatasheetParsingHelper.ParseUnitCompositionOptions(datasheet.UnitComposition);
+            var modelComposition = DatasheetParsingHelper.SelectCompositionOption(compositionOptions, null);
+
+            if (modelComposition.Count == 0 && datasheet.Models.Any())
+            {
+                var profile = datasheet.Models.First();
+                modelComposition.Add(new DatasheetCompositionEntry(profile.Name, 1, 1));
+            }
 
             // Create combat models based on composition
-            foreach (var (modelName, minQuantity, maxQuantity) in modelComposition)
+            foreach (var entry in modelComposition)
             {
-                var modelProfile = FindModelProfile(datasheet, modelName);
+                var modelName = entry.Name;
+                var minQuantity = entry.MinQuantity;
+                var modelProfile = DatasheetParsingHelper.FindModelProfile(datasheet, modelName);
 
                 if (modelProfile != null)
                 {
@@ -93,11 +102,11 @@ namespace OmniTactica.AppCode.Services
                     var combatModel = CreateCombatModelFromProfile(modelProfile, minQuantity, modelName);
 
                     // Parse loadout to assign weapons specific to this model type
-                    var weaponsForModel = ParseLoadoutForModel(datasheet.Loadout, modelName, datasheet.Wargear);
-                    foreach (var weapon in weaponsForModel)
+                    var weaponsForModel = DatasheetParsingHelper.ParseLoadoutForModel(datasheet.Loadout, modelName, datasheet.Wargear, minQuantity);
+                    foreach (var parsedWeapon in weaponsForModel)
                     {
-                        // Scale weapon quantity by model count (e.g., 4 banshees each with 1 blade = quantity 4)
-                        weapon.Quantity *= minQuantity;
+                        var weapon = CreateCombatWeaponFromWargear(parsedWeapon.Wargear);
+                        weapon.Quantity = parsedWeapon.Quantity;
                         combatModel.Weapons.Add(weapon);
                     }
 

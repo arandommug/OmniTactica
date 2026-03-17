@@ -22,5 +22,23 @@
     "action": "delete",
     "where": "Type = 'Boarding Actions'",
     "reason": "not supporting boarding actions"
+  },
+  {
+    "table": "Stratagems",
+    "action": "delete",
+    "where": "type like 'Boarding Actions%'",
+    "reason": "not supporting boarding actions"
+  },
+  {
+    "table": "Factions",
+    "action": "delete",
+    "where": "id = 'UA'",
+    "reason": "removing whatever this is"
+  },
+  {
+    "table": "Stratagems",
+    "action": "delete",
+    "where": "id = '10245002' or id = '9063002'",
+    "reason": "removing extra stratagems"
   }
 ]

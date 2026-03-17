@@ -827,7 +827,12 @@ namespace OmniTactica.AppCode.Services
                             if (modifier.Effect.Type == EffectType.AddDamageModifier &&
                                 (modifier.Effect.IntValue.HasValue || !string.IsNullOrWhiteSpace(modifier.Effect.StringValue)))
                             {
-                                damage += RollEffectValue(modifier.Effect, 0);
+                                var bonusDamage = RollEffectValue(modifier.Effect, 0);
+                                damage += bonusDamage;
+                                if (bonusDamage != 0)
+                                {
+                                    attackLog?.DamageEvents.Add($"{modifier.Name}: +{bonusDamage} damage");
+                                }
                             }
                         }
 
@@ -874,7 +879,12 @@ namespace OmniTactica.AppCode.Services
                                 if (modifier.Effect.Type == EffectType.AddDamageModifier &&
                                     (modifier.Effect.IntValue.HasValue || !string.IsNullOrWhiteSpace(modifier.Effect.StringValue)))
                                 {
-                                    damage += RollEffectValue(modifier.Effect, 0);
+                                    var bonusDamage = RollEffectValue(modifier.Effect, 0);
+                                    damage += bonusDamage;
+                                    if (bonusDamage != 0)
+                                    {
+                                        attackLog?.DamageEvents.Add($"{modifier.Name}: +{bonusDamage} damage");
+                                    }
                                 }
                             }
 

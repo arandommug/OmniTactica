@@ -1,0 +1,138 @@
+@using OmniTactica.AppCode.Helpers
+@using OmniTactica.AppCode.Models.Core
+@using OmniTactica.AppCode.Services
+
+@inject AbilityRulesService AbilityRulesService
+
+@if (Weapons.Count > 0)
+{
+    @foreach (var weapon in Weapons)
+    {
+        var abilities = GetAbilities(weapon.Description);
+
+        <div class="card mb-2">
+            <div class="card-body p-2">
+                <div class="@(StackAbilities ? "d-flex flex-column align-items-start gap-2 mb-2 js-weapon-header" : "d-flex flex-wrap align-items-start gap-2 mb-2 js-weapon-header")">
+                    <div class="min-w-0 flex-grow-1">
+                        <h6 class="card-title mb-0 js-weapon-name">@weapon.Name</h6>
+                        @if (!string.IsNullOrWhiteSpace(GetMetaText(weapon)))
+                        {
+                            <div class="small text-muted mt-1">@GetMetaText(weapon)</div>
+                        }
+                    </div>
+
+                    @if (abilities.Count > 0)
+                    {
+                        <div class="d-inline-flex flex-wrap gap-1 js-weapon-tags">
+                            @foreach (var ability in abilities)
+                            {
+                                @if (EnableAbilityTooltips)
+                                {
+                                    <span class="badge bg-secondary"
+                                          style="cursor: help;"
+                                          data-bs-toggle="tooltip"
+                                          data-bs-placement="top"
+                                          data-bs-html="true"
+                                          title="@GetAbilityTooltip(ability)">@ability</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-secondary">@ability</span>
+                                }
+                            }
+                        </div>
+                    }
+                </div>
+                <hr class="my-1" />
+                <div class="row g-2 text-center small">
+                    <div class="col-2">
+                        <div class="text-muted">Range</div>
+                        <div class="fw-semibold">@GetRangeDisplay(weapon)</div>
+                    </div>
+                    <div class="col-2">
+                        <div class="text-muted">A</div>
+                        <div class="fw-semibold">@weapon.A</div>
+                    </div>
+                    <div class="col-2">
+                        <div class="text-muted">@GetSkillLabel(weapon)</div>
+                        <div class="fw-semibold">@weapon.BsWs</div>
+                    </div>
+                    <div class="col-2">
+                        <div class="text-muted">S</div>
+                        <div class="fw-semibold">@weapon.S</div>
+                    </div>
+                    <div class="col-2">
+                        <div class="text-muted">AP</div>
+                        <div class="fw-semibold">@weapon.AP</div>
+                    </div>
+                    <div class="col-2">
+                        <div class="text-muted">D</div>
+                        <div class="fw-semibold">@weapon.D</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    [Parameter]
+    public IReadOnlyList<WeaponStatlineDisplayItem> Weapons { get; set; } = [];
+
+    [Parameter]
+    public bool StackAbilities { get; set; }
+
+    [Parameter]
+    public bool EnableAbilityTooltips { get; set; }
+
+    private static List<string> GetAbilities(string? description)
+    {
+        return string.IsNullOrWhiteSpace(description)
+            ? []
+            : description.Split(',')
+                .Select(ability => ability.Trim())
+                .Where(ability => !string.IsNullOrWhiteSpace(ability))
+                .ToList();
+    }
+
+    private static string GetMetaText(WeaponStatlineDisplayItem weapon)
+    {
+        var parts = new List<string>();
+
+        if (weapon.Quantity.HasValue)
+        {
+            parts.Add($"{weapon.Quantity.Value}x");
+        }
+
+        if (!string.IsNullOrWhiteSpace(weapon.Subtitle))
+        {
+            parts.Add(weapon.Subtitle);
+        }
+
+        return string.Join(" · ", parts);
+    }
+
+    private static string GetSkillLabel(WeaponStatlineDisplayItem weapon)
+        => string.Equals(weapon.Type, "Melee", StringComparison.OrdinalIgnoreCase) ? "WS" : "BS";
+
+    private static string GetRangeDisplay(WeaponStatlineDisplayItem weapon)
+    {
+        if (string.Equals(weapon.Type, "Melee", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Melee";
+        }
+
+        if (string.IsNullOrWhiteSpace(weapon.Range))
+        {
+            return "-";
+        }
+
+        var trimmedRange = weapon.Range.Trim();
+        return trimmedRange.EndsWith('"') ? trimmedRange : $"{trimmedRange}\"";
+    }
+
+    private string GetAbilityTooltip(string ability)
+    {
+        return AbilityTooltipHelper.GetTooltipFromName(ability, AbilityRulesService) ?? string.Empty;
+    }
+}

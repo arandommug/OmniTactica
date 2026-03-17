@@ -151,7 +151,6 @@
 	</ItemGroup>
 
 	<ItemGroup>
-        <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
         <PackageReference Include="CommunityToolkit.Maui.Markup" Version="7.0.1" />
         <PackageReference Include="CsvHelper" Version="33.1.0" />
         <PackageReference Include="HtmlAgilityPack" Version="1.12.4" />
@@ -161,8 +160,6 @@
         <PackageReference Include="Microsoft.Maui.Controls" Version="10.0.41" />
         <PackageReference Include="Microsoft.AspNetCore.Components.WebView.Maui" Version="10.0.41" />
         <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.3" />
-        <PackageReference Include="Microsoft.VisualStudio.DiagnosticsHub.BenchmarkDotNetDiagnosers" Version="18.6.37110.2" />
-        <PackageReference Include="VSDiagnostics" Version="1.10.0" />
     </ItemGroup>
 
     <ItemGroup>

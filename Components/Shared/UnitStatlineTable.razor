@@ -1,0 +1,98 @@
+@using OmniTactica.AppCode.Models.Core
+
+@if (Items.Count > 0)
+{
+    @foreach (var item in Items)
+    {
+        var hasInvDesc = !string.IsNullOrWhiteSpace(item.InvSvDescr);
+
+        if (ShouldShowHeader(item))
+        {
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-1">
+                <div class="d-flex flex-wrap align-items-baseline gap-2">
+                    <div class="fw-bold">@item.Name</div>
+                    @if (!string.IsNullOrWhiteSpace(item.BaseSize))
+                    {
+                        <div class="small text-muted">(@FormatBaseSize(item.BaseSize))</div>
+                    }
+                </div>
+                @if (item.Quantity.HasValue)
+                {
+                    <span class="badge bg-secondary">@($"{item.Quantity.Value}x")</span>
+                }
+            </div>
+        }
+
+        <div class="table-responsive">
+            <table class="table table-borderless text-center mb-1">
+                <thead class="table-dark border-bottom-2 border-opacity-1">
+                    <tr>
+                        <th class="rounded-top-3 rounded-end-0">M</th>
+                        <th>T</th>
+                        <th>SV</th>
+                        <th>W</th>
+                        <th>Ld</th>
+                        <th class="rounded-top-3 rounded-start-0">OC</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td class="@(hasInvDesc ? string.Empty : "rounded-bottom-3 rounded-end-0")">@item.M</td>
+                        <td>@item.T</td>
+                        <td>
+                            @item.Sv
+                            @if (!string.IsNullOrWhiteSpace(item.InvSv) && item.InvSv.Trim() != "-")
+                            {
+                                @($"/{item.InvSv}++{(hasInvDesc ? "*" : string.Empty)}")
+                            }
+                        </td>
+                        <td>@item.W</td>
+                        <td>@item.Ld</td>
+                        <td class="@(hasInvDesc ? string.Empty : "rounded-bottom-3 rounded-start-0")">@item.OC</td>
+                    </tr>
+                    @if (hasInvDesc)
+                    {
+                        <tr>
+                            <td colspan="6" class="text-start rounded-bottom-3">
+                                @if (hasInvDesc)
+                                {
+                                    <div>@($"*{item.InvSvDescr}")</div>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}
+
+@code {
+    [Parameter]
+    public IReadOnlyList<UnitStatlineDisplayItem> Items { get; set; } = [];
+
+    [Parameter]
+    public bool ShowHeaderForSingleItem { get; set; }
+
+    private bool ShouldShowHeader(UnitStatlineDisplayItem item)
+    {
+        if (string.IsNullOrWhiteSpace(item.Name))
+        {
+            return item.Quantity.HasValue || !string.IsNullOrWhiteSpace(item.BaseSize);
+        }
+
+        return Items.Count > 1 || ShowHeaderForSingleItem || item.Quantity.HasValue || !string.IsNullOrWhiteSpace(item.BaseSize);
+    }
+
+    private static string FormatBaseSize(string baseSize)
+    {
+        var trimmed = baseSize.Trim();
+
+        if (trimmed.Contains("mm", StringComparison.OrdinalIgnoreCase))
+        {
+            return trimmed;
+        }
+
+        return $"{trimmed} mm";
+    }
+}

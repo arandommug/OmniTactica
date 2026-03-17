@@ -167,3 +167,64 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 });
+
+window.weaponAbilityLayout = window.weaponAbilityLayout || {
+    listeners: new Map(),
+
+    init: function (containerId, dotNetRef) {
+        this.dispose(containerId);
+
+        const measure = () => {
+            const container = document.getElementById(containerId);
+            if (!container) {
+                return;
+            }
+
+            const headers = container.querySelectorAll('.js-weapon-header');
+            let shouldStack = false;
+
+            headers.forEach((header) => {
+                if (shouldStack) {
+                    return;
+                }
+
+                if (header.offsetParent === null || header.clientWidth === 0) {
+                    return;
+                }
+
+                const name = header.querySelector('.js-weapon-name');
+                const tags = header.querySelector('.js-weapon-tags');
+                if (!name || !tags) {
+                    return;
+                }
+
+                const headerStyle = window.getComputedStyle(header);
+                const gap = parseFloat(headerStyle.columnGap || headerStyle.gap || '0') || 0;
+                const requiredWidth = name.scrollWidth + tags.scrollWidth + gap;
+                const availableWidth = header.clientWidth;
+
+                if (requiredWidth > availableWidth) {
+                    shouldStack = true;
+                }
+            });
+
+            dotNetRef.invokeMethodAsync('SetWeaponAbilityLayout', shouldStack);
+        };
+
+        const onResize = () => window.requestAnimationFrame(measure);
+
+        this.listeners.set(containerId, onResize);
+        window.addEventListener('resize', onResize, { passive: true });
+        window.requestAnimationFrame(measure);
+    },
+
+    dispose: function (containerId) {
+        const onResize = this.listeners.get(containerId);
+        if (!onResize) {
+            return;
+        }
+
+        window.removeEventListener('resize', onResize);
+        this.listeners.delete(containerId);
+    }
+};
