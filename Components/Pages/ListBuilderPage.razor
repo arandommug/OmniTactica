@@ -1215,6 +1215,8 @@
                     <div class="col-12 col-xl-6 d-flex flex-column gap-3 loadout-editor-panel-right">
                         @foreach (var model in LoadoutEditorUnit.Models)
                         {
+                            var weaponOptionGroups = GetEligibleWeaponOptionGroups(LoadoutEditorUnit, model).ToList();
+
                             <div class="border rounded-3 p-3 d-flex flex-column gap-2">
                                 <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
                                     <div>
@@ -1223,21 +1225,6 @@
                                     </div>
 
                                     <div class="d-flex align-items-center gap-2 flex-wrap justify-content-end">
-                                        <select class="form-select form-select-sm"
-                                                style="min-width: 180px;"
-                                                value="@GetPendingWeaponName(LoadoutEditorUnit.Id, model.Id)"
-                                                @onchange="args => SetPendingWeapon(LoadoutEditorUnit.Id, model.Id, args.Value?.ToString())">
-                                            <option value="">Add weapon...</option>
-                                            @foreach (var weaponChoice in GetAvailableWeaponChoices(LoadoutEditorUnit))
-                                            {
-                                                <option value="@weaponChoice">@weaponChoice</option>
-                                            }
-                                        </select>
-                                        <button class="btn btn-sm btn-outline-success"
-                                                @onclick="() => AddWeaponToModelAsync(LoadoutEditorUnit, model)"
-                                                disabled="@string.IsNullOrWhiteSpace(GetPendingWeaponName(LoadoutEditorUnit.Id, model.Id))">
-                                            <i class="fa fa-plus"></i>
-                                        </button>
                                         <span class="small text-muted">@model.MinQuantity-@model.MaxQuantity</span>
                                         <div class="qty-stepper">
                                             <button type="button"
@@ -1255,47 +1242,74 @@
                                     </div>
                                 </div>
 
+                                @if (weaponOptionGroups.Any())
+                                {
+                                    <div class="d-flex flex-column gap-2">
+                                        @foreach (var optionGroup in weaponOptionGroups)
+                                        {
+                                            var maxSelections = GetEligibleWeaponOptionMaxSelections(LoadoutEditorUnit, model, optionGroup);
+                                            var selectedCount = GetEligibleWeaponOptionSelectedCount(LoadoutEditorUnit, model, optionGroup);
+
+                                            <div class="rounded-3 border p-2 d-flex flex-column gap-2">
+                                                <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap">
+                                                    <div class="fw-semibold">@GetEligibleWeaponOptionTitle(optionGroup)</div>
+                                                    <span class="badge text-bg-secondary">@selectedCount / @maxSelections</span>
+                                                </div>
+
+                                                <div class="small text-muted">@GetEligibleWeaponOptionSummary(LoadoutEditorUnit, model, optionGroup)</div>
+
+                                                @foreach (var choice in optionGroup.Choices)
+                                                {
+                                                    var choiceCount = GetEligibleWeaponChoiceSelectedCount(LoadoutEditorUnit, model, optionGroup, choice);
+                                                    var choiceMax = GetEligibleWeaponChoiceMaxSelections(LoadoutEditorUnit, model, optionGroup, choice);
+
+                                                    <div class="rounded-3 border p-2 d-flex justify-content-between align-items-center gap-3">
+                                                        <div class="min-w-0">
+                                                            <div class="fw-semibold text-break">@choice.DisplayName</div>
+                                                            <div class="small text-muted">@GetEligibleWeaponChoiceSummary(choice, choiceMax)</div>
+                                                        </div>
+
+                                                        <div class="qty-stepper flex-shrink-0">
+                                                            <button type="button"
+                                                                    @onclick="() => ChangeEligibleWeaponChoiceAsync(LoadoutEditorUnit, model, optionGroup, choice, -1)"
+                                                                    disabled="@(choiceCount <= 0)">
+                                                                <i class="fa fa-minus"></i>
+                                                            </button>
+                                                            <span class="value">@choiceCount</span>
+                                                            <button type="button"
+                                                                    @onclick="() => ChangeEligibleWeaponChoiceAsync(LoadoutEditorUnit, model, optionGroup, choice, 1)"
+                                                                    disabled="@(choiceCount >= choiceMax)">
+                                                                <i class="fa fa-plus"></i>
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                }
+
+                                                @if (!string.IsNullOrWhiteSpace(optionGroup.Footnote))
+                                                {
+                                                    <div class="small text-muted">@optionGroup.Footnote</div>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                }
+
                                 @if (model.Weapons.Any())
                                 {
                                     <div class="d-flex flex-column gap-2">
-                                        @foreach (var weapon in model.Weapons)
+                                        @foreach (var weapon in model.Weapons.Where(existingWeapon => existingWeapon.Quantity > 0))
                                         {
                                             <div class="d-flex justify-content-between align-items-center gap-3 p-2 border rounded-3">
                                                 <div class="min-w-0 flex-grow-1 d-flex flex-column gap-1">
-                                                    <div class="fw-semibold">@weapon.Name</div>
-                                                    <div class="small text-muted">@GetCompactWeaponProfile(weapon)</div>
+                                                    <div class="fw-semibold">@weapon.Name <span class="text-muted">x@(weapon.Quantity)</span></div>
+                                                    @if (HasCompactWeaponProfile(weapon))
+                                                    {
+                                                        <div class="small text-muted">@GetCompactWeaponProfile(weapon)</div>
+                                                    }
                                                     @if (!string.IsNullOrWhiteSpace(weapon.Description))
                                                     {
                                                         <div class="small text-muted">@weapon.Description</div>
                                                     }
-                                                </div>
-
-                                                <div class="d-flex align-items-center gap-2 flex-wrap justify-content-end">
-                                                    <div class="form-check m-0">
-                                                        <input class="form-check-input"
-                                                               type="checkbox"
-                                                               checked="@weapon.IsSelected"
-                                                               @onchange="args => UpdateWeaponSelectedAsync(LoadoutEditorUnit.Id, model.Id, weapon.Id, args)" />
-                                                        <label class="form-check-label small">Equipped</label>
-                                                    </div>
-
-                                                    <div class="qty-stepper">
-                                                        <button type="button"
-                                                                @onclick="() => ChangeWeaponQuantityAsync(LoadoutEditorUnit.Id, model.Id, weapon, -1)"
-                                                                disabled="@(weapon.Quantity <= 1)">
-                                                            <i class="fa fa-minus"></i>
-                                                        </button>
-                                                        <span class="value">@weapon.Quantity</span>
-                                                        <button type="button"
-                                                                @onclick="() => ChangeWeaponQuantityAsync(LoadoutEditorUnit.Id, model.Id, weapon, 1)">
-                                                            <i class="fa fa-plus"></i>
-                                                        </button>
-                                                    </div>
-
-                                                    <button class="btn btn-sm btn-outline-danger"
-                                                            @onclick="() => RemoveWeaponAsync(LoadoutEditorUnit.Id, model.Id, weapon.Id)">
-                                                        <i class="fa fa-times"></i>
-                                                    </button>
                                                 </div>
                                             </div>
                                         }
@@ -1965,6 +1979,127 @@
     private static string GetCompactWeaponProfile(ArmyListUnitWeapon weapon)
         => $"{weapon.Range} \u00B7 A {weapon.A} \u00B7 BS/WS {weapon.BsWs} \u00B7 S {weapon.S} \u00B7 AP {weapon.AP} \u00B7 D {weapon.D}";
 
+    private static bool HasCompactWeaponProfile(ArmyListUnitWeapon weapon)
+        => !string.IsNullOrWhiteSpace(weapon.Range)
+            || !string.IsNullOrWhiteSpace(weapon.A)
+            || !string.IsNullOrWhiteSpace(weapon.BsWs)
+            || !string.IsNullOrWhiteSpace(weapon.S)
+            || !string.IsNullOrWhiteSpace(weapon.AP)
+            || !string.IsNullOrWhiteSpace(weapon.D);
+
+    private IEnumerable<ParsedDatasheetWeaponOptionGroup> GetEligibleWeaponOptionGroups(ArmyListUnit unit, ArmyListUnitModel model)
+    {
+        var detail = GetDatasheetDetail(unit.DatasheetId);
+        if (detail == null)
+        {
+            return Enumerable.Empty<ParsedDatasheetWeaponOptionGroup>();
+        }
+
+        return DatasheetWargearOptionHelper.ParseWeaponOptionGroups(detail)
+            .Where(option => OptionAppliesToModel(model, option))
+            .Where(option => DatasheetWargearOptionHelper.IsAvailableForUnitSize(option, unit.TotalModels));
+    }
+
+    private static bool OptionAppliesToModel(ArmyListUnitModel model, ParsedDatasheetWeaponOptionGroup option)
+    {
+        if (DatasheetWargearOptionHelper.AppliesToModel(option, model.Name))
+        {
+            return true;
+        }
+
+        if (option.SourceWeapons.Count == 0)
+        {
+            return false;
+        }
+
+        return option.SourceWeapons.All(sourceWeapon => sourceWeapon.MatchingWargearNames.Any(name => GetModelWeaponQuantity(model, name) > 0));
+    }
+
+    private int GetEligibleWeaponOptionMaxSelections(ArmyListUnit unit, ArmyListUnitModel model, ParsedDatasheetWeaponOptionGroup option)
+        => DatasheetWargearOptionHelper.GetMaximumSelections(option, unit.TotalModels, model.Quantity);
+
+    private int GetEligibleWeaponOptionSelectedCount(ArmyListUnit unit, ArmyListUnitModel model, ParsedDatasheetWeaponOptionGroup option)
+    {
+        var detail = GetDatasheetDetail(unit.DatasheetId);
+        if (detail == null)
+        {
+            return 0;
+        }
+
+        var baseline = GetBaseWeaponQuantities(detail, model);
+        return option.Choices.Sum(choice => GetEligibleWeaponChoiceSelectedCount(model, baseline, choice));
+    }
+
+    private int GetEligibleWeaponChoiceSelectedCount(ArmyListUnit unit, ArmyListUnitModel model, ParsedDatasheetWeaponOptionGroup option, ParsedDatasheetWeaponOptionChoice choice)
+    {
+        var detail = GetDatasheetDetail(unit.DatasheetId);
+        if (detail == null)
+        {
+            return 0;
+        }
+
+        var baseline = GetBaseWeaponQuantities(detail, model);
+        return GetEligibleWeaponChoiceSelectedCount(model, baseline, choice);
+    }
+
+    private int GetEligibleWeaponChoiceMaxSelections(ArmyListUnit unit, ArmyListUnitModel model, ParsedDatasheetWeaponOptionGroup option, ParsedDatasheetWeaponOptionChoice choice)
+    {
+        var detail = GetDatasheetDetail(unit.DatasheetId);
+        if (detail == null)
+        {
+            return 0;
+        }
+
+        var optionMax = GetEligibleWeaponOptionMaxSelections(unit, model, option);
+        var selectedInGroup = GetEligibleWeaponOptionSelectedCount(unit, model, option);
+        var selectedForChoice = GetEligibleWeaponChoiceSelectedCount(unit, model, option, choice);
+        var remainingGroupCapacity = Math.Max(0, optionMax - (selectedInGroup - selectedForChoice));
+
+        var choiceLimit = DatasheetWargearOptionHelper.GetChoiceLimitPerUnit(option, unit.TotalModels);
+        if (choiceLimit.HasValue)
+        {
+            var selectedInUnit = unit.Models.Sum(existingModel =>
+            {
+                var baseline = GetBaseWeaponQuantities(detail, existingModel);
+                return GetEligibleWeaponChoiceSelectedCount(existingModel, baseline, choice);
+            });
+
+            remainingGroupCapacity = Math.Min(remainingGroupCapacity, Math.Max(0, choiceLimit.Value - (selectedInUnit - selectedForChoice)));
+        }
+
+        var availableFromSources = choice.AddedWeapons.Count == 0
+            ? 0
+            : selectedForChoice + GetAvailableEligibleWeaponSourceCapacity(model, option, optionMax);
+
+        return Math.Min(remainingGroupCapacity, availableFromSources);
+    }
+
+    private static string GetEligibleWeaponOptionTitle(ParsedDatasheetWeaponOptionGroup option)
+        => option.SourceWeapons.Count == 0
+            ? "Eligible Weapons"
+            : $"Replace {string.Join(" + ", option.SourceWeapons.Select(weapon => weapon.Name))}";
+
+    private string GetEligibleWeaponOptionSummary(ArmyListUnit unit, ArmyListUnitModel model, ParsedDatasheetWeaponOptionGroup option)
+    {
+        var maxSelections = GetEligibleWeaponOptionMaxSelections(unit, model, option);
+        var targetText = option.AppliesToAnyModel ? model.Name : option.TargetModelName;
+        var summary = $"{targetText}: up to {maxSelections} selection{(maxSelections == 1 ? string.Empty : "s")}.";
+        return option.Condition == null ? summary : $"{summary} {option.Condition.Description}";
+    }
+
+    private static string GetEligibleWeaponChoiceSummary(ParsedDatasheetWeaponOptionChoice choice, int maxSelections)
+        => maxSelections <= 0
+            ? "Unavailable"
+            : $"Max {maxSelections}";
+
+    private async Task ChangeEligibleWeaponChoiceAsync(ArmyListUnit unit, ArmyListUnitModel model, ParsedDatasheetWeaponOptionGroup option, ParsedDatasheetWeaponOptionChoice choice, int delta)
+    {
+        var currentCount = GetEligibleWeaponChoiceSelectedCount(unit, model, option, choice);
+        var targetCount = Math.Max(0, currentCount + delta);
+        await ArmyListService.SetWeaponOptionChoiceQuantityAsync(unit.Id, model.Id, option.Id, choice.Id, targetCount);
+        RefreshArmyListState();
+    }
+
     private static string FormatSave(ArmyListUnitModel model)
         => string.IsNullOrWhiteSpace(model.InvSv) || model.InvSv == "-"
             ? model.Sv
@@ -1993,6 +2128,56 @@
                .Distinct(StringComparer.OrdinalIgnoreCase)
                .OrderBy(name => name)
            ?? Enumerable.Empty<string>();
+
+    private static int GetEligibleWeaponChoiceSelectedCount(ArmyListUnitModel model, IReadOnlyDictionary<string, int> baseline, ParsedDatasheetWeaponOptionChoice choice)
+    {
+        if (choice.AddedWeapons.Count == 0)
+        {
+            return 0;
+        }
+
+        var counts = new List<int>();
+        foreach (var addedWeapon in choice.AddedWeapons)
+        {
+            foreach (var wargearName in addedWeapon.MatchingWargearNames)
+            {
+                var currentQuantity = GetModelWeaponQuantity(model, wargearName);
+                baseline.TryGetValue(wargearName, out var baselineQuantity);
+                counts.Add(Math.Max(0, currentQuantity - baselineQuantity) / Math.Max(1, addedWeapon.Quantity));
+            }
+        }
+
+        return counts.Count == 0 ? 0 : counts.Min();
+    }
+
+    private static int GetModelWeaponQuantity(ArmyListUnitModel model, string weaponName)
+        => model.Weapons.FirstOrDefault(weapon => weapon.Name.Equals(weaponName, StringComparison.OrdinalIgnoreCase))?.Quantity ?? 0;
+
+    private static int GetAvailableEligibleWeaponSourceCapacity(ArmyListUnitModel model, ParsedDatasheetWeaponOptionGroup option, int optionMax)
+    {
+        if (option.SourceWeapons.Count == 0)
+        {
+            return optionMax;
+        }
+
+        var capacities = new List<int>();
+        foreach (var sourceWeapon in option.SourceWeapons)
+        {
+            foreach (var wargearName in sourceWeapon.MatchingWargearNames)
+            {
+                capacities.Add(GetModelWeaponQuantity(model, wargearName) / Math.Max(1, sourceWeapon.Quantity));
+            }
+        }
+
+        return capacities.Count == 0 ? 0 : capacities.Min();
+    }
+
+    private static Dictionary<string, int> GetBaseWeaponQuantities(DatasheetDetail detail, ArmyListUnitModel model)
+    {
+        return DatasheetParsingHelper.ParseStartingWargearForModel(detail, model.Name, model.Quantity)
+            .GroupBy(weapon => weapon.Wargear.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.Sum(item => item.Quantity), StringComparer.OrdinalIgnoreCase);
+    }
 
     private string GetPendingWeaponKey(string unitId, string modelId)
         => $"{unitId}:{modelId}";

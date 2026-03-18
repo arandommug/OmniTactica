@@ -235,6 +235,7 @@ namespace OmniTactica.AppCode.Services
 
         public async Task SetModelQuantityAsync(string unitId, string modelId, int quantity)
         {
+            var armyList = EnsureActiveList();
             var unit = FindUnit(unitId);
             var model = unit?.Models.FirstOrDefault(existingModel => existingModel.Id == modelId);
             if (unit == null || model == null)
@@ -245,6 +246,65 @@ namespace OmniTactica.AppCode.Services
             model.Quantity = Math.Clamp(quantity, model.MinQuantity, Math.Max(model.MinQuantity, model.MaxQuantity));
             ApplyAutomaticCostSelection(unit);
             unit.Composition = CreateCompositionDescriptionsFromModels(unit.Models);
+
+            var detail = await _data.GetDatasheetDetailAsync(unit.DatasheetId, armyList.DetachmentId);
+            if (detail != null)
+            {
+                model.Weapons = CreateWeaponsFromLoadout(detail, model.Name, model.Quantity);
+            }
+
+            await PersistAsync();
+        }
+
+        public async Task SetWeaponOptionChoiceQuantityAsync(string unitId, string modelId, string optionId, string choiceId, int quantity)
+        {
+            var armyList = EnsureActiveList();
+            var unit = FindUnit(unitId);
+            var model = unit?.Models.FirstOrDefault(existingModel => existingModel.Id == modelId);
+            if (unit == null || model == null)
+            {
+                return;
+            }
+
+            var detail = await _data.GetDatasheetDetailAsync(unit.DatasheetId, armyList.DetachmentId);
+            if (detail == null)
+            {
+                return;
+            }
+
+            var option = DatasheetWargearOptionHelper.ParseWeaponOptionGroups(detail)
+                .FirstOrDefault(group =>
+                    group.Id == optionId
+                    && DatasheetWargearOptionHelper.IsAvailableForUnitSize(group, unit.TotalModels));
+            var choice = option?.Choices.FirstOrDefault(existingChoice => existingChoice.Id == choiceId);
+            if (option == null || choice == null)
+            {
+                return;
+            }
+
+            var currentCount = GetCurrentOptionChoiceCount(unit, model, detail, option, choice);
+            var targetCount = Math.Max(0, quantity);
+
+            while (currentCount < targetCount)
+            {
+                if (!TryIncrementWeaponOptionChoice(unit, model, detail, option, choice))
+                {
+                    break;
+                }
+
+                currentCount++;
+            }
+
+            while (currentCount > targetCount)
+            {
+                if (!TryDecrementWeaponOptionChoice(model, detail, option, choice))
+                {
+                    break;
+                }
+
+                currentCount--;
+            }
+
             await PersistAsync();
         }
 
@@ -570,14 +630,7 @@ namespace OmniTactica.AppCode.Services
                     Ld = modelProfile.Ld,
                     OC = modelProfile.OC,
                     BaseSize = modelProfile.BaseSize,
-                    Weapons = DatasheetParsingHelper.ParseLoadoutForModel(detail.Loadout, modelName, detail.Wargear, minQuantity)
-                        .Select(parsedWeapon =>
-                        {
-                            var weapon = CreateArmyListWeaponFromWargear(parsedWeapon.Wargear);
-                            weapon.Quantity = parsedWeapon.Quantity;
-                            return weapon;
-                        })
-                        .ToList()
+                    Weapons = CreateWeaponsFromLoadout(detail, modelName, minQuantity)
                 };
 
                 models.Add(model);
@@ -841,6 +894,240 @@ namespace OmniTactica.AppCode.Services
         private static string FormatComposition(IEnumerable<UnitCompositionEntry> entries)
             => string.Join(" and ", entries.Select(entry => $"{entry.Quantity} {entry.Name}"));
 
+        private List<ArmyListUnitWeapon> CreateWeaponsFromLoadout(DatasheetDetail detail, string modelName, int modelQuantity)
+        {
+            return DatasheetParsingHelper.ParseStartingWargearForModel(detail, modelName, modelQuantity)
+                .Select(parsedWeapon =>
+                {
+                    var weapon = CreateArmyListWeaponFromWargear(parsedWeapon.Wargear);
+                    weapon.Quantity = parsedWeapon.Quantity;
+                    return weapon;
+                })
+                .ToList();
+        }
+
+        private int GetCurrentOptionChoiceCount(ArmyListUnit unit, ArmyListUnitModel model, DatasheetDetail detail, ParsedDatasheetWeaponOptionGroup option, ParsedDatasheetWeaponOptionChoice choice)
+        {
+            var baseline = GetBaseWeaponQuantities(detail, model);
+            return GetCurrentOptionChoiceCount(model, baseline, option, choice);
+        }
+
+        private static int GetCurrentOptionChoiceCount(ArmyListUnitModel model, IReadOnlyDictionary<string, int> baseline, ParsedDatasheetWeaponOptionGroup option, ParsedDatasheetWeaponOptionChoice choice)
+        {
+            if (choice.AddedWeapons.Count == 0)
+            {
+                return 0;
+            }
+
+            var counts = new List<int>();
+            foreach (var addedWeapon in choice.AddedWeapons)
+            {
+                foreach (var wargearName in addedWeapon.MatchingWargearNames)
+                {
+                    var currentQuantity = GetWeaponQuantity(model, wargearName);
+                    baseline.TryGetValue(wargearName, out var baselineQuantity);
+                    counts.Add(Math.Max(0, currentQuantity - baselineQuantity) / Math.Max(1, addedWeapon.Quantity));
+                }
+            }
+
+            return counts.Count == 0 ? 0 : counts.Min();
+        }
+
+        private int GetCurrentOptionSelectionCount(ArmyListUnit unit, ArmyListUnitModel model, DatasheetDetail detail, ParsedDatasheetWeaponOptionGroup option)
+        {
+            var baseline = GetBaseWeaponQuantities(detail, model);
+            return option.Choices.Sum(choice => GetCurrentOptionChoiceCount(model, baseline, option, choice));
+        }
+
+        private int GetCurrentUnitChoiceCount(ArmyListUnit unit, DatasheetDetail detail, ParsedDatasheetWeaponOptionGroup option, ParsedDatasheetWeaponOptionChoice choice)
+        {
+            return unit.Models.Sum(existingModel =>
+            {
+                var baseline = GetBaseWeaponQuantities(detail, existingModel);
+                return GetCurrentOptionChoiceCount(existingModel, baseline, option, choice);
+            });
+        }
+
+        private Dictionary<string, int> GetBaseWeaponQuantities(DatasheetDetail detail, ArmyListUnitModel model)
+        {
+            return DatasheetParsingHelper.ParseStartingWargearForModel(detail, model.Name, model.Quantity)
+                .GroupBy(weapon => weapon.Wargear.Name, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(group => group.Key, group => group.Sum(item => item.Quantity), StringComparer.OrdinalIgnoreCase);
+        }
+
+        private bool TryIncrementWeaponOptionChoice(ArmyListUnit unit, ArmyListUnitModel model, DatasheetDetail detail, ParsedDatasheetWeaponOptionGroup option, ParsedDatasheetWeaponOptionChoice choice)
+        {
+            var maxSelections = DatasheetWargearOptionHelper.GetMaximumSelections(option, unit.TotalModels, model.Quantity);
+            if (maxSelections <= 0)
+            {
+                return false;
+            }
+
+            var currentGroupSelections = GetCurrentOptionSelectionCount(unit, model, detail, option);
+            if (currentGroupSelections >= maxSelections)
+            {
+                return false;
+            }
+
+            var choiceLimit = DatasheetWargearOptionHelper.GetChoiceLimitPerUnit(option, unit.TotalModels);
+            if (choiceLimit.HasValue && GetCurrentUnitChoiceCount(unit, detail, option, choice) >= choiceLimit.Value)
+            {
+                return false;
+            }
+
+            foreach (var sourceWeapon in option.SourceWeapons)
+            {
+                foreach (var wargearName in sourceWeapon.MatchingWargearNames)
+                {
+                    if (GetWeaponQuantity(model, wargearName) < sourceWeapon.Quantity)
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            foreach (var sourceWeapon in option.SourceWeapons)
+            {
+                foreach (var wargearName in sourceWeapon.MatchingWargearNames)
+                {
+                    UpdateWeaponQuantity(model, wargearName, -sourceWeapon.Quantity);
+                }
+            }
+
+            foreach (var addedWeapon in choice.AddedWeapons)
+            {
+                foreach (var wargearName in addedWeapon.MatchingWargearNames)
+                {
+                    var wargear = detail.Wargear.FirstOrDefault(existingWargear => existingWargear.Name.Equals(wargearName, StringComparison.OrdinalIgnoreCase));
+                    if (wargear != null)
+                    {
+                        UpdateWeaponQuantity(model, wargear, addedWeapon.Quantity);
+                        continue;
+                    }
+
+                    var wargearAbility = detail.Abilities.FirstOrDefault(existingAbility =>
+                        string.Equals(existingAbility.Type, "Wargear", StringComparison.OrdinalIgnoreCase)
+                        && existingAbility.Name.Equals(wargearName, StringComparison.OrdinalIgnoreCase));
+                    if (wargearAbility != null)
+                    {
+                        UpdateWeaponQuantity(model, wargearAbility, addedWeapon.Quantity);
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        private bool TryDecrementWeaponOptionChoice(ArmyListUnitModel model, DatasheetDetail detail, ParsedDatasheetWeaponOptionGroup option, ParsedDatasheetWeaponOptionChoice choice)
+        {
+            var baseline = GetBaseWeaponQuantities(detail, model);
+            if (GetCurrentOptionChoiceCount(model, baseline, option, choice) <= 0)
+            {
+                return false;
+            }
+
+            foreach (var addedWeapon in choice.AddedWeapons)
+            {
+                foreach (var wargearName in addedWeapon.MatchingWargearNames)
+                {
+                    UpdateWeaponQuantity(model, wargearName, -addedWeapon.Quantity);
+                }
+            }
+
+            foreach (var sourceWeapon in option.SourceWeapons)
+            {
+                foreach (var wargearName in sourceWeapon.MatchingWargearNames)
+                {
+                    var wargear = detail.Wargear.FirstOrDefault(existingWargear => existingWargear.Name.Equals(wargearName, StringComparison.OrdinalIgnoreCase));
+                    if (wargear != null)
+                    {
+                        UpdateWeaponQuantity(model, wargear, sourceWeapon.Quantity);
+                        continue;
+                    }
+
+                    var wargearAbility = detail.Abilities.FirstOrDefault(existingAbility =>
+                        string.Equals(existingAbility.Type, "Wargear", StringComparison.OrdinalIgnoreCase)
+                        && existingAbility.Name.Equals(wargearName, StringComparison.OrdinalIgnoreCase));
+                    if (wargearAbility != null)
+                    {
+                        UpdateWeaponQuantity(model, wargearAbility, sourceWeapon.Quantity);
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        private static int GetWeaponQuantity(ArmyListUnitModel model, string weaponName)
+        {
+            return model.Weapons.FirstOrDefault(weapon => weapon.Name.Equals(weaponName, StringComparison.OrdinalIgnoreCase))?.Quantity ?? 0;
+        }
+
+        private void UpdateWeaponQuantity(ArmyListUnitModel model, DatasheetWargear wargear, int delta)
+        {
+            var existingWeapon = model.Weapons.FirstOrDefault(weapon => weapon.Name.Equals(wargear.Name, StringComparison.OrdinalIgnoreCase));
+            if (existingWeapon == null)
+            {
+                if (delta <= 0)
+                {
+                    return;
+                }
+
+                existingWeapon = CreateArmyListWeaponFromWargear(wargear);
+                existingWeapon.Quantity = 0;
+                model.Weapons.Add(existingWeapon);
+            }
+
+            existingWeapon.Quantity = Math.Max(0, existingWeapon.Quantity + delta);
+            existingWeapon.IsSelected = existingWeapon.Quantity > 0;
+
+            if (existingWeapon.Quantity == 0)
+            {
+                model.Weapons.Remove(existingWeapon);
+            }
+        }
+
+        private void UpdateWeaponQuantity(ArmyListUnitModel model, DatasheetAbility wargearAbility, int delta)
+        {
+            var existingWeapon = model.Weapons.FirstOrDefault(weapon => weapon.Name.Equals(wargearAbility.Name, StringComparison.OrdinalIgnoreCase));
+            if (existingWeapon == null)
+            {
+                if (delta <= 0)
+                {
+                    return;
+                }
+
+                existingWeapon = CreateArmyListWeaponFromAbility(wargearAbility);
+                existingWeapon.Quantity = 0;
+                model.Weapons.Add(existingWeapon);
+            }
+
+            existingWeapon.Quantity = Math.Max(0, existingWeapon.Quantity + delta);
+            existingWeapon.IsSelected = existingWeapon.Quantity > 0;
+
+            if (existingWeapon.Quantity == 0)
+            {
+                model.Weapons.Remove(existingWeapon);
+            }
+        }
+
+        private void UpdateWeaponQuantity(ArmyListUnitModel model, string weaponName, int delta)
+        {
+            var existingWeapon = model.Weapons.FirstOrDefault(weapon => weapon.Name.Equals(weaponName, StringComparison.OrdinalIgnoreCase));
+            if (existingWeapon == null)
+            {
+                return;
+            }
+
+            existingWeapon.Quantity = Math.Max(0, existingWeapon.Quantity + delta);
+            existingWeapon.IsSelected = existingWeapon.Quantity > 0;
+
+            if (existingWeapon.Quantity == 0)
+            {
+                model.Weapons.Remove(existingWeapon);
+            }
+        }
+
         private ArmyListUnitWeapon CreateArmyListWeaponFromWargear(DatasheetWargear wargear)
         {
             return new ArmyListUnitWeapon
@@ -854,6 +1141,15 @@ namespace OmniTactica.AppCode.Services
                 AP = wargear.AP,
                 D = wargear.D,
                 Description = wargear.Description
+            };
+        }
+
+        private static ArmyListUnitWeapon CreateArmyListWeaponFromAbility(DatasheetAbility ability)
+        {
+            return new ArmyListUnitWeapon
+            {
+                Name = ability.Name,
+                Description = ability.Description
             };
         }
 

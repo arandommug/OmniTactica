@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using HtmlAgilityPack;
 using OmniTactica.AppCode.Models.Core;
 using OmniTactica.AppCode.Utilities;
 
@@ -132,6 +133,18 @@ namespace OmniTactica.AppCode.Helpers
                 .ToList();
         }
 
+        public static List<ParsedLoadoutWeapon> ParseStartingWargearForModel(DatasheetDetail detail, string modelName, int modelQuantity = 1)
+        {
+            var loadoutWeapons = ParseLoadoutForModel(detail.Loadout, modelName, detail.Wargear, modelQuantity);
+            var optionWeapons = ParseOptionEquippedWargearForModel(detail, modelName);
+
+            return loadoutWeapons
+                .Concat(optionWeapons)
+                .GroupBy(weapon => weapon.Wargear.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(group => new ParsedLoadoutWeapon(group.First().Wargear, group.Sum(weapon => weapon.Quantity)))
+                .ToList();
+        }
+
         public static string FormatComposition(IEnumerable<DatasheetCompositionEntry> entries)
             => string.Join(" and ", entries.Select(entry => $"{entry.Quantity} {entry.Name}"));
 
@@ -227,9 +240,7 @@ namespace OmniTactica.AppCode.Helpers
             var normalizedLeft = NormalizeName(left);
             var normalizedRight = NormalizeName(right);
 
-            return normalizedLeft == normalizedRight
-                   || normalizedLeft.Contains(normalizedRight, StringComparison.OrdinalIgnoreCase)
-                   || normalizedRight.Contains(normalizedLeft, StringComparison.OrdinalIgnoreCase);
+            return normalizedLeft == normalizedRight;
         }
 
         private static int ParseModelCount(string value)
@@ -277,6 +288,112 @@ namespace OmniTactica.AppCode.Helpers
                        : null)
                    ?? wargearList.FirstOrDefault(wargear =>
                        weaponName.Contains(wargear.Name, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static List<ParsedLoadoutWeapon> ParseOptionEquippedWargearForModel(DatasheetDetail detail, string modelName)
+        {
+            if (detail.Options.Count == 0)
+            {
+                return [];
+            }
+
+            var aliases = GetModelAliases(detail, modelName);
+            var weapons = new List<ParsedLoadoutWeapon>();
+
+            foreach (var option in detail.Options)
+            {
+                var text = HtmlUtility.StripHtml(option.Description).Trim();
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    continue;
+                }
+
+                var match = Regex.Match(text, @"^(?<target>.+?) (?:is|are) equipped with:(?<weapons>.+)$", RegexOptions.IgnoreCase);
+                if (!match.Success)
+                {
+                    continue;
+                }
+
+                var target = match.Groups["target"].Value.Trim();
+                if (!aliases.Contains(NormalizeName(target)))
+                {
+                    continue;
+                }
+
+                var optionWeaponNames = match.Groups["weapons"].Value
+                    .Split(new[] { ';', ',' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(part => part.Trim())
+                    .Where(part => !string.IsNullOrWhiteSpace(part));
+
+                foreach (var optionWeaponName in optionWeaponNames)
+                {
+                    var wargear = FindWargear(detail.Wargear, optionWeaponName);
+                    if (wargear == null)
+                    {
+                        continue;
+                    }
+
+                    weapons.Add(new ParsedLoadoutWeapon(wargear, 1));
+                }
+            }
+
+            return weapons;
+        }
+
+        private static HashSet<string> GetModelAliases(DatasheetDetail detail, string modelName)
+        {
+            var aliases = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                NormalizeName(modelName)
+            };
+
+            foreach (var compositionEntry in detail.UnitComposition)
+            {
+                var plainText = HtmlUtility.ConvertHtmlToPlainText(compositionEntry.Description).Trim();
+                if (string.IsNullOrWhiteSpace(plainText) || plainText.Equals("OR", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var genericNameMatch = Regex.Match(plainText, @"^\d+(?:-\d+)?\s+(?<name>[^:(]+)");
+                if (!genericNameMatch.Success)
+                {
+                    continue;
+                }
+
+                var genericName = genericNameMatch.Groups["name"].Value.Trim();
+                if (!string.Equals(NormalizeName(genericName), NormalizeName(modelName), StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                foreach (Match parentheticalMatch in Regex.Matches(plainText, @"\((?<name>[^\)]+)\)"))
+                {
+                    aliases.Add(NormalizeName(parentheticalMatch.Groups["name"].Value.Trim()));
+                }
+
+                if (compositionEntry.Description.Contains("<li>", StringComparison.OrdinalIgnoreCase))
+                {
+                    var document = new HtmlDocument();
+                    document.LoadHtml(compositionEntry.Description);
+                    var listNodes = document.DocumentNode.SelectNodes("//li");
+                    if (listNodes == null)
+                    {
+                        continue;
+                    }
+
+                    foreach (var node in listNodes)
+                    {
+                        var alias = HtmlUtility.ConvertHtmlToPlainText(node.InnerHtml).Trim();
+                        if (!string.IsNullOrWhiteSpace(alias))
+                        {
+                            aliases.Add(NormalizeName(alias));
+                        }
+                    }
+                }
+            }
+
+            return aliases;
         }
 
         private static bool MatchesCompositionOption(IEnumerable<DatasheetCompositionEntry> option, IEnumerable<CostDescriptionEntry> costEntries)
