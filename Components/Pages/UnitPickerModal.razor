@@ -54,10 +54,6 @@
                                         {
                                             <span class="badge bg-success ms-2">@unit.PointsCost pts</span>
                                         }
-                                        @if (!string.IsNullOrEmpty(unit.Role))
-                                        {
-                                            <span class="badge bg-secondary ms-1">@unit.Role</span>
-                                        }
                                     </div>
                                     <i class="fa fa-chevron-right text-muted"></i>
                                 </div>
@@ -104,7 +100,7 @@
     {
         await JS.InvokeVoidAsync("bootstrapInterop.showModal", "unitPickerModal");
 
-        if (!units.Any() && !string.IsNullOrEmpty(selectedFactionId))
+        if (!units.Any())
         {
             await LoadUnitsForFaction();
         }
@@ -112,12 +108,12 @@
 
     private async Task LoadUnitsForFaction()
     {
-        if (string.IsNullOrEmpty(selectedFactionId)) return;
-
         loading = true;
         StateHasChanged();
 
-        units = await DataService.GetDatasheetsByFactionAsync(selectedFactionId);
+        units = string.IsNullOrEmpty(selectedFactionId)
+            ? await DataService.GetAllDatasheetsAsync()
+            : await DataService.GetDatasheetsByFactionAsync(selectedFactionId);
 
         loading = false;
         StateHasChanged();

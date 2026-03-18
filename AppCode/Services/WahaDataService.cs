@@ -81,6 +81,12 @@ namespace OmniTactica.AppCode.Services
             => _detachments.GetDetachmentWithDetailsAsync(detachmentId);
 
         /// <summary>
+        /// Gets all datasheets (list view).
+        /// </summary>
+        public Task<List<Datasheet>> GetAllDatasheetsAsync()
+            => _datasheets.GetAllDatasheetsAsync();
+
+        /// <summary>
         /// Gets all datasheets for a faction (list view).
         /// Optionally filters by selected keywords with AND/OR logic.
         /// Supports both include and exclude keyword filters.

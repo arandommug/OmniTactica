@@ -1,0 +1,1432 @@
+@page "/play-mode/{ListId}"
+@using OmniTactica.AppCode.Data.Database
+@using OmniTactica.AppCode.Data.Import
+@using OmniTactica.AppCode.Helpers
+@using OmniTactica.AppCode.Models.Core
+@using OmniTactica.AppCode.Models.Rules
+@using OmniTactica.AppCode.Services
+
+@inject WahaSQLiteService DB
+@inject WahaDataService Data
+@inject ArmyListService ArmyListService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@implements IDisposable
+
+<style>
+    /* ── Play mode overlay ── */
+    .play-mode-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 1200;
+        background: var(--bs-body-bg);
+        overflow-y: auto;
+        overflow-x: clip;
+    }
+
+    body.overlay-open {
+        overflow: hidden !important;
+    }
+
+    /* ── Toolbar ── */
+    .play-mode-toolbar {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+        background: rgba(var(--bs-body-bg-rgb), 0.94);
+        border-bottom: 1px solid rgba(var(--bs-border-color-rgb, 0,0,0), 0.1);
+    }
+
+    .play-mode-toolbar-inner {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        gap: 1rem;
+        padding: 0.75rem 1.25rem;
+    }
+
+    .play-mode-title-block .army-label {
+        font-size: 0.65rem;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--bs-secondary);
+        font-weight: 700;
+        margin-bottom: 0.1rem;
+    }
+
+    .play-mode-title-block h2 {
+        margin: 0;
+        font-size: 1.1rem;
+        font-weight: 700;
+        line-height: 1.2;
+    }
+
+    .play-mode-title-block .army-sub {
+        font-size: 0.75rem;
+        color: var(--bs-secondary);
+        margin-top: 0.1rem;
+    }
+
+    .play-mode-controls {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
+
+    .tracker-group {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .tracker-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.15rem;
+    }
+
+    .tracker-item .tracker-label {
+        font-size: 0.6rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--bs-secondary);
+        font-weight: 600;
+    }
+
+    .tracker-stepper {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.2rem;
+    }
+
+    .tracker-stepper .btn {
+        width: 1.6rem;
+        height: 1.6rem;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        font-size: 0.65rem;
+        border-radius: 0.3rem;
+    }
+
+    .tracker-stepper .tracker-val {
+        min-width: 1.6rem;
+        text-align: center;
+        font-weight: 700;
+        font-size: 1rem;
+        line-height: 1;
+    }
+
+    .tracker-divider {
+        width: 1px;
+        height: 2rem;
+        background: rgba(var(--bs-border-color-rgb, 0,0,0), 0.15);
+        flex-shrink: 0;
+    }
+
+    .phase-display {
+        font-size: 0.7rem;
+        color: var(--bs-secondary);
+        white-space: nowrap;
+    }
+
+    .phase-display strong {
+        color: var(--bs-body-color);
+        font-weight: 700;
+    }
+
+    /* ── Phase bar ── */
+    .phase-bar {
+        display: flex;
+        gap: 0.35rem;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        padding-bottom: 0.25rem;
+        scrollbar-width: none;
+    }
+
+    .phase-bar::-webkit-scrollbar { display: none; }
+
+    .phase-bar .btn {
+        white-space: nowrap;
+        flex-shrink: 0;
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        padding: 0.3rem 0.75rem;
+        border-radius: 999px;
+    }
+
+    /* ── Controls bar (search + filter) ── */
+    .play-mode-controls-bar {
+        display: flex;
+        gap: 0.75rem;
+        align-items: flex-end;
+        flex-wrap: wrap;
+    }
+
+    .play-mode-controls-bar .form-control,
+    .play-mode-controls-bar .form-select {
+        font-size: 0.82rem;
+    }
+
+    /* Phase + search sticky container */
+    .pm-phase-row {
+        position: sticky;
+        top: 3.8rem;
+        z-index: 4;
+        background: rgba(var(--bs-body-bg-rgb), 0.97);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border-bottom: 1px solid rgba(255,255,255,0.07);
+        padding: 0.6rem 0.75rem 0.65rem;
+        margin: 0 -0.75rem 1.1rem;
+    }
+
+    /* ── Unit cards ── */
+    .pm-unit-card {
+        border-radius: 0.85rem;
+        border: 1px solid rgba(255,255,255,0.08);
+        background: rgba(255,255,255,0.04);
+        overflow: hidden;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.25), 0 1px 3px rgba(0,0,0,0.15);
+        transition: box-shadow 0.15s ease;
+    }
+
+    .pm-unit-card.is-destroyed {
+        opacity: 0.38;
+        border-color: rgba(var(--bs-danger-rgb), 0.4);
+        box-shadow: none;
+    }
+
+    /* Role-based left accent on unit header */
+    .pm-unit-card[data-role="Characters"] .pm-unit-header   { border-left: 3px solid #c084fc; }
+    .pm-unit-card[data-role="Battleline"] .pm-unit-header   { border-left: 3px solid #34d399; }
+    .pm-unit-card[data-role="Dedicated Transports"] .pm-unit-header { border-left: 3px solid #60a5fa; }
+    .pm-unit-card[data-role="Other Datasheets"] .pm-unit-header { border-left: 3px solid #fb923c; }
+
+    .pm-unit-header {
+        padding: 0.85rem 1rem 0.75rem;
+        border-bottom: 1px solid rgba(255,255,255,0.07);
+        background: rgba(255,255,255,0.06);
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+    }
+
+    .pm-unit-header-top {
+        width: 100%;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .pm-unit-name {
+        font-size: 1.05rem;
+        font-weight: 700;
+        line-height: 1.2;
+        margin-bottom: 0;
+        letter-spacing: 0.01em;
+        flex: 1 1 auto;
+        min-width: 0;
+        text-align: left;
+    }
+
+    .pm-unit-name-count {
+        display: inline-block;
+        margin-left: 0.25rem;
+    }
+
+    .pm-unit-tracker {
+        display: flex;
+        align-items: center;
+        flex-shrink: 0;
+        margin-left: auto;
+    }
+
+    .pm-unit-body {
+        padding: 0 0 0.85rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+    }
+
+    .pm-unit-body > div {
+        padding: 0.75rem 1rem 0;
+    }
+
+    /* ── Section headings inside unit cards ── */
+    .pm-section-label {
+        font-size: 0.6rem;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        font-weight: 800;
+        color: rgba(255,255,255,0.5);
+        margin: 0 -1rem 0.65rem -1rem;
+        padding: 0.3rem 1rem;
+        background: rgba(255,255,255,0.05);
+        border-top: 1px solid rgba(255,255,255,0.06);
+        border-bottom: 1px solid rgba(255,255,255,0.06);
+        display: block;
+    }
+
+    .pm-section-label::after { display: none; }
+
+    /* ── Stats & weapons tables ── */
+    .pm-table {
+        font-size: 0.78rem;
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .pm-table th {
+        font-size: 0.65rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--bs-secondary);
+        font-weight: 600;
+        padding: 0.25rem 0.4rem;
+        border-bottom: 1px solid rgba(var(--bs-border-color-rgb, 0,0,0), 0.12);
+        white-space: nowrap;
+    }
+
+    .pm-table td {
+        padding: 0.3rem 0.4rem;
+        vertical-align: middle;
+        white-space: nowrap;
+        border-bottom: 1px solid rgba(var(--bs-border-color-rgb, 0,0,0), 0.05);
+    }
+
+    .pm-table tbody tr:last-child td { border-bottom: none; }
+
+    /* ── Ability list ── */
+    .pm-ability-item {
+        padding: 0.65rem 0.75rem;
+        border-radius: 0.5rem;
+        background: rgba(255,255,255,0.04);
+        border: 1px solid rgba(255,255,255,0.07);
+        font-size: 0.82rem;
+    }
+
+    .pm-ability-item + .pm-ability-item {
+        margin-top: 0.4rem;
+    }
+
+    .pm-ability-item h1, .pm-ability-item h2, .pm-ability-item h3,
+    .pm-ability-item h4, .pm-ability-item h5, .pm-ability-item h6 {
+        font-size: 0.84rem !important;
+        font-weight: 700;
+        margin: 0.4rem 0 0.15rem;
+        line-height: 1.3;
+    }
+
+    .pm-ability-item p { margin-bottom: 0.35rem; }
+    .pm-ability-item p:last-child { margin-bottom: 0; }
+
+    .pm-ability-name {
+        font-weight: 700;
+        font-size: 0.84rem;
+        display: block;
+        margin-bottom: 0.2rem;
+    }
+
+    .pm-ability-type {
+        font-size: 0.68rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--bs-secondary);
+        margin-left: 0.4rem;
+    }
+
+    /* ── Stratagem cards ── */
+    .strat-card {
+        border-radius: 0.6rem;
+        border: 1px solid rgba(var(--bs-primary-rgb), 0.2);
+        border-left: 3px solid rgba(var(--bs-primary-rgb), 0.5);
+        padding: 0.7rem 0.85rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+        background: rgba(var(--bs-primary-rgb), 0.04);
+    }
+
+    .strat-card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 0.5rem;
+    }
+
+    .strat-name {
+        font-size: 0.84rem;
+        font-weight: 800;
+        line-height: 1.2;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+    }
+
+    .strat-cp {
+        flex-shrink: 0;
+        font-size: 0.72rem;
+        font-weight: 700;
+        background: var(--bs-primary);
+        color: #fff;
+        border-radius: 999px;
+        padding: 0.15rem 0.55rem;
+        white-space: nowrap;
+    }
+
+    .strat-turn {
+        font-size: 0.68rem;
+        color: var(--bs-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        font-weight: 600;
+    }
+
+    .strat-desc {
+        font-size: 0.8rem;
+        line-height: 1.5;
+        padding-top: 0.2rem;
+        border-top: 1px solid rgba(var(--bs-border-color-rgb, 0,0,0), 0.08);
+    }
+
+    /* ── Sidebar panel ── */
+    .pm-sidebar-panel {
+        border-radius: 0.85rem;
+        border: 1px solid rgba(255,255,255,0.08);
+        background: rgba(255,255,255,0.03);
+        overflow: hidden;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+    }
+
+    .pm-sidebar-panel-header {
+        padding: 0.6rem 0.85rem;
+        border-bottom: 1px solid rgba(255,255,255,0.08);
+        font-size: 0.66rem;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        font-weight: 800;
+        color: rgba(255,255,255,0.9);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: rgba(255,255,255,0.05);
+        cursor: pointer;
+    }
+
+    .pm-sidebar-panel-header i {
+        font-size: 0.72rem;
+        opacity: 0.8;
+    }
+
+    .pm-sidebar-panel-body {
+        padding: 0.75rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .pm-sidebar-panel-body h1, .pm-sidebar-panel-body h2,
+    .pm-sidebar-panel-body h3, .pm-sidebar-panel-body h4,
+    .pm-sidebar-panel-body h5, .pm-sidebar-panel-body h6 {
+        font-size: 0.84rem !important;
+        font-weight: 700;
+        margin: 0.4rem 0 0.15rem;
+        line-height: 1.3;
+    }
+
+    .pm-sidebar-panel-body p { margin-bottom: 0.3rem; }
+    .pm-sidebar-panel-body p:last-child { margin-bottom: 0; }
+
+    .sticky-play-panel {
+        position: sticky;
+        top: 5rem;
+    }
+
+    /* ── Notes ── */
+    .pm-notes {
+        font-size: 0.75rem;
+        color: var(--bs-secondary);
+        font-style: italic;
+        max-width: 180px;
+        text-align: right;
+        line-height: 1.3;
+    }
+
+    /* ── Mobile bottom tab bar ── */
+    .pm-tab-bar {
+        display: none;
+    }
+
+    @@media (max-width: 767.98px) {
+        .btn {
+            --bs-btn-padding-y: 0.2rem;
+            --bs-btn-padding-x: 0.45rem;
+            --bs-btn-font-size: 0.75rem;
+            --bs-btn-border-radius: 0.35rem;
+        }
+
+        .play-mode-toolbar-inner {
+            grid-template-columns: 1fr auto;
+            padding: 0.5rem 0.85rem;
+            gap: 0.4rem;
+        }
+
+        .play-mode-title-block .army-label,
+        .play-mode-title-block .army-sub {
+            display: none;
+        }
+
+        .play-mode-title-block h2 {
+            font-size: 0.95rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 180px;
+        }
+
+        .play-mode-controls {
+            justify-content: flex-end;
+            gap: 0.35rem;
+            flex-wrap: nowrap;
+        }
+
+        /* Trackers row spans full width below title/exit */
+        .pm-mobile-tracker-row {
+            grid-column: 1 / -1;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding-top: 0.1rem;
+            padding-bottom: 0.35rem;
+            overflow-x: auto;
+            scrollbar-width: none;
+        }
+
+        .pm-mobile-tracker-row::-webkit-scrollbar { display: none; }
+
+        .tracker-divider { display: none; }
+
+        .phase-display { display: none; }
+
+        /* Push overlay content up to leave room for tab bar + floating nav */
+        .play-mode-overlay {
+            padding-bottom: calc(3.5rem + 72px);
+        }
+
+        /* Tab bar fixed just above the floating nav drawer (22px bottom + 50px handle) */
+        .pm-tab-bar {
+            display: flex;
+            position: fixed;
+            bottom: 72px;
+            left: 16px;
+            right: 16px;
+            z-index: 1210;
+            background: rgba(var(--bs-body-bg-rgb), 0.97);
+            border: 1px solid rgba(var(--bs-border-color-rgb, 0,0,0), 0.14);
+            border-radius: 1rem;
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.18);
+        }
+
+        .pm-tab-btn {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 0.2rem;
+            padding: 0.5rem 0.25rem;
+            border: none;
+            background: transparent;
+            color: var(--bs-secondary);
+            font-size: 0.62rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            cursor: pointer;
+            transition: color 0.15s ease;
+        }
+
+        .pm-tab-btn i {
+            font-size: 1.1rem;
+            margin-bottom: 0.05rem;
+        }
+
+        .pm-tab-btn.active {
+            color: var(--bs-primary);
+        }
+
+        .pm-tab-btn.active i {
+            filter: drop-shadow(0 0 4px rgba(var(--bs-primary-rgb), 0.5));
+        }
+
+        .pm-tab-indicator {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.4rem;
+            padding: 0.45rem 0.5rem;
+            border-left: 1px solid rgba(var(--bs-border-color-rgb, 0,0,0), 0.1);
+            border-right: 1px solid rgba(var(--bs-border-color-rgb, 0,0,0), 0.1);
+        }
+
+        .pm-tab-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: rgba(var(--bs-border-color-rgb, 0,0,0), 0.25);
+            transition: background 0.15s ease, transform 0.15s ease;
+        }
+
+        .pm-tab-dot.active {
+            background: var(--bs-primary);
+            transform: scale(1.3);
+        }
+
+        /* Phase bar on mobile: remove sticky/margin, just flow naturally */
+        .pm-phase-row {
+            position: static;
+            top: auto;
+            margin: 0 0 0.75rem 0;
+            padding: 0;
+            border-bottom: none;
+            background: none;
+            backdrop-filter: none;
+            min-width: 0;
+            overflow-x: auto;
+            overflow-y: visible;
+        }
+
+        .phase-bar {
+            padding-bottom: 0.5rem;
+        }
+
+        /* Hide the desktop right column on mobile — content moves to Rules tab */
+        .pm-desktop-sidebar {
+            display: none;
+        }
+
+        /* Rules tab pane: full-width stratagem list */
+        .pm-rules-pane {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .sticky-play-panel { position: static; }
+        .pm-unit-header { flex-direction: column; gap: 0.5rem; }
+        .pm-unit-tracker { align-items: flex-start; }
+        .pm-notes { text-align: left; max-width: none; }
+        .pm-unit-header { padding: 0.7rem 0.8rem 0.65rem; }
+        .pm-unit-body > div { padding: 0.65rem 0.8rem 0; }
+        .pm-section-label {
+            margin: 0 -0.8rem 0.5rem -0.8rem;
+            padding: 0.25rem 0.8rem;
+        }
+        .pm-sidebar-panel-header { padding: 0.55rem 0.75rem; }
+        .pm-sidebar-panel-body { padding: 0.65rem 0.75rem; }
+        .strat-card,
+        .pm-ability-item {
+            padding: 0.55rem 0.65rem;
+        }
+    }
+
+    @@media (min-width: 768px) {
+        /* On desktop, always show both columns; hide tab bar entirely */
+        .pm-tab-bar { display: none !important; }
+        .pm-desktop-sidebar { display: block !important; }
+        .pm-mobile-rules-pane { display: none !important; }
+    }
+
+    @@media (max-width: 991.98px) {
+        .sticky-play-panel { position: static; }
+    }
+</style>
+
+@if (loading)
+{
+    <div class="d-flex align-items-center justify-content-center" style="height: 100vh;">
+        <div class="spinner-border text-primary me-2" role="status"></div>
+        <div>Preparing live reference...</div>
+    </div>
+}
+else if (armyList == null || !armyList.Units.Any())
+{
+    <div class="d-flex flex-column align-items-center justify-content-center gap-3" style="height: 100vh;">
+        <div class="text-muted">No army list found.</div>
+        <button class="btn btn-outline-secondary" @onclick="GoBack"><i class="fa fa-arrow-left me-1"></i>Back to List Builder</button>
+    </div>
+}
+else
+{
+    <div class="play-mode-overlay">
+        <div class="play-mode-toolbar">
+            <div class="play-mode-toolbar-inner">
+                <div class="play-mode-title-block">
+                    <div class="army-label">Play Mode</div>
+                    <h2>@armyList.Name</h2>
+                    <div class="army-sub">
+                        @armyList.FactionName
+                        @if (!string.IsNullOrWhiteSpace(armyList.DetachmentName))
+                        {
+                            <span> · @armyList.DetachmentName</span>
+                        }
+                        <span> · @armyList.TotalPoints / @armyList.PointsLimit pts</span>
+                    </div>
+                </div>
+
+                <div class="play-mode-controls">
+                    <div class="tracker-group d-none d-md-flex">
+                        <div class="tracker-item">
+                            <span class="tracker-label">Turn</span>
+                            <div class="tracker-stepper">
+                                <button class="btn btn-sm btn-outline-secondary" @onclick="() => { if (turnNumber > 1) turnNumber--; }"><i class="fa fa-minus"></i></button>
+                                <span class="tracker-val">@turnNumber</span>
+                                <button class="btn btn-sm btn-outline-secondary" @onclick="() => turnNumber++"><i class="fa fa-plus"></i></button>
+                            </div>
+                        </div>
+                        <div class="tracker-divider"></div>
+                        <div class="tracker-item">
+                            <span class="tracker-label">Round</span>
+                            <div class="tracker-stepper">
+                                <button class="btn btn-sm btn-outline-secondary" @onclick="() => { if (roundNumber > 1) roundNumber--; }"><i class="fa fa-minus"></i></button>
+                                <span class="tracker-val">@roundNumber</span>
+                                <button class="btn btn-sm btn-outline-secondary" @onclick="() => roundNumber++"><i class="fa fa-plus"></i></button>
+                            </div>
+                        </div>
+                        <div class="tracker-divider"></div>
+                        <div class="tracker-item">
+                            <span class="tracker-label">CP</span>
+                            <div class="tracker-stepper">
+                                <button class="btn btn-sm btn-outline-danger" @onclick="DecreaseCP"><i class="fa fa-minus"></i></button>
+                                <span class="tracker-val">@commandPoints</span>
+                                <button class="btn btn-sm btn-outline-success" @onclick="IncreaseCP"><i class="fa fa-plus"></i></button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="phase-display">Phase: <strong>@currentPhase.Replace(" phase", "")</strong></div>
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="GoBack">
+                        <i class="fa fa-times"></i>
+                    </button>
+                </div>
+
+                <!-- Mobile-only tracker row -->
+                <div class="pm-mobile-tracker-row d-flex d-md-none">
+                    <div class="tracker-item">
+                        <span class="tracker-label">Turn</span>
+                        <div class="tracker-stepper">
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => { if (turnNumber > 1) turnNumber--; }"><i class="fa fa-minus"></i></button>
+                            <span class="tracker-val">@turnNumber</span>
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => turnNumber++"><i class="fa fa-plus"></i></button>
+                        </div>
+                    </div>
+                    <div class="tracker-divider" style="display:block !important;"></div>
+                    <div class="tracker-item">
+                        <span class="tracker-label">Round</span>
+                        <div class="tracker-stepper">
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => { if (roundNumber > 1) roundNumber--; }"><i class="fa fa-minus"></i></button>
+                            <span class="tracker-val">@roundNumber</span>
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => roundNumber++"><i class="fa fa-plus"></i></button>
+                        </div>
+                    </div>
+                    <div class="tracker-divider" style="display:block !important;"></div>
+                    <div class="tracker-item">
+                        <span class="tracker-label">CP</span>
+                        <div class="tracker-stepper">
+                            <button class="btn btn-sm btn-outline-danger" @onclick="DecreaseCP"><i class="fa fa-minus"></i></button>
+                            <span class="tracker-val">@commandPoints</span>
+                            <button class="btn btn-sm btn-outline-success" @onclick="IncreaseCP"><i class="fa fa-plus"></i></button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="container-fluid py-3">
+            <div class="row g-3">
+                <!-- Left / main column: Units tab on mobile, always visible on desktop -->
+                <div class="col-12 col-xl-8">
+                    <!-- Phase bar + filters: always shown at top of units view -->
+                    <div class="pm-phase-row d-flex flex-column gap-2">
+                        <div class="phase-bar">
+                            @foreach (var p in phases)
+                            {
+                                <button class="btn btn-sm @(string.Equals(p, currentPhase, StringComparison.OrdinalIgnoreCase) ? "btn-primary" : "btn-outline-secondary")" @onclick="() => SetPhase(p)">@p.Replace(" phase", "")</button>
+                            }
+                        </div>
+                        @if (playMobileTab != "rules")
+                        {
+                            <div class="play-mode-controls-bar">
+                                <div class="flex-grow-1">
+                                    <input class="form-control form-control-sm" placeholder="Search units..." @bind="playModeSearch" @bind:event="oninput" />
+                                </div>
+                                <div style="min-width:140px;">
+                                    <select class="form-select form-select-sm" @bind="playModeRoleFilter">
+                                        <option value="">All roles</option>
+                                        @foreach (var role in PlayModeRoles)
+                                        {
+                                            <option value="@role">@role</option>
+                                        }
+                                    </select>
+                                </div>
+                            </div>
+                        }
+                    </div>
+
+                    <!-- Units pane: hidden on mobile when Rules tab is active -->
+                    <div class="@(playMobileTab == "rules" ? "d-none d-md-block" : "") d-flex flex-column" style="gap:1.1rem;">
+                        @foreach (var unit in FilteredPlayModeUnits)
+                        {
+                            var detail = GetDatasheetDetail(unit.DatasheetId);
+                            var selectedEnhancement = GetSelectedEnhancement(unit);
+                            var equippedWeapons = StatlineDisplayFactory.CreateArmyListWeapons(unit.Models);
+                            var rangedEquippedWeapons = equippedWeapons.Where(weapon => !string.Equals(weapon.Type, "Melee", StringComparison.OrdinalIgnoreCase)).ToList();
+                            var meleeEquippedWeapons = equippedWeapons.Where(weapon => string.Equals(weapon.Type, "Melee", StringComparison.OrdinalIgnoreCase)).ToList();
+                            var impAbilities = detail?.Abilities.Where(a => a.Type.ToLower() == "datasheet" || a.Type.ToLower() == "wargear") ?? new List<DatasheetAbility>();
+
+                            <div class="pm-unit-card @(IsDestroyed(unit.Id) ? "is-destroyed" : "")" data-role="@GetRoleDisplay(unit.Role)">
+                                <!-- Unit header -->
+                                <div class="pm-unit-header">
+                                    <div class="w-100" style="min-width:0;">
+                                        <div class="pm-unit-header-top">
+                                            <div class="pm-unit-name">
+                                                @if (IsDestroyed(unit.Id))
+                                                {
+                                                    <i class="fa fa-skull text-danger me-2" style="font-size:0.8em;"></i>
+                                                    <span class="text-decoration-line-through text-muted">@unit.DatasheetName@if (unit.TotalModels > 1)
+                                                        {
+                                                            <span class="pm-unit-name-count text-muted">(@unit.TotalModels models)</span>
+                                                        }</span>
+                                                }
+                                                else
+                                                {
+                                                    @unit.DatasheetName@if (unit.TotalModels > 1)
+                                                    {
+                                                        <span class="pm-unit-name-count text-muted">(@unit.TotalModels models)</span>
+                                                    }
+                                                }
+                                            </div>
+                                            <div class="pm-unit-tracker">
+                                                <button class="btn btn-sm @(IsDestroyed(unit.Id) ? "btn-danger" : "btn-outline-danger")" @onclick="() => ToggleDestroyed(unit.Id)" title="@(IsDestroyed(unit.Id) ? "Restore" : "Mark destroyed")">
+                                                    <i class="fa fa-skull" style="font-size:0.7rem;"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                        @if (!string.IsNullOrWhiteSpace(unit.Notes))
+                                        {
+                                            <div class="pm-notes">@unit.Notes</div>
+                                        }
+                                    </div>
+                                </div>
+
+                                <!-- Unit body -->
+                                <div class="pm-unit-body">
+                                    <!-- Statlines -->
+                                    <div>
+                                        <div class="pm-section-label">Statlines</div>
+                                        <UnitStatlineTable Items="StatlineDisplayFactory.CreateArmyListStatlines(unit.Models)" ShowHeaderForSingleItem="true" />
+                                    </div>
+
+                                    <!-- Equipped weapons -->
+                                    <div>
+                                        <div class="pm-section-label">Equipped Weapons</div>
+                                        @if (equippedWeapons.Any())
+                                        {
+                                            @if (rangedEquippedWeapons.Any())
+                                            {
+                                                <div class="small text-muted fw-semibold mb-2">Ranged Weapons</div>
+                                                <WeaponStatlineCards Weapons="rangedEquippedWeapons" />
+                                            }
+
+                                            @if (meleeEquippedWeapons.Any())
+                                            {
+                                                <div class="small text-muted fw-semibold mb-2 mt-3">Melee Weapons</div>
+                                                <WeaponStatlineCards Weapons="meleeEquippedWeapons" />
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <div class="text-muted small fst-italic">No equipped weapons selected.</div>
+                                        }
+                                    </div>
+
+                                    <!-- Abilities -->
+                                    @if (impAbilities.Any())
+                                    {
+                                        <div>
+                                            <div class="pm-section-label">Abilities</div>
+                                            <div class="d-flex flex-column">
+                                                @foreach (var ability in impAbilities.OrderBy(a => a.Type).ThenBy(a => a.Name))
+                                                {
+                                                    <div class="pm-ability-item">
+                                                        <span class="pm-ability-name">@ability.Name</span>
+                                                        @if (!string.IsNullOrWhiteSpace(ability.Type))
+                                                        {
+                                                            <span class="pm-ability-type">@ability.Type</span>
+                                                        }
+                                                        @if (!string.IsNullOrWhiteSpace(ability.Description))
+                                                        {
+                                                            <div style="font-size:0.8rem;margin-top:0.2rem;">@((MarkupString)WahaDataImporter.CleanHtml(ability.Description))</div>
+                                                        }
+                                                    </div>
+                                                }
+                                            </div>
+                                        </div>
+                                    }
+
+                                    <!-- Enhancement -->
+                                    @if (selectedEnhancement != null)
+                                    {
+                                        <div>
+                                            <div class="pm-section-label">Enhancement</div>
+                                            <div class="fw-semibold" style="font-size:0.85rem;">@selectedEnhancement.Name <span class="text-muted fw-normal">(@selectedEnhancement.Cost pts)</span></div>
+                                            @if (!string.IsNullOrWhiteSpace(selectedEnhancement.Description))
+                                            {
+                                                <div style="font-size:0.8rem;margin-top:0.25rem;">@((MarkupString)WahaDataImporter.CleanHtml(selectedEnhancement.Description))</div>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+
+                    <!-- Mobile-only: Rules pane (stratagems + roster summary) -->
+                    <div class="pm-mobile-rules-pane @(playMobileTab == "rules" ? "" : "d-none d-md-none") d-flex flex-column gap-3">
+                        <!-- Roster summary -->
+                        <div class="pm-sidebar-panel">
+                            <div class="pm-sidebar-panel-header" @onclick='() => TogglePanel("roster")'>
+                                <span>Roster</span>
+                                <span class="d-inline-flex align-items-center gap-2">
+                                    <span class="badge text-bg-secondary" style="font-size:0.65rem;">@FilteredPlayModeUnits.Count() / @armyList.Units.Count</span>
+                                    <i class="fa @(IsPanelExpanded("roster") ? "fa-chevron-up" : "fa-chevron-down")"></i>
+                                </span>
+                            </div>
+                            @if (IsPanelExpanded("roster"))
+                            {
+                                <div class="pm-sidebar-panel-body" style="flex-direction:row;flex-wrap:wrap;gap:0.4rem;">
+                                    @foreach (var group in RoleGroups)
+                                    {
+                                        <span class="badge text-bg-secondary" style="font-size:0.7rem;">@group.Key: @group.Count()</span>
+                                    }
+                                </div>
+                            }
+                        </div>
+                        <!-- Army Rules -->
+                        @if (armyRules.Any())
+                        {
+                            <div class="pm-sidebar-panel">
+                                <div class="pm-sidebar-panel-header" @onclick='() => TogglePanel("army-rules")'>
+                                    <span>Army Rules</span>
+                                    <span class="d-inline-flex align-items-center gap-2">
+                                        <span class="badge text-bg-secondary" style="font-size:0.65rem;">@armyList.FactionName</span>
+                                        <i class="fa @(IsPanelExpanded("army-rules") ? "fa-chevron-up" : "fa-chevron-down")"></i>
+                                    </span>
+                                </div>
+                                @if (IsPanelExpanded("army-rules"))
+                                {
+                                    <div class="pm-sidebar-panel-body">
+                                        @foreach (var rule in armyRules)
+                                        {
+                                            <div class="pm-ability-item">
+                                                <span class="pm-ability-name">@rule.Name</span>
+                                                @if (!string.IsNullOrWhiteSpace(rule.Description))
+                                                {
+                                                    <div style="font-size:0.8rem;margin-top:0.2rem;">@((MarkupString)WahaDataImporter.CleanHtml(rule.Description))</div>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                        <!-- Detachment Rules -->
+                        @if (detachmentAbilities.Any())
+                        {
+                            <div class="pm-sidebar-panel">
+                                <div class="pm-sidebar-panel-header" @onclick='() => TogglePanel("detachment-rules")'>
+                                    <span>Detachment Rules</span>
+                                    <span class="d-inline-flex align-items-center gap-2">
+                                        <span class="badge text-bg-secondary" style="font-size:0.65rem;">@armyList.DetachmentName</span>
+                                        <i class="fa @(IsPanelExpanded("detachment-rules") ? "fa-chevron-up" : "fa-chevron-down")"></i>
+                                    </span>
+                                </div>
+                                @if (IsPanelExpanded("detachment-rules"))
+                                {
+                                    <div class="pm-sidebar-panel-body">
+                                        @foreach (var ability in detachmentAbilities)
+                                        {
+                                            <div class="pm-ability-item">
+                                                <span class="pm-ability-name">@ability.Name</span>
+                                                @if (!string.IsNullOrWhiteSpace(ability.Description))
+                                                {
+                                                    <div style="font-size:0.8rem;margin-top:0.2rem;">@((MarkupString)WahaDataImporter.CleanHtml(ability.Description))</div>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                        <!-- Stratagems -->
+                        <div class="pm-sidebar-panel">
+                            <div class="pm-sidebar-panel-header" @onclick='() => TogglePanel("stratagems")'>
+                                <span>Stratagems</span>
+                                <span class="d-inline-flex align-items-center gap-2">
+                                    <span class="badge text-bg-primary" style="font-size:0.65rem;">@currentPhase.Replace(" phase","")</span>
+                                    <i class="fa @(IsPanelExpanded("stratagems") ? "fa-chevron-up" : "fa-chevron-down")"></i>
+                                </span>
+                            </div>
+                            @if (IsPanelExpanded("stratagems"))
+                            {
+                                <div class="pm-sidebar-panel-body">
+                                    @{
+                                        var mobileStrats = GetPhaseStratagems().ToList();
+                                    }
+                                    @if (!mobileStrats.Any())
+                                    {
+                                        <div class="text-muted small fst-italic">No stratagems for this phase.</div>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var strat in mobileStrats)
+                                        {
+                                            <div class="strat-card">
+                                                <div class="strat-card-header">
+                                                    <div class="strat-name">@strat.Name</div>
+                                                    <div class="strat-cp">@strat.CpCost CP</div>
+                                                </div>
+                                                @if (!string.IsNullOrWhiteSpace(strat.Turn))
+                                                {
+                                                    <div class="strat-turn">@strat.Turn</div>
+                                                }
+                                                <div class="strat-desc">@((MarkupString)WahaDataImporter.CleanHtml(strat.Description))</div>
+                                            </div>
+                                        }
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Desktop-only right sidebar -->
+                <div class="col-12 col-xl-4 pm-desktop-sidebar">
+                    <div class="sticky-play-panel d-flex flex-column gap-3">
+                        <div class="pm-sidebar-panel">
+                            <div class="pm-sidebar-panel-header" @onclick='() => TogglePanel("roster")'>
+                                <span>Roster</span>
+                                <span class="d-inline-flex align-items-center gap-2">
+                                    <span class="badge text-bg-secondary" style="font-size:0.65rem;">@FilteredPlayModeUnits.Count() / @armyList.Units.Count</span>
+                                    <i class="fa @(IsPanelExpanded("roster") ? "fa-chevron-up" : "fa-chevron-down")"></i>
+                                </span>
+                            </div>
+                            @if (IsPanelExpanded("roster"))
+                            {
+                                <div class="pm-sidebar-panel-body" style="flex-direction:row;flex-wrap:wrap;gap:0.4rem;">
+                                    @foreach (var group in RoleGroups)
+                                    {
+                                        <span class="badge text-bg-secondary" style="font-size:0.7rem;">@group.Key: @group.Count()</span>
+                                    }
+                                </div>
+                            }
+                        </div>
+
+                        @if (armyRules.Any())
+                        {
+                            <div class="pm-sidebar-panel">
+                                <div class="pm-sidebar-panel-header" @onclick='() => TogglePanel("army-rules")'>
+                                    <span>Army Rules</span>
+                                    <span class="d-inline-flex align-items-center gap-2">
+                                        <span class="badge text-bg-secondary" style="font-size:0.65rem;">@armyList.FactionName</span>
+                                        <i class="fa @(IsPanelExpanded("army-rules") ? "fa-chevron-up" : "fa-chevron-down")"></i>
+                                    </span>
+                                </div>
+                                @if (IsPanelExpanded("army-rules"))
+                                {
+                                    <div class="pm-sidebar-panel-body">
+                                        @foreach (var rule in armyRules)
+                                        {
+                                            <div class="pm-ability-item">
+                                                <span class="pm-ability-name">@rule.Name</span>
+                                                @if (!string.IsNullOrWhiteSpace(rule.Description))
+                                                {
+                                                    <div style="font-size:0.8rem;margin-top:0.2rem;">@((MarkupString)WahaDataImporter.CleanHtml(rule.Description))</div>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        @if (detachmentAbilities.Any())
+                        {
+                            <div class="pm-sidebar-panel">
+                                <div class="pm-sidebar-panel-header" @onclick='() => TogglePanel("detachment-rules")'>
+                                    <span>Detachment Rules</span>
+                                    <span class="d-inline-flex align-items-center gap-2">
+                                        <span class="badge text-bg-secondary" style="font-size:0.65rem;">@armyList.DetachmentName</span>
+                                        <i class="fa @(IsPanelExpanded("detachment-rules") ? "fa-chevron-up" : "fa-chevron-down")"></i>
+                                    </span>
+                                </div>
+                                @if (IsPanelExpanded("detachment-rules"))
+                                {
+                                    <div class="pm-sidebar-panel-body">
+                                        @foreach (var ability in detachmentAbilities)
+                                        {
+                                            <div class="pm-ability-item">
+                                                <span class="pm-ability-name">@ability.Name</span>
+                                                @if (!string.IsNullOrWhiteSpace(ability.Description))
+                                                {
+                                                    <div style="font-size:0.8rem;margin-top:0.2rem;">@((MarkupString)WahaDataImporter.CleanHtml(ability.Description))</div>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        <div class="pm-sidebar-panel">
+                            <div class="pm-sidebar-panel-header" @onclick='() => TogglePanel("stratagems")'>
+                                <span>Stratagems</span>
+                                <span class="d-inline-flex align-items-center gap-2">
+                                    <span class="badge text-bg-primary" style="font-size:0.65rem;">@currentPhase.Replace(" phase","")</span>
+                                    <i class="fa @(IsPanelExpanded("stratagems") ? "fa-chevron-up" : "fa-chevron-down")"></i>
+                                </span>
+                            </div>
+                            @if (IsPanelExpanded("stratagems"))
+                            {
+                                <div class="pm-sidebar-panel-body">
+                                    @{
+                                        var phaseStrats = GetPhaseStratagems().ToList();
+                                    }
+                                    @if (!phaseStrats.Any())
+                                    {
+                                        <div class="text-muted small fst-italic">No stratagems for this phase.</div>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var strat in phaseStrats)
+                                        {
+                                            <div class="strat-card">
+                                                <div class="strat-card-header">
+                                                    <div class="strat-name">@strat.Name</div>
+                                                    <div class="strat-cp">@strat.CpCost CP</div>
+                                                </div>
+                                                @if (!string.IsNullOrWhiteSpace(strat.Turn))
+                                                {
+                                                    <div class="strat-turn">@strat.Turn</div>
+                                                }
+                                                <div class="strat-desc">@((MarkupString)WahaDataImporter.CleanHtml(strat.Description))</div>
+                                            </div>
+                                        }
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Mobile bottom tab bar (hidden on desktop via CSS) -->
+        <nav class="pm-tab-bar">
+            <button class="pm-tab-btn @(playMobileTab == "units" ? "active" : "")" @onclick='() => playMobileTab = "units"'>
+                <i class="fa fa-shield-halved"></i>
+                <span>Units</span>
+            </button>
+            <div class="pm-tab-indicator">
+                <span class="pm-tab-dot @(playMobileTab == "units" ? "active" : "")"></span>
+                <span class="pm-tab-dot @(playMobileTab == "rules" ? "active" : "")"></span>
+            </div>
+            <button class="pm-tab-btn @(playMobileTab == "rules" ? "active" : "")" @onclick='() => playMobileTab = "rules"'>
+                <i class="fa fa-book-open"></i>
+                <span>Rules</span>
+            </button>
+        </nav>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public string? ListId { get; set; }
+
+    private static readonly string[] PreferredRoleOrder =
+    {
+        "Characters",
+        "Battleline",
+        "Dedicated Transports",
+        "Other Datasheets"
+    };
+
+    private static readonly string[] phases = new[] { "Command phase", "Movement phase", "Shooting phase", "Charge phase", "Fight phase" };
+
+    private ArmyList? armyList;
+    private List<Enhancement> availableEnhancements = new();
+    private List<Stratagem> detachmentStratagems = new();
+    private List<Stratagem> coreStratagems = new();
+    private List<DetachmentAbility> detachmentAbilities = new();
+    private List<DetachmentAbility> armyRules = new();
+    private Dictionary<int, DatasheetDetail> datasheetDetailCache = new();
+    private readonly HashSet<string> destroyedUnits = new();
+    private readonly HashSet<string> collapsedPanels = new(StringComparer.OrdinalIgnoreCase);
+
+    private bool loading = true;
+    private int turnNumber = 1;
+    private int roundNumber = 1;
+    private int commandPoints = 1;
+    private string currentPhase = "Command phase";
+    private string playMobileTab = "units";
+    private string playModeSearch = string.Empty;
+    private string playModeRoleFilter = string.Empty;
+
+    private IEnumerable<IGrouping<string, ArmyListUnit>> RoleGroups => (armyList?.Units ?? Enumerable.Empty<ArmyListUnit>())
+        .GroupBy(unit => GetRoleDisplay(unit.Role))
+        .OrderBy(group => GetRoleSortOrder(group.Key))
+        .ThenBy(group => group.Key);
+
+    private List<string> PlayModeRoles => (armyList?.Units ?? Enumerable.Empty<ArmyListUnit>())
+        .Select(unit => GetRoleDisplay(unit.Role))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderBy(role => GetRoleSortOrder(role))
+        .ThenBy(role => role)
+        .ToList();
+
+    private List<ArmyListUnit> FilteredPlayModeUnits => (armyList?.Units ?? Enumerable.Empty<ArmyListUnit>())
+        .Where(unit => string.IsNullOrWhiteSpace(playModeSearch) || unit.DatasheetName.Contains(playModeSearch, StringComparison.OrdinalIgnoreCase))
+        .Where(unit => string.IsNullOrWhiteSpace(playModeRoleFilter) || string.Equals(GetRoleDisplay(unit.Role), playModeRoleFilter, StringComparison.OrdinalIgnoreCase))
+        .OrderBy(unit => GetRoleSortOrder(GetRoleDisplay(unit.Role)))
+        .ThenBy(unit => unit.DatasheetName)
+        .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!DB.DatabaseExists)
+        {
+            loading = false;
+            return;
+        }
+
+        // Activate the requested list so ArmyListService serves the right one
+        if (!string.IsNullOrWhiteSpace(ListId))
+        {
+            await ArmyListService.SetActiveListAsync(ListId);
+        }
+
+        armyList = ArmyListService.GetArmyList();
+
+        if (armyList == null || !armyList.Units.Any())
+        {
+            loading = false;
+            return;
+        }
+
+        // Pre-load datasheet details for all units
+        foreach (var datasheetId in armyList.Units.Select(unit => unit.DatasheetId).Distinct())
+        {
+            await EnsureDatasheetDetailLoadedAsync(datasheetId);
+        }
+
+        if (armyList.DetachmentId.HasValue)
+        {
+            await LoadEnhancementsAsync(armyList.DetachmentId.Value);
+        }
+
+        // Load core stratagems
+        try
+        {
+            await using var conn = DB.CreateConnection();
+            await conn.OpenAsync();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"SELECT id, faction_id, name, type, cp_cost, legend, turn, phase, description, detachment, detachment_id FROM Stratagems WHERE (faction_id IS NULL OR faction_id = '') ORDER BY name";
+            await using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                coreStratagems.Add(new Stratagem
+                {
+                    Id = reader.IsDBNull(0) ? 0 : reader.GetInt32(0),
+                    FactionId = reader.IsDBNull(1) ? string.Empty : reader.GetString(1),
+                    Name = reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
+                    Type = reader.IsDBNull(3) ? string.Empty : reader.GetString(3),
+                    CpCost = reader.IsDBNull(4) ? string.Empty : reader.GetString(4),
+                    Legend = reader.IsDBNull(5) ? string.Empty : reader.GetString(5),
+                    Turn = reader.IsDBNull(6) ? string.Empty : reader.GetString(6),
+                    Phase = reader.IsDBNull(7) ? string.Empty : reader.GetString(7),
+                    Description = reader.IsDBNull(8) ? string.Empty : reader.GetString(8),
+                    Detachment = reader.IsDBNull(9) ? string.Empty : reader.GetString(9),
+                    DetachmentId = reader.IsDBNull(10) ? 0 : reader.GetInt32(10)
+                });
+            }
+        }
+        catch { /* ignore */ }
+
+        coreStratagems = coreStratagems.DistinctBy(GetStratagemDedupKey).ToList();
+
+        // Load army rules
+        if (!string.IsNullOrWhiteSpace(armyList.FactionId))
+        {
+            try
+            {
+                await using var conn = DB.CreateConnection();
+                await conn.OpenAsync();
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = @"SELECT id, name, legend, faction_id, description FROM Abilities WHERE faction_id = @factionId ORDER BY name";
+                var p = cmd.CreateParameter();
+                p.ParameterName = "@factionId";
+                p.Value = armyList.FactionId;
+                cmd.Parameters.Add(p);
+                await using var reader = await cmd.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    armyRules.Add(new DetachmentAbility
+                    {
+                        Id = reader.IsDBNull(0) ? 0 : reader.GetInt32(0),
+                        Name = reader.IsDBNull(1) ? string.Empty : reader.GetString(1),
+                        Legend = reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
+                        FactionId = reader.IsDBNull(3) ? string.Empty : reader.GetString(3),
+                        Description = reader.IsDBNull(4) ? string.Empty : reader.GetString(4)
+                    });
+                }
+            }
+            catch { /* ignore */ }
+        }
+
+        await JS.InvokeVoidAsync("lockBodyScroll");
+        loading = false;
+    }
+
+    private async Task EnsureDatasheetDetailLoadedAsync(int datasheetId)
+    {
+        if (datasheetDetailCache.ContainsKey(datasheetId)) return;
+        var detail = await Data.GetDatasheetDetailAsync(datasheetId, armyList?.DetachmentId);
+        if (detail != null) datasheetDetailCache[datasheetId] = detail;
+    }
+
+    private async Task LoadEnhancementsAsync(int detachmentId)
+    {
+        var detachment = await Data.GetDetachmentDetailsAsync(detachmentId);
+        availableEnhancements = detachment?.Enhancements.OrderBy(e => e.Name).ToList() ?? [];
+        detachmentStratagems = detachment?.Stratagems.DistinctBy(GetStratagemDedupKey).ToList() ?? [];
+        detachmentAbilities = detachment?.Abilities.OrderBy(a => a.Name).ToList() ?? [];
+    }
+
+    private DatasheetDetail? GetDatasheetDetail(int datasheetId)
+        => datasheetDetailCache.TryGetValue(datasheetId, out var detail) ? detail : null;
+
+    private Enhancement? GetSelectedEnhancement(ArmyListUnit unit)
+        => unit.EnhancementId.HasValue
+            ? availableEnhancements.FirstOrDefault(e => e.Id == unit.EnhancementId.Value)
+              ?? new Enhancement { Id = unit.EnhancementId.Value, Name = unit.EnhancementName, Cost = unit.EnhancementCost }
+            : null;
+
+    private void GoBack()
+    {
+        var route = armyList != null && !string.IsNullOrWhiteSpace(armyList.FactionId)
+            ? $"/list-builder/{armyList.FactionId}"
+            : "/list-builder";
+        Navigation.NavigateTo(route);
+    }
+
+    private void IncreaseCP() => commandPoints++;
+    private void DecreaseCP() { if (commandPoints > 0) commandPoints--; }
+
+    private void SetPhase(string phase)
+    {
+        currentPhase = phase;
+        StateHasChanged();
+    }
+
+    private bool IsPanelExpanded(string key) => !collapsedPanels.Contains(key);
+
+    private void TogglePanel(string key)
+    {
+        if (!collapsedPanels.Add(key))
+            collapsedPanels.Remove(key);
+    }
+
+    private void ToggleDestroyed(string unitId)
+    {
+        if (destroyedUnits.Contains(unitId)) destroyedUnits.Remove(unitId);
+        else destroyedUnits.Add(unitId);
+    }
+
+    private bool IsDestroyed(string unitId) => destroyedUnits.Contains(unitId);
+
+    private IEnumerable<Stratagem> GetPhaseStratagems()
+    {
+        var phaseList = detachmentStratagems.Concat(coreStratagems);
+        return phaseList
+            .Where(s => StratagemMatchesPhase(s.Phase, currentPhase))
+            .DistinctBy(GetStratagemDedupKey)
+            .OrderBy(s => GetTurnSortOrder(s.Turn))
+            .ThenBy(s => s.Name);
+    }
+
+    private static string GetStratagemDedupKey(Stratagem s)
+    {
+        static string Norm(string? v)
+            => string.Join(' ', (v ?? string.Empty).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                .Trim().ToUpperInvariant();
+        return string.Join("|", Norm(s.Name), Norm(s.CpCost), Norm(s.Turn), Norm(s.Phase), Norm(s.Description));
+    }
+
+    private static bool StratagemMatchesPhase(string? stratagemPhase, string currentPhase)
+    {
+        if (string.IsNullOrWhiteSpace(stratagemPhase) || stratagemPhase.Equals("Any phase", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        var parts = stratagemPhase.Split(" or ", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        foreach (var part in parts)
+        {
+            var normalized = part.EndsWith(" phase", StringComparison.OrdinalIgnoreCase) ? part : part + " phase";
+            if (normalized.Equals(currentPhase, StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        return false;
+    }
+
+    private static int GetTurnSortOrder(string? turn)
+        => string.IsNullOrWhiteSpace(turn) ? 2 : turn.Trim().ToLowerInvariant() switch
+        {
+            "your turn" => 0,
+            "opponent's turn" => 1,
+            _ => 2
+        };
+
+    private static string GetRoleDisplay(string? role)
+    {
+        if (string.IsNullOrWhiteSpace(role)) return "Other Datasheets";
+        return role.Trim().ToLowerInvariant() switch
+        {
+            "character" or "characters" or "epic hero" => "Characters",
+            "battleline" => "Battleline",
+            "dedicated transport" or "dedicated transports" => "Dedicated Transports",
+            _ => "Other Datasheets"
+        };
+    }
+
+    private static int GetRoleSortOrder(string role)
+    {
+        var index = Array.FindIndex(PreferredRoleOrder, r => r.Equals(role, StringComparison.OrdinalIgnoreCase));
+        return index >= 0 ? index : PreferredRoleOrder.Length;
+    }
+
+    public void Dispose()
+    {
+        try { _ = JS.InvokeVoidAsync("unlockBodyScroll"); } catch { }
+    }
+}

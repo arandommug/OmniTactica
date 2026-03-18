@@ -206,7 +206,8 @@ namespace OmniTactica.AppCode.Models.Core
         FeelNoPain,
         CriticalHitOn,
         CriticalWoundOn,
-        CustomEffect
+        CustomEffect,
+        RerollDamage
     }
 
     /// <summary>

@@ -100,7 +100,7 @@ namespace OmniTactica.AppCode.Helpers
 
             foreach (var line in loadoutLines)
             {
-                if (!TryGetLoadoutWeaponsForModel(line, modelName, out var weaponNames))
+                if (!TryGetLoadoutWeaponsForModel(line, modelName, modelQuantity, out var weaponNames, out var appliedModelCount))
                 {
                     continue;
                 }
@@ -122,11 +122,14 @@ namespace OmniTactica.AppCode.Helpers
                         continue;
                     }
 
-                    weapons.Add(new ParsedLoadoutWeapon(wargear, Math.Max(1, quantity * modelQuantity)));
+                    weapons.Add(new ParsedLoadoutWeapon(wargear, Math.Max(1, quantity * appliedModelCount)));
                 }
             }
 
-            return weapons;
+            return weapons
+                .GroupBy(weapon => weapon.Wargear.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(group => new ParsedLoadoutWeapon(group.First().Wargear, group.Sum(weapon => weapon.Quantity)))
+                .ToList();
         }
 
         public static string FormatComposition(IEnumerable<DatasheetCompositionEntry> entries)
@@ -161,9 +164,10 @@ namespace OmniTactica.AppCode.Helpers
             return entries;
         }
 
-        private static bool TryGetLoadoutWeaponsForModel(string loadoutLine, string modelName, out List<string> weaponNames)
+        private static bool TryGetLoadoutWeaponsForModel(string loadoutLine, string modelName, int modelQuantity, out List<string> weaponNames, out int appliedModelCount)
         {
             weaponNames = new List<string>();
+            appliedModelCount = 0;
             var line = loadoutLine.Trim();
             var appliesToModel = false;
             var weaponsPart = string.Empty;
@@ -174,14 +178,27 @@ namespace OmniTactica.AppCode.Helpers
                 weaponsPart = theModelMatch.Groups[2].Value.Trim();
                 var targetModel = theModelMatch.Groups[1].Value.Trim();
                 appliesToModel = ModelNamesEquivalent(targetModel, modelName);
+                appliedModelCount = appliesToModel ? Math.Min(1, Math.Max(1, modelQuantity)) : 0;
             }
 
-            var everyModelMatch = Regex.Match(line, @"^Every (.+?) is equipped with:(.+)$", RegexOptions.IgnoreCase);
+            var everyModelMatch = Regex.Match(line, @"^(?:Every|Each) (.+?) (?:is|are) equipped with:(.+)$", RegexOptions.IgnoreCase);
             if (everyModelMatch.Success)
             {
                 weaponsPart = everyModelMatch.Groups[2].Value.Trim();
                 var targetModel = everyModelMatch.Groups[1].Value.Trim();
                 appliesToModel = ModelNamesEquivalent(targetModel, modelName);
+                appliedModelCount = appliesToModel ? Math.Max(1, modelQuantity) : 0;
+            }
+
+            var countedModelMatch = Regex.Match(line, @"^(one|two|three|four|five|six|seven|eight|nine|ten|\d+) (.+?) (?:is|are) equipped with:(.+)$", RegexOptions.IgnoreCase);
+            if (countedModelMatch.Success)
+            {
+                weaponsPart = countedModelMatch.Groups[3].Value.Trim();
+                var targetModel = countedModelMatch.Groups[2].Value.Trim();
+                appliesToModel = ModelNamesEquivalent(targetModel, modelName);
+                appliedModelCount = appliesToModel
+                    ? Math.Min(ParseModelCount(countedModelMatch.Groups[1].Value), Math.Max(1, modelQuantity))
+                    : 0;
             }
 
             var genericModelMatch = Regex.Match(line, @"^(?:This model|Every model) is equipped with:(.+)$", RegexOptions.IgnoreCase);
@@ -189,6 +206,7 @@ namespace OmniTactica.AppCode.Helpers
             {
                 weaponsPart = genericModelMatch.Groups[1].Value.Trim();
                 appliesToModel = true;
+                appliedModelCount = Math.Max(1, modelQuantity);
             }
 
             if (!appliesToModel || string.IsNullOrWhiteSpace(weaponsPart))
@@ -205,7 +223,30 @@ namespace OmniTactica.AppCode.Helpers
         }
 
         private static bool ModelNamesEquivalent(string left, string right)
-            => NormalizeName(left) == NormalizeName(right);
+        {
+            var normalizedLeft = NormalizeName(left);
+            var normalizedRight = NormalizeName(right);
+
+            return normalizedLeft == normalizedRight
+                   || normalizedLeft.Contains(normalizedRight, StringComparison.OrdinalIgnoreCase)
+                   || normalizedRight.Contains(normalizedLeft, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static int ParseModelCount(string value)
+            => value.Trim().ToLowerInvariant() switch
+            {
+                "one" => 1,
+                "two" => 2,
+                "three" => 3,
+                "four" => 4,
+                "five" => 5,
+                "six" => 6,
+                "seven" => 7,
+                "eight" => 8,
+                "nine" => 9,
+                "ten" => 10,
+                _ => int.TryParse(value, out var count) ? Math.Max(1, count) : 1
+            };
 
         private static DatasheetWargear? FindWargear(IEnumerable<DatasheetWargear> allWargear, string weaponName)
         {
@@ -213,6 +254,8 @@ namespace OmniTactica.AppCode.Helpers
             var singularWeaponName = weaponName.EndsWith('s') ? weaponName[..^1] : null;
             var normalizedWeaponName = NormalizeName(weaponName);
             var normalizedSingularWeaponName = singularWeaponName == null ? null : NormalizeName(singularWeaponName);
+            var compactWeaponName = normalizedWeaponName.Replace(" ", string.Empty, StringComparison.Ordinal);
+            var compactSingularWeaponName = normalizedSingularWeaponName?.Replace(" ", string.Empty, StringComparison.Ordinal);
 
             return wargearList.FirstOrDefault(wargear =>
                        wargear.Name.Equals(weaponName, StringComparison.OrdinalIgnoreCase))
@@ -225,6 +268,12 @@ namespace OmniTactica.AppCode.Helpers
                    ?? (normalizedSingularWeaponName != null
                        ? wargearList.FirstOrDefault(wargear =>
                            NormalizeName(wargear.Name) == normalizedSingularWeaponName)
+                       : null)
+                   ?? wargearList.FirstOrDefault(wargear =>
+                       NormalizeName(wargear.Name).Replace(" ", string.Empty, StringComparison.Ordinal) == compactWeaponName)
+                   ?? (compactSingularWeaponName != null
+                       ? wargearList.FirstOrDefault(wargear =>
+                           NormalizeName(wargear.Name).Replace(" ", string.Empty, StringComparison.Ordinal) == compactSingularWeaponName)
                        : null)
                    ?? wargearList.FirstOrDefault(wargear =>
                        weaponName.Contains(wargear.Name, StringComparison.OrdinalIgnoreCase));
@@ -296,9 +345,29 @@ namespace OmniTactica.AppCode.Helpers
         {
             var normalizedWords = Regex.Replace(value.ToLowerInvariant(), @"[^a-z0-9\s]", " ")
                 .Split(' ', StringSplitOptions.RemoveEmptyEntries)
-                .Select(word => word.Length > 3 && word.EndsWith('s') ? word[..^1] : word);
+                .Select(NormalizeWord);
 
             return string.Join(' ', normalizedWords);
+        }
+
+        private static string NormalizeWord(string word)
+        {
+            if (word.Length > 3 && word.EndsWith("men", StringComparison.OrdinalIgnoreCase))
+            {
+                return $"{word[..^3]}man";
+            }
+
+            if (word.Length > 3 && word.EndsWith("ies", StringComparison.OrdinalIgnoreCase))
+            {
+                return $"{word[..^3]}y";
+            }
+
+            if (word.Length > 3 && word.EndsWith('s'))
+            {
+                return word[..^1];
+            }
+
+            return word;
         }
 
         private sealed record CostDescriptionEntry(int Quantity, string Name, bool IsGenericModelCount);

@@ -31,6 +31,40 @@ namespace OmniTactica.AppCode.Repositories
             }
 
             /// <summary>
+            /// Gets all datasheets (list view).
+            /// </summary>
+        public async Task<List<Datasheet>> GetAllDatasheetsAsync()
+        {
+            const string sql = @"
+                SELECT DISTINCT
+                    d.id,
+                    d.name,
+                    d.faction_id,
+                    d.role,
+                    d.legend
+                FROM Datasheets d
+                WHERE d.virtual = 0
+                ORDER BY d.name";
+
+            var datasheets = await QueryListAsync(sql, r => new Datasheet
+            {
+                Id = I(r, "id") ?? 0,
+                Name = S(r, "name"),
+                FactionId = S(r, "faction_id"),
+                Role = S(r, "role"),
+                Legend = S(r, "legend")
+            });
+
+            foreach (var datasheet in datasheets)
+            {
+                datasheet.Keywords = await GetKeywordsForDatasheetAsync(datasheet.Id);
+                datasheet.PointsCost = await GetBaseCostForDatasheetAsync(datasheet.Id);
+            }
+
+            return datasheets;
+        }
+
+            /// <summary>
             /// Gets all datasheets for a faction (list view).
             /// Optionally filters by selected keywords with AND/OR logic.
             /// Supports both include and exclude keyword filters.

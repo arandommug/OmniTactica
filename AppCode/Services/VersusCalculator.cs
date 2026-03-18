@@ -599,10 +599,13 @@ namespace OmniTactica.AppCode.Services
                 var roll = RollD6();
                 var unmodifiedRoll = roll; // Track unmodified roll for critical checks
 
-                if ((rerollAll) || (rerollOnes && roll == 1))
+                var shouldReroll = (rerollAll && roll < targetRoll) || (rerollOnes && roll == 1);
+                if (shouldReroll)
                 {
+                    var originalRoll = roll;
                     roll = RollD6();
                     unmodifiedRoll = roll; // After reroll, the reroll result is the "unmodified" value
+                    attackLog?.HitEffects.Add($"Rerolled hit: {originalRoll} → {roll}");
                 }
 
                 attackLog?.HitDice.Add(roll);
@@ -722,14 +725,15 @@ namespace OmniTactica.AppCode.Services
                 var roll = RollD6();
                 var unmodifiedRoll = roll; // Track unmodified roll for critical checks
 
-                if (rerollAll || (rerollOnes && roll == 1))
+                var succeededBeforeReroll = unmodifiedRoll >= criticalWoundThreshold || roll >= woundTarget;
+                var shouldReroll = (rerollAll && !succeededBeforeReroll) || (rerollOnes && roll == 1);
+                if (shouldReroll)
                 {
+                    var originalRoll = roll;
                     var reroll = RollD6();
-                    if (reroll >= roll || rerollAll)
-                    {
-                        roll = reroll;
-                        unmodifiedRoll = reroll; // After reroll, the reroll result is the "unmodified" value
-                    }
+                    roll = reroll;
+                    unmodifiedRoll = reroll; // After reroll, the reroll result is the "unmodified" value
+                    attackLog?.WoundEffects.Add($"Rerolled wound: {originalRoll} → {reroll}");
                 }
 
                 attackLog?.WoundDice.Add(roll);
@@ -817,8 +821,7 @@ namespace OmniTactica.AppCode.Services
                     if (isMortal)
                     {
                         // Mortal wounds bypass saves
-                        damage = RollDamage(weapon.D);
-                        attackLog?.DamageDice.Add(damage);
+                        damage = RollWeaponDamage(weapon, activeAttackerModifiers, attackLog);
                         result.UnsavedWounds++;
 
                         // Apply weapon damage bonus modifiers (e.g. Melta)
@@ -869,8 +872,7 @@ namespace OmniTactica.AppCode.Services
                         else
                         {
                             result.FailedSaves++;
-                            damage = RollDamage(weapon.D);
-                            attackLog?.DamageDice.Add(damage);
+                            damage = RollWeaponDamage(weapon, activeAttackerModifiers, attackLog);
                             result.UnsavedWounds++;
 
                             // Apply weapon damage bonus modifiers (e.g. Melta)
@@ -1448,6 +1450,64 @@ namespace OmniTactica.AppCode.Services
             return effect.IntValue ?? fallback;
         }
 
+        private static int RollWeaponDamage(
+            CombatWeapon weapon,
+            IReadOnlyList<ConditionalModifier> activeAttackerModifiers,
+            AttackSequenceLog? attackLog)
+        {
+            var damage = RollDamage(weapon.D);
+            attackLog?.DamageDice.Add(damage);
+
+            if (!activeAttackerModifiers.Any(modifier => modifier.Effect.Type == EffectType.RerollDamage) ||
+                !IsVariableRoll(weapon.D))
+            {
+                return damage;
+            }
+
+            var maxDamage = GetMaxRollValue(weapon.D);
+            if (maxDamage <= 0 || damage * 2 > maxDamage)
+            {
+                return damage;
+            }
+
+            var rerolledDamage = RollDamage(weapon.D);
+            attackLog?.DamageDice.Add(rerolledDamage);
+            attackLog?.DamageEvents.Add($"Rerolled damage: {damage} → {rerolledDamage}");
+            return rerolledDamage;
+        }
+
+        private static bool IsVariableRoll(string value)
+            => !string.IsNullOrWhiteSpace(value) && value.Contains('D', StringComparison.OrdinalIgnoreCase);
+
+        private static int GetMaxRollValue(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return 0;
+
+            value = value.Trim();
+
+            if (int.TryParse(value, out var flat))
+                return flat;
+
+            var dIndex = value.IndexOf('D');
+            if (dIndex == -1)
+                return 0;
+
+            var dice = dIndex == 0
+                ? 1
+                : int.Parse(value.Substring(0, dIndex));
+
+            var plusIndex = value.IndexOf('+');
+            var size = plusIndex > 0
+                ? int.Parse(value.Substring(dIndex + 1, plusIndex - dIndex - 1))
+                : int.Parse(value[(dIndex + 1)..]);
+            var mod = plusIndex > 0
+                ? int.Parse(value[(plusIndex + 1)..])
+                : 0;
+
+            return (dice * size) + mod;
+        }
+
         private static int RollDamage(string damage)
         {
             if (string.IsNullOrWhiteSpace(damage))
@@ -1799,6 +1859,7 @@ namespace OmniTactica.AppCode.Services
                 EffectType.AddAttacks => $"+{effect.IntValue} Attacks",
                 EffectType.RerollHits => "Reroll all Hit rolls",
                 EffectType.RerollWounds => "Reroll all Wound rolls",
+                EffectType.RerollDamage => "Reroll all Damage rolls",
                 EffectType.RerollOnes => "Reroll 1s",
                 EffectType.IgnoreInvulnerable => "Ignore Invulnerable saves",
                 EffectType.IgnoreCover => "Ignore Cover",

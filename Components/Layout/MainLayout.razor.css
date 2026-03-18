@@ -9,7 +9,7 @@ main {
 
 @media (max-width: 640px) {
     main {
-        margin: 3rem 0 var(--app-bottom-height) 0;
+        margin: 1.5rem 0 var(--app-bottom-height) 0;
     }
 }
 

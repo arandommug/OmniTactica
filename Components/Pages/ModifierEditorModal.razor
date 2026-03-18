@@ -78,6 +78,7 @@
                             <option value="@EffectType.ConvertToMortalWounds">Mortal Wounds (Dev Wounds)</option>
                             <option value="@EffectType.RerollHits">Reroll Hit Rolls</option>
                             <option value="@EffectType.RerollWounds">Reroll Wound Rolls</option>
+                            <option value="@EffectType.RerollDamage">Reroll Damage Rolls</option>
                             <option value="@EffectType.RerollOnes">Reroll 1s</option>
                             <option value="@EffectType.IgnoreInvulnerable">Ignore Invulnerable Saves</option>
                             <option value="@EffectType.IgnoreCover">Ignore Cover</option>
@@ -226,6 +227,12 @@
                 Name = "Reroll All Wounds",
                 Condition = new ModifierCondition { Type = ConditionType.Always },
                 Effect = new ModifierEffect { Type = EffectType.RerollWounds }
+            },
+            new ConditionalModifier
+            {
+                Name = "Reroll All Damage",
+                Condition = new ModifierCondition { Type = ConditionType.Always },
+                Effect = new ModifierEffect { Type = EffectType.RerollDamage }
             },
             new ConditionalModifier
             {
@@ -407,6 +414,7 @@
             EffectType.ConvertToMortalWounds => "convert to mortal wounds on critical wound",
             EffectType.RerollHits => "reroll all hit rolls",
             EffectType.RerollWounds => "reroll all wound rolls",
+            EffectType.RerollDamage => "reroll all damage rolls",
             EffectType.RerollOnes => "reroll 1s",
             EffectType.IgnoreInvulnerable => "ignore invulnerable saves",
             EffectType.IgnoreCover => "ignore cover bonus",

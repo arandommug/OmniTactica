@@ -170,9 +170,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
 window.weaponAbilityLayout = window.weaponAbilityLayout || {
     listeners: new Map(),
+    states: new Map(),
 
     init: function (containerId, dotNetRef) {
         this.dispose(containerId);
+
+        const state = {
+            lastShouldStack: null
+        };
+        this.states.set(containerId, state);
 
         const measure = () => {
             const container = document.getElementById(containerId);
@@ -208,6 +214,11 @@ window.weaponAbilityLayout = window.weaponAbilityLayout || {
                 }
             });
 
+            if (state.lastShouldStack === shouldStack) {
+                return;
+            }
+
+            state.lastShouldStack = shouldStack;
             dotNetRef.invokeMethodAsync('SetWeaponAbilityLayout', shouldStack);
         };
 
@@ -226,5 +237,6 @@ window.weaponAbilityLayout = window.weaponAbilityLayout || {
 
         window.removeEventListener('resize', onResize);
         this.listeners.delete(containerId);
+        this.states.delete(containerId);
     }
 };

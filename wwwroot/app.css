@@ -187,12 +187,14 @@ a {
     user-select: none;
     -webkit-tap-highlight-color: transparent;
     cursor: pointer;
+    position: relative;
+    transform-origin: left center;
 }
 
 @media (hover: hover) {
     .clickable-card:hover {
-        transform: scale(1.01);
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+        transform: scale(1.002);
+        box-shadow: 0 0.5rem 1.25rem rgba(0, 0, 0, 0.16);
     }
 }
 
